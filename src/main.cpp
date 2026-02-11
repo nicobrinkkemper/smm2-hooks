@@ -4,14 +4,12 @@
 // Forward declarations for plugins
 namespace smm2 { namespace state_logger {
     void init();
+    void per_frame(uint32_t frame);
     void flush();
 }}
 
 static void on_frame(uint32_t frame) {
-    // Flush logs every 300 frames (~5 seconds at 60fps)
-    if (frame % 300 == 0) {
-        smm2::state_logger::flush();
-    }
+    smm2::state_logger::per_frame(frame);
 }
 
 extern "C" void hkMain() {
