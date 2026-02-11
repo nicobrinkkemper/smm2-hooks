@@ -1,3 +1,5 @@
 build/
 .vscode/
+.venv/
+lib/
 compile_commands.json

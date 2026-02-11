@@ -1,1 +1,4 @@
-303 syms/v303.sym
+@rtld = nnrtld
+@game = Slope.nss
+303 = c2dc405ac414c37c8b1c50219c7a0f0c
+@sdk = nnSdk

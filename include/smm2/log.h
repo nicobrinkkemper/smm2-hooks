@@ -2,6 +2,7 @@
 
 #include "nn/fs.h"
 #include <cstdint>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 
