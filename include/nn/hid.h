@@ -4,6 +4,10 @@
 
 namespace nn {
     namespace hid {
+        constexpr uint64_t BUTTON_A = 0x01;
+        constexpr uint64_t BUTTON_B = 0x02;
+        constexpr uint64_t BUTTON_X = 0x04;
+        constexpr uint64_t BUTTON_Y = 0x08;
         constexpr uint64_t BUTTON_STICK_L = 0x10;
         constexpr uint64_t BUTTON_STICK_R = 0x20;
         constexpr uint64_t BUTTON_MINUS = 0x800;
@@ -12,6 +16,10 @@ namespace nn {
         constexpr uint64_t BUTTON_UP = 0x2000;
         constexpr uint64_t BUTTON_RIGHT = 0x4000;
         constexpr uint64_t BUTTON_DOWN = 0x8000;
+        constexpr uint64_t BUTTON_L = 0x40;
+        constexpr uint64_t BUTTON_R = 0x80;
+        constexpr uint64_t BUTTON_ZL = 0x100;
+        constexpr uint64_t BUTTON_ZR = 0x200;
 
         struct full_key_state {
             int64_t sample;
