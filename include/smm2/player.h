@@ -8,14 +8,14 @@ namespace player {
 // Known PlayerObject field offsets (v3.0.3)
 // All relative to PlayerObject base (this)
 namespace off {
-    constexpr uint32_t pos_x       = 0x228;  // float
-    constexpr uint32_t pos_y       = 0x22C;  // float
-    constexpr uint32_t pos_z       = 0x230;  // float
+    constexpr uint32_t pos_x       = 0x230;  // float (GDB-confirmed: 1220.25 in-level)
+    constexpr uint32_t pos_y       = 0x234;  // float (GDB-confirmed: 64 in-level)
+    constexpr uint32_t pos_z       = 0x238;  // float
     constexpr uint32_t vel_y       = 0x240;  // float
     constexpr uint32_t vel_x       = 0x274;  // float
     constexpr uint32_t state_machine = 0x3F0; // StateMachine*
     constexpr uint32_t cur_state   = 0x3F8;  // u32 (StateMachine+0x08)
-    constexpr uint32_t prev_state  = 0x3FC;  // u32 (StateMachine+0x0C)
+    constexpr uint32_t state_frames = 0x3FC; // u32 (StateMachine+0x0C) — frames in current state
     constexpr uint32_t delegate_state = 0x4A8; // u32 (varies by game style)
     constexpr uint32_t in_water    = 0x4C0;  // bool
     constexpr uint32_t style_features = 0x2308; // u32

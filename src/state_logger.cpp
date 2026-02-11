@@ -54,7 +54,7 @@ void init() {
     playerChangeState_hook.installAtSym<"PlayerObject_changeState">();
 
     field_log.init("fields.csv");
-    field_log.write("frame,state,prev_state,delegate_state,pos_x,pos_y,vel_x,vel_y,in_water\n", 71);
+    field_log.write("frame,state,state_frames,delegate_state,pos_x,pos_y,vel_x,vel_y,in_water\n", 73);
 }
 
 // Called every frame from main.cpp
@@ -68,7 +68,7 @@ void per_frame(uint32_t frame) {
     // Dump player fields every 10 frames if we have a tracked player
     if (tracked_player != 0 && frame % 10 == 0) {
         uint32_t state = player::read<uint32_t>(tracked_player, player::off::cur_state);
-        uint32_t prev = player::read<uint32_t>(tracked_player, player::off::prev_state);
+        uint32_t state_frames = player::read<uint32_t>(tracked_player, player::off::state_frames);
         uint32_t del_state = player::read<uint32_t>(tracked_player, player::off::delegate_state);
         float px = player::read<float>(tracked_player, player::off::pos_x);
         float py = player::read<float>(tracked_player, player::off::pos_y);
@@ -77,7 +77,7 @@ void per_frame(uint32_t frame) {
         uint8_t water = player::read<uint8_t>(tracked_player, player::off::in_water);
 
         field_log.writef("%u,%u,%u,%u,%.2f,%.2f,%.4f,%.4f,%u\n",
-            frame, state, prev, del_state, px, py, vx, vy, water);
+            frame, state, state_frames, del_state, px, py, vx, vy, water);
     }
 }
 
