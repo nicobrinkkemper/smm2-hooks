@@ -54,7 +54,7 @@ void init() {
     playerChangeState_hook.installAtSym<"PlayerObject_changeState">();
 
     field_log.init("fields.csv");
-    field_log.write("frame,state,state_frames,delegate_state,pos_x,pos_y,vel_x,vel_y,in_water\n", 73);
+    field_log.write("frame,state,state_frames,powerup_id,pos_x,pos_y,vel_x,vel_y,in_water\n", 69);
 }
 
 // Called every frame from main.cpp
@@ -69,7 +69,7 @@ void per_frame(uint32_t frame) {
     if (tracked_player != 0 && frame % 10 == 0) {
         uint32_t state = player::read<uint32_t>(tracked_player, player::off::cur_state);
         uint32_t state_frames = player::read<uint32_t>(tracked_player, player::off::state_frames);
-        uint32_t del_state = player::read<uint32_t>(tracked_player, player::off::delegate_state);
+        uint32_t del_state = player::read<uint32_t>(tracked_player, player::off::powerup_id);
         float px = player::read<float>(tracked_player, player::off::pos_x);
         float py = player::read<float>(tracked_player, player::off::pos_y);
         float vx = player::read<float>(tracked_player, player::off::vel_x);
