@@ -28,3 +28,17 @@ PlayerObject_changeState = 0x15E3FB0
 
 # actor_move (main physics update)
 actor_move = 0x128ACC0
+
+# Transition delegate callbacks (from sub_71015E4130)
+# These are the functions decompiled in PlayerObjectStates.cpp
+# Signature: int callback(PlayerObject* this) — returns 0 or 1
+delegate_None           = 0x15E4820   # slot 0, 8B
+delegate_Walk           = 0x15E4830   # slot 1, 104B
+delegate_Jump           = 0x15E48A0   # slot 3, 4B
+delegate_Landing        = 0x15E48B0   # slot 4, 52B
+delegate_Crouch         = 0x15E48F0   # slot 5, 376B
+delegate_CrouchEnd      = 0x15E4A70   # slot 6, 56B
+delegate_CrouchJump     = 0x15E4AB0   # slot 7, 160B
+delegate_CrouchJumpEnd  = 0x15E4B50   # slot 8, 28B
+delegate_CrouchSwim     = 0x15E4BD0   # slot 9 (from state-delegate-table)
+delegate_CrouchSwimEnd  = 0x15E4BD0   # slot 10 — TODO: verify address
