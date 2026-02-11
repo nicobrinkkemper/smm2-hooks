@@ -1,0 +1,15 @@
+{
+    "name": "smm2-hooks",
+    "title_id": "0x01009b90006dc000",
+    "title_id_range_min": "0x01009b90006dc000",
+    "title_id_range_max": "0x01009b90006dc000",
+    "main_thread_stack_size": "0x00100000",
+    "process_category": "application",
+    "main_thread_priority": 44,
+    "default_cpu_id": 0,
+    "address_space_type": "AddressSpace64Bit",
+    "system_resource_size": "0x00000000",
+    "is_retail": true,
+    "pool_partition": "Application",
+    "is_64_bit_instruction": true
+}
