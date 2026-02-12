@@ -39,6 +39,15 @@ static HkTrampoline<void, void*, uint32_t> playerChangeState_hook =
         // Always update tracked player (pointer can change between play sessions)
         tracked_player = player;
         status::set_player(player);
+
+        // Detect play vs editor mode from state transitions:
+        // 16→1 (or other gameplay states) = entering play mode
+        // 16→43 or anything→43 = entering editor mode
+        if (new_state == 43) {
+            status::set_mode(0); // editor
+        } else if (old_state == 16 && new_state != 43) {
+            status::set_mode(1); // play mode
+        }
     });
 
 // Also keep the generic StateMachine hook for all actors

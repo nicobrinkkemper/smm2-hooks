@@ -8,9 +8,14 @@ namespace status {
 
 static const char* STATUS_PATH = "sd:/smm2-hooks/status.bin";
 static uintptr_t s_player = 0;
+static uint8_t s_mode = 0;  // 0=editor, 1=playing
 
 void set_player(uintptr_t player) {
     s_player = player;
+}
+
+void set_mode(uint8_t mode) {
+    s_mode = mode;
 }
 
 static bool is_death_state(uint32_t state) {
@@ -33,7 +38,7 @@ void update(uint32_t frame) {
     StatusBlock blk;
     std::memset(&blk, 0, sizeof(blk));
     blk.frame = frame;
-    blk.game_phase = 0; // TODO: read from GamePhaseManager
+    blk.game_phase = s_mode; // 0=editor, 1=playing (detected from state transitions)
 
     if (s_player != 0) {
         blk.player_state  = player::read<uint32_t>(s_player, player::off::cur_state);

@@ -52,6 +52,7 @@ static_assert(sizeof(StatusBlock) == 64, "StatusBlock must be 64 bytes");
 void init();
 void update(uint32_t frame);
 void set_player(uintptr_t player);
+void set_mode(uint8_t mode);  // 0=editor, 1=playing
 
 } // namespace status
 } // namespace smm2

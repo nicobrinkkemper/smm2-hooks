@@ -314,7 +314,8 @@ def main():
         s = read_status()
         if s:
             print(f"Frame:   {s['frame']}")
-            print(f"Phase:   {s['game_phase']} {'(playing)' if s['game_phase'] == 4 else ''}")
+            mode_str = {0: '(editor)', 1: '(playing)'}.get(s['game_phase'], '')
+            print(f"Mode:    {s['game_phase']} {mode_str}")
             print(f"State:   {s['player_state']}", end="")
             if s.get('is_dead'): print(" [DEAD]", end="")
             if s.get('is_goal'): print(" [GOAL]", end="")
