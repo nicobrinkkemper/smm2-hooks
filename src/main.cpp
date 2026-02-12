@@ -21,8 +21,14 @@ namespace smm2 { namespace tas {
     void init();
 }}
 
+namespace smm2 { namespace status {
+    void init();
+    void update(uint32_t frame);
+}}
+
 static void on_frame(uint32_t frame) {
     smm2::state_logger::per_frame(frame);
+    smm2::status::update(frame);
 
     // Flush logs periodically
     if (frame % 300 == 0) {
@@ -42,4 +48,5 @@ extern "C" void hkMain() {
     smm2::func_trace::init();
     smm2::reimpl::init();
     smm2::tas::init();  // loads tas.csv if present, otherwise no-op
+    smm2::status::init();
 }

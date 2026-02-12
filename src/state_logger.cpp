@@ -1,6 +1,8 @@
 #include "smm2/log.h"
 #include "smm2/player.h"
 #include "smm2/frame.h"
+
+namespace smm2 { namespace status { void set_player(uintptr_t player); } }
 #include "hk/hook/Trampoline.h"
 #include "hk/ro/RoUtil.h"
 
@@ -34,9 +36,10 @@ static HkTrampoline<void, void*, uint32_t> playerChangeState_hook =
             frame::current(), old_state, new_state,
             player_obj, pos_x, pos_y, vel_x, vel_y);
 
-        // Track the first player we see for field dumping
+        // Track the first player we see for field dumping + status
         if (tracked_player == 0) {
             tracked_player = player;
+            status::set_player(player);
         }
     });
 
