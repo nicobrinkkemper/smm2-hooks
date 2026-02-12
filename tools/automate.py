@@ -207,13 +207,19 @@ def course_maker():
 
 
 def enter_play():
-    """Enter play mode from editor."""
-    print("Entering play mode...")
-    press("B", 100)    # Deselect any tool first
-    wait(300)
-    press("MINUS", 100)  # Switch to play mode
-    wait(3000)           # Wait for level to load
+    """Enter play mode from editor (plays in place, Mario stays where he is)."""
+    print("Entering play mode (in place)...")
+    press("MINUS", 100)
+    wait(3000)
     print("In play mode")
+
+
+def enter_play_reset():
+    """Enter play mode from editor with Mario reset to start position."""
+    print("Entering play mode (reset to start)...")
+    hold("MINUS", 1500)  # Long press = reset + play
+    wait(3000)
+    print("In play mode (from start)")
 
 
 def enter_make():
@@ -260,6 +266,8 @@ def main():
         course_maker()
     elif cmd == "play":
         enter_play()
+    elif cmd == "play-reset":
+        enter_play_reset()
     elif cmd == "make":
         enter_make()
     elif cmd == "reset-level":
