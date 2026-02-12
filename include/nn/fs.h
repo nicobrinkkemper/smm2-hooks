@@ -21,6 +21,7 @@ namespace nn {
 
         uint32_t MountSdCardForDebug(const char* mount);
 
+        uint32_t CreateDirectory(const char* path);
         uint32_t CreateDirectoryRecursively(const char* path);
         uint32_t CreateFile(const char* path, int64_t length);
         uint32_t DeleteFile(const char* path);
