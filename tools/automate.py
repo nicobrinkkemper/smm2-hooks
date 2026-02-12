@@ -44,7 +44,10 @@ except ImportError:
                     os.environ.setdefault(_k.strip(), _v.strip())
 
 # Paths (all configurable via .env)
-SD_BASE = os.environ.get("RYUJINX_SD_PATH", "/mnt/c/Users/nico/AppData/Roaming/Ryujinx/sdcard/smm2-hooks")
+SD_BASE = os.environ.get("RYUJINX_SD_PATH", "")
+if not SD_BASE:
+    print("Error: RYUJINX_SD_PATH not set. Copy .env.example to .env and configure it.")
+    sys.exit(1)
 INPUT_BIN = os.path.join(SD_BASE, "input.bin")
 SCREENSHOT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshot_ryujinx.ps1")
 SCREENSHOT_OUT = os.environ.get("SCREENSHOT_OUT", "/mnt/c/temp/smm2_debug/capture.png")
