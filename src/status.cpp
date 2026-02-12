@@ -9,14 +9,19 @@ namespace status {
 static const char* STATUS_PATH = "sd:/smm2-hooks/status.bin";
 static uintptr_t s_player = 0;
 
-// GamePhaseManager singleton pointer
-// At runtime: base + 0xB15BD58 contains a pointer to the manager
-// Manager+0x?? contains the current phase enum
-// Phase 4 = playing mode
-// TODO: verify the exact read path via GDB
-
 void set_player(uintptr_t player) {
     s_player = player;
+}
+
+static bool is_death_state(uint32_t state) {
+    // States 9, 10 = damage/death from state_logger observations
+    // State 113 = death (from earlier captures)
+    return state == 9 || state == 10 || state == 113;
+}
+
+static bool is_goal_state(uint32_t state) {
+    // 122 = GoalPole grab, 124 = GoalBackJump/enter castle
+    return state == 122 || state == 124;
 }
 
 void init() {
@@ -28,18 +33,25 @@ void update(uint32_t frame) {
     StatusBlock blk;
     std::memset(&blk, 0, sizeof(blk));
     blk.frame = frame;
-    blk.game_phase = 0; // TODO: read from GamePhaseManager once we verify the pointer chain
+    blk.game_phase = 0; // TODO: read from GamePhaseManager
 
     if (s_player != 0) {
-        blk.player_state = player::read<uint32_t>(s_player, player::off::cur_state);
-        blk.powerup_id   = player::read<uint32_t>(s_player, player::off::powerup_id);
-        blk.pos_x        = player::read<float>(s_player, player::off::pos_x);
-        blk.pos_y        = player::read<float>(s_player, player::off::pos_y);
-        blk.vel_x        = player::read<float>(s_player, player::off::vel_x);
-        blk.vel_y        = player::read<float>(s_player, player::off::vel_y);
+        blk.player_state  = player::read<uint32_t>(s_player, player::off::cur_state);
+        blk.powerup_id    = player::read<uint32_t>(s_player, player::off::powerup_id);
+        blk.pos_x         = player::read<float>(s_player, player::off::pos_x);
+        blk.pos_y         = player::read<float>(s_player, player::off::pos_y);
+        blk.vel_x         = player::read<float>(s_player, player::off::vel_x);
+        blk.vel_y         = player::read<float>(s_player, player::off::vel_y);
+        blk.state_frames  = player::read<uint32_t>(s_player, player::off::state_frames);
+        blk.in_water      = player::read<uint8_t>(s_player, player::off::in_water);
+        blk.facing        = player::read<float>(s_player, 0x26C);
+        blk.gravity       = player::read<float>(s_player, 0x27C);
+        blk.buffered_action = player::read<uint32_t>(s_player, 0x4BC);
+        blk.is_dead       = is_death_state(blk.player_state) ? 1 : 0;
+        blk.is_goal       = is_goal_state(blk.player_state) ? 1 : 0;
+        blk.has_player    = 1;
     }
 
-    // Write directly (overwrite same position each frame)
     nn::fs::FileHandle f;
     if (nn::fs::OpenFile(&f, STATUS_PATH, nn::fs::MODE_WRITE) == 0) {
         nn::fs::WriteOption opt = {.flags = nn::fs::WRITE_OPTION_FLUSH};

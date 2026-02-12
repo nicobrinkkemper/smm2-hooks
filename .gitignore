@@ -4,3 +4,4 @@ build/
 lib/
 compile_commands.json
 .env
+__pycache__/

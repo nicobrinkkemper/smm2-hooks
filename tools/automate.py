@@ -129,22 +129,40 @@ def screenshot():
 
 
 def read_status():
-    """Read status.bin for real-time game state (updated every frame by hooks)."""
+    """Read status.bin for real-time game state (updated every frame by hooks).
+    Supports both 32-byte (v1) and 64-byte (v2) status blocks."""
     path = os.path.join(SD_BASE, "status.bin")
     if not os.path.exists(path):
         return None
     with open(path, 'rb') as f:
-        data = f.read(32)
+        data = f.read(64)
     if len(data) < 32:
         return None
     frame, phase, state, powerup = struct.unpack_from('<IIII', data, 0)
     pos_x, pos_y, vel_x, vel_y = struct.unpack_from('<ffff', data, 16)
-    return {
+    result = {
         'frame': frame, 'game_phase': phase,
         'player_state': state, 'powerup_id': powerup,
         'pos_x': pos_x, 'pos_y': pos_y,
         'vel_x': vel_x, 'vel_y': vel_y,
     }
+    # Extended v2 fields (64-byte block)
+    if len(data) >= 64:
+        state_frames, flags_byte = struct.unpack_from('<IB', data, 32)
+        in_water = flags_byte
+        is_dead, is_goal, has_player = struct.unpack_from('<BBB', data, 37)
+        facing, gravity, buffered = struct.unpack_from('<ffI', data, 40)
+        result.update({
+            'state_frames': state_frames,
+            'in_water': in_water,
+            'is_dead': is_dead,
+            'is_goal': is_goal,
+            'has_player': has_player,
+            'facing': facing,
+            'gravity': gravity,
+            'buffered_action': buffered,
+        })
+    return result
 
 
 def read_fields_csv():
@@ -297,10 +315,17 @@ def main():
         if s:
             print(f"Frame:   {s['frame']}")
             print(f"Phase:   {s['game_phase']} {'(playing)' if s['game_phase'] == 4 else ''}")
-            print(f"State:   {s['player_state']}")
+            print(f"State:   {s['player_state']}", end="")
+            if s.get('is_dead'): print(" [DEAD]", end="")
+            if s.get('is_goal'): print(" [GOAL]", end="")
+            print()
             print(f"Powerup: {s['powerup_id']}")
             print(f"Pos:     ({s['pos_x']:.2f}, {s['pos_y']:.2f})")
             print(f"Vel:     ({s['vel_x']:.4f}, {s['vel_y']:.4f})")
+            if 'state_frames' in s:
+                print(f"StFrm:   {s['state_frames']}")
+                print(f"Water:   {s['in_water']}  Facing: {s.get('facing', 0):.1f}  Gravity: {s.get('gravity', 0):.2f}")
+                print(f"Player:  {'yes' if s.get('has_player') else 'no'}")
         else:
             print("No status data (game not running or hooks not active)")
     else:
