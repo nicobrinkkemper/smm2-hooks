@@ -50,6 +50,7 @@ namespace btn {
 }
 
 void init();
+uint32_t input_poll_count();
 
 } // namespace tas
 } // namespace smm2

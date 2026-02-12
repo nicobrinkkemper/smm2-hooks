@@ -1,5 +1,6 @@
 #include "smm2/status.h"
 #include "smm2/player.h"
+#include "smm2/tas.h"
 #include "nn/fs.h"
 #include <cstring>
 
@@ -38,7 +39,8 @@ void update(uint32_t frame) {
     StatusBlock blk;
     std::memset(&blk, 0, sizeof(blk));
     blk.frame = frame;
-    blk.game_phase = s_mode; // 0=editor, 1=playing (detected from state transitions)
+    blk.game_phase = s_mode; // 0=unknown, 1=playing, 2=goal, 3=dead
+    blk.input_poll_count = tas::input_poll_count();
 
     if (s_player != 0) {
         blk.player_state  = player::read<uint32_t>(s_player, player::off::cur_state);

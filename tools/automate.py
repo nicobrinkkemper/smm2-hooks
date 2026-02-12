@@ -151,7 +151,7 @@ def read_status():
         state_frames, flags_byte = struct.unpack_from('<IB', data, 32)
         in_water = flags_byte
         is_dead, is_goal, has_player = struct.unpack_from('<BBB', data, 37)
-        facing, gravity, buffered = struct.unpack_from('<ffI', data, 40)
+        facing, gravity, buffered, input_polls = struct.unpack_from('<ffII', data, 40)
         result.update({
             'state_frames': state_frames,
             'in_water': in_water,
@@ -161,6 +161,7 @@ def read_status():
             'facing': facing,
             'gravity': gravity,
             'buffered_action': buffered,
+            'input_polls': input_polls,
         })
     return result
 
@@ -314,7 +315,7 @@ def main():
         s = read_status()
         if s:
             print(f"Frame:   {s['frame']}")
-            mode_str = {0: '(editor)', 1: '(playing)'}.get(s['game_phase'], '')
+            mode_str = {0: '(unknown)', 1: '(playing)', 2: '(goal)', 3: '(dead)'}.get(s['game_phase'], '')
             print(f"Mode:    {s['game_phase']} {mode_str}")
             print(f"State:   {s['player_state']}", end="")
             if s.get('is_dead'): print(" [DEAD]", end="")
@@ -327,6 +328,7 @@ def main():
                 print(f"StFrm:   {s['state_frames']}")
                 print(f"Water:   {s['in_water']}  Facing: {s.get('facing', 0):.1f}  Gravity: {s.get('gravity', 0):.2f}")
                 print(f"Player:  {'yes' if s.get('has_player') else 'no'}")
+                print(f"Polls:   {s.get('input_polls', 0)}")
         else:
             print("No status data (game not running or hooks not active)")
     else:

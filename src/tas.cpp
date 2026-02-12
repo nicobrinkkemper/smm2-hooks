@@ -112,11 +112,13 @@ static bool read_live_input(LiveInput& out) {
 static uint64_t cur_buttons = 0;
 static int32_t cur_lx = 0;
 static int32_t cur_ly = 0;
+static uint32_t s_input_poll_count = 0;  // increments each GetNpadStates call
 
 // Hook nn::hid::GetNpadStates
 static HkTrampoline<int, nn::hid::full_key_state*, int, const uint32_t&> npad_hook =
     hk::hook::trampoline([](nn::hid::full_key_state* out, int count, const uint32_t& id) -> int {
         int written = npad_hook.orig(out, count, id);
+        s_input_poll_count++;
 
         // Script mode: advance keyframes
         if (script_active && script_len > 0) {
@@ -151,6 +153,10 @@ static HkTrampoline<int, nn::hid::full_key_state*, int, const uint32_t&> npad_ho
 
         return written;
     });
+
+uint32_t input_poll_count() {
+    return s_input_poll_count;
+}
 
 void init() {
     if (load_script()) {
