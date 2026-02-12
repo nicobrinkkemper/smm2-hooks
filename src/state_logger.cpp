@@ -57,11 +57,15 @@ static HkTrampoline<void, void*, uint32_t> playerChangeState_hook =
             status::set_mode(1); // assume play mode on any 16→X transition
         }
         // Goal/death confirm we were in play mode (and now returning to editor)
-        if (new_state == 122 || new_state == 124) {
-            status::set_mode(2); // goal sequence
+        if (new_state == 122) {
+            status::set_mode(2); // goal sequence start
         }
-        if (new_state == 9 || new_state == 10) {
-            status::set_mode(3); // death sequence  
+        if (new_state == 9) {
+            status::set_mode(3); // death sequence start
+        }
+        // After goal (124→43) or death (10→43), back to editor
+        if ((old_state == 124 || old_state == 10) && new_state == 43) {
+            status::set_mode(0); // back to editor
         }
     });
 
