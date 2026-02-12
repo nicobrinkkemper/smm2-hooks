@@ -32,6 +32,7 @@ static void on_frame(uint32_t frame) {
 
 extern "C" void hkMain() {
     nn::fs::MountSdCardForDebug("sd");
+    nn::fs::CreateDirectoryRecursively("sd:/smm2-hooks");
 
     // Init framework
     smm2::frame::init(on_frame);

@@ -23,6 +23,8 @@ struct Logger {
 
     void init(const char* filename) {
         std::snprintf(path, sizeof(path), "sd:/smm2-hooks/%s", filename);
+        // Delete old file to prevent corruption from leftover data
+        nn::fs::DeleteFile(path);
         nn::fs::CreateFile(path, 0);
         pos = 0;
         file_pos = 0;
@@ -40,11 +42,11 @@ struct Logger {
         // If single write exceeds buffer, write directly
         if (len >= BUFFER_SIZE) {
             nn::fs::FileHandle f;
-            if (nn::fs::OpenFile(&f, path, nn::fs::MODE_WRITE | nn::fs::MODE_APPEND) == 0) {
-                nn::fs::WriteOption opt = {0};
+            if (nn::fs::OpenFile(&f, path, nn::fs::MODE_WRITE) == 0) {
+                nn::fs::WriteOption opt = {.flags = nn::fs::WRITE_OPTION_FLUSH};
+                nn::fs::SetFileSize(f, file_pos + len);
                 nn::fs::WriteFile(f, file_pos, data, len, opt);
                 file_pos += len;
-                nn::fs::FlushFile(f);
                 nn::fs::CloseFile(f);
             }
             return;
@@ -67,11 +69,11 @@ struct Logger {
         if (!initialized || pos == 0) return;
 
         nn::fs::FileHandle f;
-        if (nn::fs::OpenFile(&f, path, nn::fs::MODE_WRITE | nn::fs::MODE_APPEND) == 0) {
+        if (nn::fs::OpenFile(&f, path, nn::fs::MODE_WRITE) == 0) {
             nn::fs::WriteOption opt = {.flags = nn::fs::WRITE_OPTION_FLUSH};
+            nn::fs::SetFileSize(f, file_pos + pos);
             nn::fs::WriteFile(f, file_pos, buffer, pos, opt);
             file_pos += pos;
-            nn::fs::FlushFile(f);
             nn::fs::CloseFile(f);
         }
         pos = 0;
