@@ -3,3 +3,4 @@ build/
 .venv/
 lib/
 compile_commands.json
+.env

@@ -27,12 +27,28 @@ import sys
 import time
 import os
 import subprocess
+try:
+    from dotenv import load_dotenv
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    load_dotenv(os.path.join(_repo_root, ".env"))
+except ImportError:
+    # python-dotenv not installed — fall back to manual .env parsing
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _env_path = os.path.join(_repo_root, ".env")
+    if os.path.exists(_env_path):
+        with open(_env_path) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and not _line.startswith('#') and '=' in _line:
+                    _k, _v = _line.split('=', 1)
+                    os.environ.setdefault(_k.strip(), _v.strip())
 
-# Paths
-SD_BASE = "/mnt/c/Users/nico/AppData/Roaming/Ryujinx/sdcard/smm2-hooks"
+# Paths (all configurable via .env)
+SD_BASE = os.environ.get("RYUJINX_SD_PATH", "/mnt/c/Users/nico/AppData/Roaming/Ryujinx/sdcard/smm2-hooks")
 INPUT_BIN = os.path.join(SD_BASE, "input.bin")
-SCREENSHOT_SCRIPT = os.path.join(os.path.dirname(__file__), "screenshot_ryujinx.ps1")
-SCREENSHOT_OUT = "/mnt/c/temp/smm2_debug/capture.png"
+SCREENSHOT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshot_ryujinx.ps1")
+SCREENSHOT_OUT = os.environ.get("SCREENSHOT_OUT", "/mnt/c/temp/smm2_debug/capture.png")
+WSL_DISTRO = os.environ.get("WSL_DISTRO", "Ubuntu")
 
 # Button bitmasks (Pro Controller / HID)
 BUTTONS = {
@@ -99,10 +115,12 @@ def wait(ms):
 
 def screenshot():
     """Take a screenshot and return the path."""
+    # Convert WSL path to UNC for PowerShell
+    ps_script = f"\\\\wsl.localhost\\{WSL_DISTRO}{SCREENSHOT_SCRIPT}"
+    ps_out = SCREENSHOT_OUT.replace("/mnt/c/", "C:\\").replace("/", "\\")
     subprocess.run([
-        "powershell.exe", "-File",
-        f"\\\\wsl.localhost\\Ubuntu{SCREENSHOT_SCRIPT}",
-        "-OutPath", SCREENSHOT_OUT.replace("/mnt/c/", "C:\\").replace("/", "\\")
+        "powershell.exe", "-File", ps_script,
+        "-OutPath", ps_out
     ], capture_output=True)
     return SCREENSHOT_OUT
 
