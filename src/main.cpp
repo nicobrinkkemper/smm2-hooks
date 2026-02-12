@@ -26,8 +26,14 @@ namespace smm2 { namespace status {
     void update(uint32_t frame);
 }}
 
+namespace smm2 { namespace game_phase {
+    void init();
+    void per_frame(uint32_t frame);
+}}
+
 static void on_frame(uint32_t frame) {
     smm2::state_logger::per_frame(frame);
+    smm2::game_phase::per_frame(frame);
     smm2::status::update(frame);
 
     // Flush logs periodically
@@ -51,4 +57,5 @@ extern "C" void hkMain() {
     smm2::reimpl::init();
     smm2::tas::init();  // loads tas.csv if present, otherwise no-op
     smm2::status::init();
+    smm2::game_phase::init();
 }

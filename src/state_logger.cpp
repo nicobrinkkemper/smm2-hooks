@@ -40,33 +40,8 @@ static HkTrampoline<void, void*, uint32_t> playerChangeState_hook =
         tracked_player = player;
         status::set_player(player);
 
-        // Detect play vs editor mode from state transitions:
-        // State 16 (StartFall) is the reset/transition state.
-        // State 43 = SwimIdle (used in both underwater play AND editor)
-        // State 1 = Walk (ground play mode)
-        // 
-        // Reliable signals:
-        // - Any transition from 16 = mode change (play or editor reload)
-        // - Goal states (122, 124) = was in play mode
-        // - Death states (9, 10) = was in play mode
-        // - Non-16, non-43 gameplay states (1-8, 69, etc.) = definitely play mode
-        //
-        // Strategy: set play mode on ANY state transition from 16.
-        // The bot should verify with velocity checks if needed.
-        if (old_state == 16) {
-            status::set_mode(1); // assume play mode on any 16→X transition
-        }
-        // Goal/death confirm we were in play mode (and now returning to editor)
-        if (new_state == 122) {
-            status::set_mode(2); // goal sequence start
-        }
-        if (new_state == 9) {
-            status::set_mode(3); // death sequence start
-        }
-        // After goal (124→43) or death (10→43), back to editor
-        if ((old_state == 124 || old_state == 10) && new_state == 43) {
-            status::set_mode(0); // back to editor
-        }
+        // Mode detection now handled by game_phase.cpp (reads GamePhaseManager directly)
+        // No more state-transition heuristics needed
     });
 
 // Also keep the generic StateMachine hook for all actors
