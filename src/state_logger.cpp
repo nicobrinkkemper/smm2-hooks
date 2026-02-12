@@ -40,8 +40,20 @@ static HkTrampoline<void, void*, uint32_t> playerChangeState_hook =
         tracked_player = player;
         status::set_player(player);
 
-        // Mode detection now handled by game_phase.cpp (reads GamePhaseManager directly)
-        // No more state-transition heuristics needed
+        // Mode detection: GamePhaseManager phase 3 covers both editor AND test-play
+        // So we still need state transitions to distinguish them
+        if (old_state == 16) {
+            status::set_mode(1); // 16→any = entering play
+        }
+        if (new_state == 122) {
+            status::set_mode(2); // goal
+        }
+        if (new_state == 9) {
+            status::set_mode(3); // death
+        }
+        if ((old_state == 124 || old_state == 10) && new_state == 43) {
+            status::set_mode(0); // back to editor after goal/death anim
+        }
     });
 
 // Also keep the generic StateMachine hook for all actors

@@ -37,12 +37,9 @@ void per_frame(uint32_t frame_num) {
         s_log.writef("%u,%d,%d\n", frame_num, s_last_phase, phase);
         s_last_phase = phase;
         
-        // Update status.bin mode based on actual game phase
-        if (phase == PHASE_PLAYING) {
-            status::set_mode(1);  // play
-        } else {
-            status::set_mode(0);  // not playing (editor, menu, etc.)
-        }
+        // Log phase for decomp research — don't override mode here
+        // Course Maker test-play may stay in phase 3 (editor)
+        // Mode detection still relies on state transitions in state_logger
     }
     
     if (frame_num % 300 == 0) {
