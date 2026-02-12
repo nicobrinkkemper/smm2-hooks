@@ -39,13 +39,62 @@ static HkTrampoline<int, void*> name##_hook =                                   
         return ret;                                                              \
     })
 
-// Start with the 5 delegates known to work (others caused game hang — needs investigation)
-// TODO: bisect which additional hooks cause the hang (likely adjacent function corruption)
+// All delegate hooks (except None=8B and Jump=4B — too small for trampolines)
+// Pool size increased to 0x80 (128) to handle all of these
 DEFINE_DELEGATE_HOOK(delegate_Walk);
+DEFINE_DELEGATE_HOOK(delegate_Landing);
 DEFINE_DELEGATE_HOOK(delegate_Crouch);
 DEFINE_DELEGATE_HOOK(delegate_CrouchEnd);
 DEFINE_DELEGATE_HOOK(delegate_CrouchJump);
-DEFINE_DELEGATE_HOOK(delegate_Landing);
+DEFINE_DELEGATE_HOOK(delegate_CrouchJumpEnd);
+DEFINE_DELEGATE_HOOK(delegate_CrouchSwim);
+DEFINE_DELEGATE_HOOK(delegate_CrouchSwimEnd);
+DEFINE_DELEGATE_HOOK(delegate_CrouchSwimWalk);
+DEFINE_DELEGATE_HOOK(delegate_Rolling);
+DEFINE_DELEGATE_HOOK(delegate_BroadJump);
+DEFINE_DELEGATE_HOOK(delegate_BroadJumpLand);
+DEFINE_DELEGATE_HOOK(delegate_StartFall);
+DEFINE_DELEGATE_HOOK(delegate_WorldShortTurn);
+DEFINE_DELEGATE_HOOK(delegate_Turn);
+DEFINE_DELEGATE_HOOK(delegate_HipAttack);
+DEFINE_DELEGATE_HOOK(delegate_HipAttackEnd);
+DEFINE_DELEGATE_HOOK(delegate_Slip);
+DEFINE_DELEGATE_HOOK(delegate_RollSlip);
+DEFINE_DELEGATE_HOOK(delegate_WallSlide);
+DEFINE_DELEGATE_HOOK(delegate_WallJump);
+DEFINE_DELEGATE_HOOK(delegate_WallClimb);
+DEFINE_DELEGATE_HOOK(delegate_WallClimbSlide);
+DEFINE_DELEGATE_HOOK(delegate_WallClimbFall);
+DEFINE_DELEGATE_HOOK(delegate_WallClimbTopJump);
+DEFINE_DELEGATE_HOOK(delegate_WallClimbTopCrouchJump);
+DEFINE_DELEGATE_HOOK(delegate_ClimbAttack);
+DEFINE_DELEGATE_HOOK(delegate_ClimbAttackSwim);
+DEFINE_DELEGATE_HOOK(delegate_ClimbJumpAttack);
+DEFINE_DELEGATE_HOOK(delegate_ClimbSlidingAttack);
+DEFINE_DELEGATE_HOOK(delegate_ClimbRollingAttack);
+DEFINE_DELEGATE_HOOK(delegate_ClimbBodyAttack);
+DEFINE_DELEGATE_HOOK(delegate_ClimbBodyAttackLand);
+DEFINE_DELEGATE_HOOK(delegate_WallHit);
+DEFINE_DELEGATE_HOOK(delegate_WallHitLand);
+DEFINE_DELEGATE_HOOK(delegate_Drag);
+DEFINE_DELEGATE_HOOK(delegate_ObjJumpDai);
+DEFINE_DELEGATE_HOOK(delegate_SideJumpDai);
+DEFINE_DELEGATE_HOOK(delegate_PlayerJumpDai);
+DEFINE_DELEGATE_HOOK(delegate_Swim);
+DEFINE_DELEGATE_HOOK(delegate_CrouchSwimJump);
+DEFINE_DELEGATE_HOOK(delegate_Fire);
+DEFINE_DELEGATE_HOOK(delegate_FireSwim);
+DEFINE_DELEGATE_HOOK(delegate_Throw);
+DEFINE_DELEGATE_HOOK(delegate_FrogWalk);
+DEFINE_DELEGATE_HOOK(delegate_FrogSwim);
+DEFINE_DELEGATE_HOOK(delegate_Flying);
+DEFINE_DELEGATE_HOOK(delegate_FlyingSlowFall);
+DEFINE_DELEGATE_HOOK(delegate_FlyingWallStick);
+DEFINE_DELEGATE_HOOK(delegate_LiftUp);
+DEFINE_DELEGATE_HOOK(delegate_LiftUpSnowBall);
+DEFINE_DELEGATE_HOOK(delegate_LiftUpCloud);
+DEFINE_DELEGATE_HOOK(delegate_LiftUpBomb);
+DEFINE_DELEGATE_HOOK(delegate_CarryPlayer);
 
 void init() {
     trace_log.init("trace.csv");
@@ -65,12 +114,61 @@ void init() {
         "out_field_490,out_field_484,out_field_488,out_buffered_action,"
         "out_carried_object,out_frame_counter\n", 660);
 
-    // Install hooks via symbols (known working set of 5)
+    // Install all 53 delegate hooks (pool size 0x80 = 128 trampolines)
     delegate_Walk_hook.installAtSym<"delegate_Walk">();
+    delegate_Landing_hook.installAtSym<"delegate_Landing">();
     delegate_Crouch_hook.installAtSym<"delegate_Crouch">();
     delegate_CrouchEnd_hook.installAtSym<"delegate_CrouchEnd">();
     delegate_CrouchJump_hook.installAtSym<"delegate_CrouchJump">();
-    delegate_Landing_hook.installAtSym<"delegate_Landing">();
+    delegate_CrouchJumpEnd_hook.installAtSym<"delegate_CrouchJumpEnd">();
+    delegate_CrouchSwim_hook.installAtSym<"delegate_CrouchSwim">();
+    delegate_CrouchSwimEnd_hook.installAtSym<"delegate_CrouchSwimEnd">();
+    delegate_CrouchSwimWalk_hook.installAtSym<"delegate_CrouchSwimWalk">();
+    delegate_Rolling_hook.installAtSym<"delegate_Rolling">();
+    delegate_BroadJump_hook.installAtSym<"delegate_BroadJump">();
+    delegate_BroadJumpLand_hook.installAtSym<"delegate_BroadJumpLand">();
+    delegate_StartFall_hook.installAtSym<"delegate_StartFall">();
+    delegate_WorldShortTurn_hook.installAtSym<"delegate_WorldShortTurn">();
+    delegate_Turn_hook.installAtSym<"delegate_Turn">();
+    delegate_HipAttack_hook.installAtSym<"delegate_HipAttack">();
+    delegate_HipAttackEnd_hook.installAtSym<"delegate_HipAttackEnd">();
+    delegate_Slip_hook.installAtSym<"delegate_Slip">();
+    delegate_RollSlip_hook.installAtSym<"delegate_RollSlip">();
+    delegate_WallSlide_hook.installAtSym<"delegate_WallSlide">();
+    delegate_WallJump_hook.installAtSym<"delegate_WallJump">();
+    delegate_WallClimb_hook.installAtSym<"delegate_WallClimb">();
+    delegate_WallClimbSlide_hook.installAtSym<"delegate_WallClimbSlide">();
+    delegate_WallClimbFall_hook.installAtSym<"delegate_WallClimbFall">();
+    delegate_WallClimbTopJump_hook.installAtSym<"delegate_WallClimbTopJump">();
+    delegate_WallClimbTopCrouchJump_hook.installAtSym<"delegate_WallClimbTopCrouchJump">();
+    delegate_ClimbAttack_hook.installAtSym<"delegate_ClimbAttack">();
+    delegate_ClimbAttackSwim_hook.installAtSym<"delegate_ClimbAttackSwim">();
+    delegate_ClimbJumpAttack_hook.installAtSym<"delegate_ClimbJumpAttack">();
+    delegate_ClimbSlidingAttack_hook.installAtSym<"delegate_ClimbSlidingAttack">();
+    delegate_ClimbRollingAttack_hook.installAtSym<"delegate_ClimbRollingAttack">();
+    delegate_ClimbBodyAttack_hook.installAtSym<"delegate_ClimbBodyAttack">();
+    delegate_ClimbBodyAttackLand_hook.installAtSym<"delegate_ClimbBodyAttackLand">();
+    delegate_WallHit_hook.installAtSym<"delegate_WallHit">();
+    delegate_WallHitLand_hook.installAtSym<"delegate_WallHitLand">();
+    delegate_Drag_hook.installAtSym<"delegate_Drag">();
+    delegate_ObjJumpDai_hook.installAtSym<"delegate_ObjJumpDai">();
+    delegate_SideJumpDai_hook.installAtSym<"delegate_SideJumpDai">();
+    delegate_PlayerJumpDai_hook.installAtSym<"delegate_PlayerJumpDai">();
+    delegate_Swim_hook.installAtSym<"delegate_Swim">();
+    delegate_CrouchSwimJump_hook.installAtSym<"delegate_CrouchSwimJump">();
+    delegate_Fire_hook.installAtSym<"delegate_Fire">();
+    delegate_FireSwim_hook.installAtSym<"delegate_FireSwim">();
+    delegate_Throw_hook.installAtSym<"delegate_Throw">();
+    delegate_FrogWalk_hook.installAtSym<"delegate_FrogWalk">();
+    delegate_FrogSwim_hook.installAtSym<"delegate_FrogSwim">();
+    delegate_Flying_hook.installAtSym<"delegate_Flying">();
+    delegate_FlyingSlowFall_hook.installAtSym<"delegate_FlyingSlowFall">();
+    delegate_FlyingWallStick_hook.installAtSym<"delegate_FlyingWallStick">();
+    delegate_LiftUp_hook.installAtSym<"delegate_LiftUp">();
+    delegate_LiftUpSnowBall_hook.installAtSym<"delegate_LiftUpSnowBall">();
+    delegate_LiftUpCloud_hook.installAtSym<"delegate_LiftUpCloud">();
+    delegate_LiftUpBomb_hook.installAtSym<"delegate_LiftUpBomb">();
+    delegate_CarryPlayer_hook.installAtSym<"delegate_CarryPlayer">();
 }
 
 void flush() {
