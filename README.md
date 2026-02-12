@@ -39,12 +39,17 @@ sys/              - LibHakkun (submodule)
 
 ## Build
 
-Requires the [devkitPro](https://devkitpro.org/) AArch64 toolchain.
+Requires `clang`, `lld`, and `llvm-ar` (cross-compiles to AArch64 natively — no devkitPro needed).
+
+On Ubuntu/WSL:
+```bash
+sudo apt install clang lld llvm ninja-build cmake
+```
 
 ```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -GNinja
-ninja
+git submodule update --init --recursive
+cmake -B build -DCMAKE_BUILD_TYPE=Release -GNinja
+ninja -C build
 ```
 
 Output: `build/smm2-hooks.nso` → install as ExeFS `subsdk4`.
