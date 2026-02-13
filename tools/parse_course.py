@@ -199,9 +199,20 @@ def parse_area(area_data):
         })
     a['actors'] = actors
 
-    # Parse tiles (at offset 0x48 + 0x20*2600 + other data sections)
-    # Tile data starts after actors + otoasobi + snake + dokan + pakkun + bikkuri + orbit + pad + tiles_off
-    # For now skip tiles, actors are most important
+    # Parse tiles
+    # Layout: header(0x48) + actors(0x14820) + otoasobi(0x4B0) + snake(0x12EC)
+    #       + dokan(0xE420) + pakkun(0x348) + bikkuri(0x1B8) + orbit(0x1B8)
+    TILE_OFFSET = 0x247A4
+    tiles = []
+    for i in range(min(a['tile_count'], 4000)):
+        off = TILE_OFFSET + i * 4
+        raw = area_data[off:off + 4]
+        if len(raw) < 4:
+            break
+        x, y = raw[0], raw[1]
+        tile_id = struct.unpack_from('<H', raw, 2)[0]
+        tiles.append({'x': x, 'y': y, 'id': tile_id})
+    a['tiles'] = tiles
     return a
 
 
@@ -218,50 +229,83 @@ def parse_course(dec):
 # ASCII map renderer
 # ============================================================================
 def render_map(area, width=120, height=30):
-    """Render an ASCII map of the area."""
-    actors = area['actors']
-    if not actors:
-        print("  (no actors)")
+    """Render a tile-based ASCII map of the area."""
+    tiles = area.get('tiles', [])
+    actors = area.get('actors', [])
+
+    if not tiles and not actors:
+        print("  (empty area)")
         return
 
-    # Find bounds
-    min_x = min(a['x'] for a in actors)
-    max_x = max(a['x'] + a['w'] * 16 for a in actors)
-    min_y = min(a['y'] for a in actors)
-    max_y = max(a['y'] + a['h'] * 16 for a in actors)
+    # For tile map, use direct tile coordinates (each tile = 1 grid cell)
+    if tiles:
+        max_x = max(t['x'] for t in tiles)
+        max_y = max(t['y'] for t in tiles)
 
-    x_range = max_x - min_x or 1
-    y_range = max_y - min_y or 1
+        # Scale to fit terminal
+        scale_x = max(1, (max_x + 2) // width + 1) if max_x >= width else 1
+        cols = min(max_x + 2, width)
+        rows = max_y + 2
 
-    grid = [[' '] * width for _ in range(height)]
+        grid = [[' '] * cols for _ in range(rows)]
 
-    for a in actors:
-        cx = int((a['x'] - min_x) / x_range * (width - 1))
-        cy = height - 1 - int((a['y'] - min_y) / y_range * (height - 1))
-        cx = max(0, min(width - 1, cx))
-        cy = max(0, min(height - 1, cy))
+        for t in tiles:
+            gx = t['x'] // scale_x
+            gy = t['y']
+            if 0 <= gx < cols and 0 <= gy < rows:
+                grid[gy][gx] = '#'
 
-        char = '#'
-        t = a['type']
-        if t in (7,): char = '='      # Ground
-        elif t in (6,): char = 'H'    # HardBlock
-        elif t in (25, 88): char = '-' # Semisolid
-        elif t in (9,): char = 'P'    # Pipe
-        elif t in (30,): char = 'G'   # GoalPole
-        elif t in (34,): char = 'M'   # Player start
-        elif t in (0, 1, 2, 3): char = 'E'  # Enemies
-        elif t in (8, 18, 91, 92, 93): char = 'c'  # Coins
-        elif t in (27, 63): char = 'D' # Doors
-        elif t in (75, 76, 77, 78): char = '/'  # Slopes
-        elif t in (5, 4): char = '?'   # Question/Block
-        elif t in (86,): char = '~'    # Track
-        elif t in (61,): char = '>'    # Conveyor
+        # Place actors on tile grid (convert from position units to tile units)
+        for a in actors:
+            gx = int(a['x'] / 16) // scale_x
+            gy = int(a['y'] / 16)
+            if 0 <= gx < cols and 0 <= gy < rows:
+                char = '*'
+                t = a['type']
+                if t in (0, 1, 2, 3): char = 'E'
+                elif t in (9,): char = 'P'
+                elif t in (30,): char = 'G'
+                elif t in (34,): char = 'M'
+                elif t in (8, 18, 91): char = 'c'
+                grid[gy][gx] = char
 
-        grid[cy][cx] = char
+        # Print Y-inverted (y=0 at bottom)
+        for y in range(rows - 1, -1, -1):
+            print(f'{y:2d}|' + ''.join(grid[y]))
+        print(f'  +' + '-' * cols)
+        if scale_x > 1:
+            print(f'  (scale: 1 char = {scale_x} tiles)')
+    else:
+        # Actor-only map (use position coordinates)
+        min_x = min(a['x'] for a in actors)
+        max_x = max(a['x'] for a in actors) or 1
+        min_y = min(a['y'] for a in actors)
+        max_y = max(a['y'] for a in actors) or 1
 
-    for row in grid:
-        print(''.join(row))
-    print(f"  x: {min_x:.0f} to {max_x:.0f}  y: {min_y:.0f} to {max_y:.0f}")
+        x_range = max_x - min_x or 1
+        y_range = max_y - min_y or 1
+
+        grid = [[' '] * width for _ in range(height)]
+
+        for a in actors:
+            cx = int((a['x'] - min_x) / x_range * (width - 1))
+            cy = int((a['y'] - min_y) / y_range * (height - 1))
+            cx = max(0, min(width - 1, cx))
+            cy = max(0, min(height - 1, cy))
+
+            char = '#'
+            t = a['type']
+            if t in (6,): char = 'H'
+            elif t in (25, 88): char = '-'
+            elif t in (9,): char = 'P'
+            elif t in (30,): char = 'G'
+            elif t in (34,): char = 'M'
+            elif t in (0, 1, 2, 3): char = 'E'
+            grid[cy][cx] = char
+
+        for y in range(height - 1, -1, -1):
+            print(''.join(grid[y]))
+        print(f"  x: {min_x:.0f} to {max_x:.0f}  y: {min_y:.0f} to {max_y:.0f}")
 
 
 # ============================================================================
@@ -287,6 +331,7 @@ def main():
     parser.add_argument('--json', action='store_true', help='Output as JSON')
     parser.add_argument('--map', action='store_true', help='Show ASCII map')
     parser.add_argument('--actors', action='store_true', help='List all actors')
+    parser.add_argument('--tiles', action='store_true', help='List all tiles')
     parser.add_argument('--save-dir', type=str, help='Override save directory')
     args = parser.parse_args()
 
@@ -344,6 +389,11 @@ def main():
         print(f"\nOverworld actors:")
         for i, a in enumerate(ow['actors']):
             print(f"  [{i:3d}] {a['name']:20s} ({a['x']:7.1f},{a['y']:6.1f}) {a['w']}x{a['h']} flags=0x{a['flags']:08x}")
+
+    if args.tiles:
+        print(f"\nOverworld tiles:")
+        for i, t in enumerate(ow['tiles']):
+            print(f"  [{i:3d}] ({t['x']:3d},{t['y']:3d}) id=0x{t['id']:04x}")
 
     if args.map:
         print(f"\nOverworld map:")
