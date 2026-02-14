@@ -44,7 +44,9 @@ void update(uint32_t frame) {
     blk.input_poll_count = tas::input_poll_count();
     blk.real_game_phase = game_phase::read_phase();
 
-    if (s_player != 0) {
+    // Guard: only read player fields when game phase is valid (3=editor/play, 4=coursebot)
+    // During theme changes/scene transitions, player pointer may be dangling
+    if (s_player != 0 && (blk.real_game_phase == 3 || blk.real_game_phase == 4)) {
         blk.player_state  = player::read<uint32_t>(s_player, player::off::cur_state);
         blk.powerup_id    = player::read<uint32_t>(s_player, player::off::powerup_id);
         blk.pos_x         = player::read<float>(s_player, player::off::pos_x);

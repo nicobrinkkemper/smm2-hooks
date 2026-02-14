@@ -566,26 +566,28 @@ def _goto_playing(current):
 def _goto_editor(current):
     """Get into Course Maker editor."""
     if current == STATE_PLAYING:
-        # Long MINUS → pause menu → Edit Course (DOWN x2 → A)
+        # Long MINUS → pause menu: Start Over / Exit Course / Edit Course
+        # Need DOWN x2 to reach Edit Course (DOWN x1 = Exit Course!)
         print("  Playing → Pause → Edit Course")
         hold("MINUS", 1200)
-        wait(1500)
+        wait(2000)              # Wait for pause menu to fully render
         press("DOWN", 100)
-        wait(500)
+        wait(800)
         press("DOWN", 100)
-        wait(500)
+        wait(800)
         press("A", 100)         # Edit Course
-        wait(2000)
+        wait(3000)              # Wait for editor to load
         _save_state(STATE_EDITOR)
         return True
     elif current == STATE_PAUSE:
+        # Pause menu: Start Over / Exit Course / Edit Course
         print("  Pause → Edit Course (DOWN x2 → A)")
         press("DOWN", 100)
-        wait(500)
+        wait(800)
         press("DOWN", 100)
-        wait(500)
+        wait(800)
         press("A", 100)
-        wait(2000)
+        wait(3000)
         _save_state(STATE_EDITOR)
         return True
     elif current == STATE_COURSEBOT:
@@ -624,13 +626,12 @@ def _goto_coursebot(current):
         _save_state(STATE_MAIN_MENU)
         return _goto_coursebot(STATE_MAIN_MENU)
     elif current == STATE_PLAYING:
-        # Playing → pause → exit → main menu → coursebot
-        print("  Playing → Pause (long MINUS)")
+        # Playing → pause → Exit Course (DOWN x1) → main menu → coursebot
+        print("  Playing → Pause → Exit Course")
         hold("MINUS", 1200)
-        wait(1500)
-        # Exit Course is the 2nd option
-        press("DOWN", 100)
-        wait(500)
+        wait(2000)
+        press("DOWN", 100)      # Start Over → Exit Course
+        wait(800)
         press("A", 100)         # Exit Course
         wait(3000)
         _save_state(STATE_MAIN_MENU)

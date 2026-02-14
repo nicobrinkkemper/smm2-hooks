@@ -1,7 +1,7 @@
 #include "smm2/log.h"
 #include "smm2/player.h"
 #include "smm2/frame.h"
-
+#include "smm2/game_phase.h"
 #include "smm2/status.h"
 #include "hk/hook/Trampoline.h"
 #include "hk/ro/RoUtil.h"
@@ -82,7 +82,10 @@ void per_frame(uint32_t frame) {
     }
 
     // Dump player fields every 10 frames if we have a tracked player
-    if (tracked_player != 0 && frame % 10 == 0) {
+    // Guard: skip if game phase is not playing (phase 3=editor/play, 4=coursebot play)
+    // During scene transitions/rebuilds (theme change, etc), player pointer may be dangling
+    int phase = smm2::game_phase::read_phase();
+    if (tracked_player != 0 && frame % 10 == 0 && (phase == 3 || phase == 4)) {
         uint32_t state = player::read<uint32_t>(tracked_player, player::off::cur_state);
         uint32_t state_frames = player::read<uint32_t>(tracked_player, player::off::state_frames);
         uint32_t del_state = player::read<uint32_t>(tracked_player, player::off::powerup_id);
