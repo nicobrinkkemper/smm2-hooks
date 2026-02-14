@@ -333,68 +333,56 @@ def coursebot_load_test_level():
 
 
 def full_load_test_level():
-    """Full automation: from title screen to test level in play mode.
-    Sequence: title-skip → main menu → coursebot → load test → play
+    """Full automation: title screen → first coursebot level → play mode.
     
-    Uses console PlayReports for scene awareness (scene numbers in output).
+    Fixed button sequence (from title screen):
+    L+R → A → RIGHT → A → A → A → long-hold MINUS (play from start)
+    
+    This loads the first course in "My Courses" in Coursebot.
+    Make sure the test level is the most recent / first in the list.
     """
-    print("=== Full level load automation ===")
+    print("=== Loading first coursebot level ===")
     
-    # Step 1: Skip title
-    print("[1/5] Skipping title screen...")
+    # L+R to dismiss title
+    print("[1/6] L+R to skip title...")
+    press("L,R", 200)
+    wait(3000)
+    
+    # A to enter (past user select / into main menu)
+    print("[2/6] A to enter main menu...")
     press("A", 100)
     wait(3000)
-    press("A", 100) 
-    wait(2000)
     
-    # Step 2: We should be in Course Maker (scene 0→4)
-    # Check if we have a player (= Course Maker loaded)
-    s = read_status()
-    if s and s.get('has_player'):
-        print("[2/5] In Course Maker — exiting to main menu...")
-        press("B", 100)
-        wait(500)
-        press("B", 100)  
-        wait(500)
-        press("A", 100)  # Confirm exit
-        wait(3000)
-    else:
-        print("[2/5] Waiting for game to load...")
-        wait(5000)
+    # RIGHT to move to Coursebot
+    print("[3/6] RIGHT to Coursebot...")
+    press("RIGHT", 100)
+    wait(500)
     
-    # Step 3: Navigate to Coursebot from main menu
-    print("[3/5] Navigating to Coursebot...")
-    # Main menu: move selection to Coursebot
-    press("DOWN", 100)
-    wait(300)
-    press("DOWN", 100)
-    wait(300)
+    # A to enter Coursebot
+    print("[4/6] A to open Coursebot...")
     press("A", 100)
-    wait(4000)  # Coursebot loading
+    wait(4000)
     
-    # Step 4: Select and load a course
-    print("[4/5] Selecting first course...")
-    press("A", 100)  # Select course
+    # A to select first course
+    print("[5/6] A to select first course...")
+    press("A", 100)
     wait(1500)
-    press("A", 100)  # Play/Edit
-    wait(4000)  # Level loading
     
-    # Step 5: Enter play mode
-    print("[5/5] Entering play mode...")
-    s = read_status()
-    if s:
-        print(f"  Status: frame={s['frame']} player={'yes' if s.get('has_player') else 'no'} state={s['player_state']}")
+    # A to load it
+    print("[5/6] A to load...")
+    press("A", 100)
+    wait(4000)
     
-    # If we're in editor (state 43), enter play mode
-    if s and s.get('has_player') and s['player_state'] == 43:
-        hold("MINUS", 1500)  # Long press = reset + play
-        wait(2000)
+    # Long-hold MINUS to play from start
+    print("[6/6] Long MINUS to play from start...")
+    hold("MINUS", 1500)
+    wait(3000)
     
     s = read_status()
     if s and s.get('has_player'):
         print(f"=== Ready! Player at ({s['pos_x']:.0f}, {s['pos_y']:.0f}) state={s['player_state']} ===")
     else:
-        print("=== Level loaded but no player yet — may need manual navigation ===")
+        print("=== Navigation may have failed — check screenshot ===")
 
 
 def reset_level():
