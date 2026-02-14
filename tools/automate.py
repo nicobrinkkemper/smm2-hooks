@@ -154,7 +154,7 @@ def read_status():
         state_frames, flags_byte = struct.unpack_from('<IB', data, 32)
         in_water = flags_byte
         is_dead, is_goal, has_player = struct.unpack_from('<BBB', data, 37)
-        facing, gravity, buffered, input_polls = struct.unpack_from('<ffII', data, 40)
+        facing, gravity, buffered, input_polls, real_phase = struct.unpack_from('<ffIIi', data, 40)
         result.update({
             'state_frames': state_frames,
             'in_water': in_water,
@@ -165,6 +165,7 @@ def read_status():
             'gravity': gravity,
             'buffered_action': buffered,
             'input_polls': input_polls,
+            'real_game_phase': real_phase,  # 0=title, 3=course maker, 4=story/coursebot, -1=loading
         })
     return result
 
@@ -333,50 +334,101 @@ def coursebot_load_test_level():
 
 
 def full_load_test_level():
-    """Full automation: title screen → first coursebot level → play mode.
+    """State-aware automation to get into the test level in play mode.
     
-    Fixed button sequence (from title screen):
-    L+R → A → RIGHT → A → A → A → long-hold MINUS (play from start)
+    Detects current game state and takes the shortest path:
+    - Title screen (phase 0) → full navigation: L+R, A, RIGHT, A, A, A, hold MINUS
+    - Course Maker (phase 3) with player → already in level, just hold MINUS to play
+    - Course Maker (phase 3) no player → need to load from coursebot
+    - Loading (phase -1) → wait
     
-    This loads the first course in "My Courses" in Coursebot.
-    Make sure the test level is the most recent / first in the list.
+    The test level should be the first course in Coursebot "My Courses".
     """
-    print("=== Loading first coursebot level ===")
+    print("=== Smart level loader ===")
     
-    # L+R to dismiss title
-    print("[1/6] L+R to skip title...")
-    press("L,R", 200)
-    wait(3000)
+    s = read_status()
+    phase = s.get('real_game_phase', -99) if s else -99
+    has_player = s.get('has_player', False) if s else False
+    state = s.get('player_state', 0) if s else 0
     
-    # A to enter (past user select / into main menu)
-    print("[2/6] A to enter main menu...")
-    press("A", 100)
-    wait(3000)
+    print(f"  Current: phase={phase} player={has_player} state={state}")
     
-    # RIGHT to move to Coursebot
-    print("[3/6] RIGHT to Coursebot...")
-    press("RIGHT", 100)
-    wait(500)
+    # Already in Course Maker with player in play mode?
+    if phase == 3 and has_player and state not in (0, 43):
+        print("  Already playing in Course Maker! Nothing to do.")
+        print(f"=== Ready! Player at ({s['pos_x']:.0f}, {s['pos_y']:.0f}) state={state} ===")
+        return
     
-    # A to enter Coursebot
-    print("[4/6] A to open Coursebot...")
-    press("A", 100)
-    wait(4000)
+    # In Course Maker editor mode (state 43) — just play
+    if phase == 3 and has_player and state == 43:
+        print("  In editor mode — entering play...")
+        hold("MINUS", 1500)
+        wait(3000)
+        s = read_status()
+        if s and s.get('has_player'):
+            print(f"=== Ready! Player at ({s['pos_x']:.0f}, {s['pos_y']:.0f}) state={s['player_state']} ===")
+        return
     
-    # A to select first course
-    print("[5/6] A to select first course...")
-    press("A", 100)
-    wait(1500)
+    # Title screen (phase 0) or unknown — full navigation
+    if phase == 0 or phase == -99:
+        print("  Title screen — full navigation...")
+        # L+R to dismiss title
+        press("L,R", 200)
+        wait(4000)
+        # A to get past user select
+        press("A", 100)
+        wait(3000)
+        # RIGHT to Coursebot
+        press("RIGHT", 100)
+        wait(500)
+        # A to enter Coursebot
+        press("A", 100)
+        wait(4000)
+        # A to select first course
+        press("A", 100)
+        wait(1500)
+        # A to load
+        press("A", 100)
+        wait(4000)
+        # Long MINUS to play from start
+        hold("MINUS", 1500)
+        wait(3000)
     
-    # A to load it
-    print("[5/6] A to load...")
-    press("A", 100)
-    wait(4000)
+    # Phase 3 but no player — in Course Maker without a level?
+    elif phase == 3 and not has_player:
+        print("  In Course Maker but no player — trying to enter play...")
+        hold("MINUS", 1500)
+        wait(3000)
     
-    # Long-hold MINUS to play from start
-    print("[6/6] Long MINUS to play from start...")
-    hold("MINUS", 1500)
-    wait(3000)
+    # Loading — wait for a real phase
+    elif phase == -1:
+        print("  Loading... waiting for game to finish booting...")
+        for _ in range(30):  # up to 30s
+            wait(1000)
+            s = read_status()
+            phase = s.get('real_game_phase', -1) if s else -1
+            if phase != -1:
+                print(f"  Game loaded! Phase={phase} — restarting navigation...")
+                return full_load_test_level()  # recurse with new state
+        print("  Timed out waiting for game to load")
+        return
+    
+    else:
+        print(f"  Unknown phase {phase} — attempting full navigation...")
+        press("L,R", 200)
+        wait(4000)
+        press("A", 100)
+        wait(3000)
+        press("RIGHT", 100)
+        wait(500)
+        press("A", 100)
+        wait(4000)
+        press("A", 100)
+        wait(1500)
+        press("A", 100)
+        wait(4000)
+        hold("MINUS", 1500)
+        wait(3000)
     
     s = read_status()
     if s and s.get('has_player'):
@@ -471,6 +523,9 @@ def main():
                 print(f"Water:   {s['in_water']}  Facing: {s.get('facing', 0):.1f}  Gravity: {s.get('gravity', 0):.2f}")
                 print(f"Player:  {'yes' if s.get('has_player') else 'no'}")
                 print(f"Polls:   {s.get('input_polls', 0)}")
+                phase = s.get('real_game_phase', -99)
+                phase_str = {-1: 'loading', 0: 'title', 3: 'course maker', 4: 'story/coursebot'}.get(phase, f'unknown({phase})')
+                print(f"Phase:   {phase} ({phase_str})")
         else:
             print("No status data (game not running or hooks not active)")
     else:

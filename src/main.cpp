@@ -58,5 +58,5 @@ extern "C" void hkMain() {
     // smm2::reimpl::init();
     smm2::tas::init();              // hooks GetNpadStates (input injection)
     smm2::status::init();           // writes status.bin from procFrame_
-    // smm2::game_phase::init();    // reads GamePhaseManager
+    smm2::game_phase::init();      // reads GamePhaseManager — needed for scene detection
 }

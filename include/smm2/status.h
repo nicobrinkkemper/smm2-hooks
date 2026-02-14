@@ -45,7 +45,8 @@ struct StatusBlock {
     float gravity;
     uint32_t buffered_action;
     uint32_t input_poll_count;  // increments when GetNpadStates is called (=play mode)
-    uint32_t _pad[2];
+    int32_t  real_game_phase;   // from GamePhaseManager: 0=title, 3=course maker, 4=story/coursebot
+    uint32_t _pad[1];
 };
 
 static_assert(sizeof(StatusBlock) == 64, "StatusBlock must be 64 bytes");

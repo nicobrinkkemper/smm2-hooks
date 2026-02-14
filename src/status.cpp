@@ -1,6 +1,7 @@
 #include "smm2/status.h"
 #include "smm2/player.h"
 #include "smm2/tas.h"
+#include "smm2/game_phase.h"
 #include "nn/fs.h"
 #include <cstring>
 
@@ -41,6 +42,7 @@ void update(uint32_t frame) {
     blk.frame = frame;
     blk.game_phase = s_mode; // 0=unknown, 1=playing, 2=goal, 3=dead
     blk.input_poll_count = tas::input_poll_count();
+    blk.real_game_phase = game_phase::read_phase();
 
     if (s_player != 0) {
         blk.player_state  = player::read<uint32_t>(s_player, player::off::cur_state);
