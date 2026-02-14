@@ -31,6 +31,10 @@ namespace smm2 { namespace game_phase {
     void per_frame(uint32_t frame);
 }}
 
+namespace smm2 { namespace course_data {
+    void init();
+}}
+
 static void on_frame(uint32_t frame) {
     // smm2::state_logger::per_frame(frame);  // DISABLED — crashes during scene transitions
     smm2::game_phase::per_frame(frame);
@@ -59,4 +63,5 @@ extern "C" void hkMain() {
     smm2::tas::init();              // hooks GetNpadStates (input injection)
     smm2::status::init();           // writes status.bin from procFrame_
     smm2::game_phase::init();      // reads GamePhaseManager — needed for scene detection
+    smm2::course_data::init();     // hooks WriteFile to intercept BCD saves
 }
