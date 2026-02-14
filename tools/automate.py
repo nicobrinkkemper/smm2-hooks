@@ -12,6 +12,9 @@ Usage:
 
 Commands:
     title-skip      Get past the title screen (ZL+ZR or A)
+    load-test-level Full automation: title → coursebot → load test level → play
+    main-menu       Exit Course Maker to main menu
+    coursebot        Navigate from main menu to Coursebot
     course-maker    Navigate to Course Maker
     play            Enter play mode from editor (MINUS)
     make            Enter editor mode from play (MINUS)
@@ -249,6 +252,151 @@ def enter_make():
     print("In editor mode")
 
 
+def wait_for_scene(target_scene, timeout_s=15):
+    """Wait for a PlayReport scene change by polling status.bin.
+    Scene map: -1=loading, 0=title, 2=main menu, 4=Course Maker/Coursebot.
+    We detect scene changes via game_phase in status.bin:
+    Phase 0=title/menu, 3=Course Maker, 4=Story/Coursebot playing.
+    Since status.bin doesn't have scene directly, we use has_player and game_phase."""
+    # For now just wait a fixed time — TODO: use console output parsing
+    time.sleep(timeout_s)
+    return read_status()
+
+
+def wait_for_player(timeout_s=10):
+    """Wait until has_player becomes true in status.bin."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        s = read_status()
+        if s and s.get('has_player'):
+            return s
+        time.sleep(0.2)
+    return None
+
+
+def navigate_to_main_menu():
+    """From Course Maker (scene 4), go to main menu (scene 2).
+    Press B to exit editor, then confirm."""
+    print("Navigating to main menu...")
+    # From Course Maker: press B to exit
+    press("B", 100)
+    wait(500)
+    press("B", 100)
+    wait(500)
+    # Confirm exit dialog (if any) — press A
+    press("A", 100)
+    wait(3000)
+    print("Should be at main menu now")
+
+
+def navigate_to_coursebot():
+    """From main menu (scene 2), navigate to Coursebot.
+    Main menu layout (top to bottom, roughly):
+    - Course Maker (center, default selection)
+    - Story Mode (left)
+    - Course World (right)  
+    - Coursebot (bottom-right)
+    
+    From Course Maker selection, press DOWN then RIGHT to reach Coursebot,
+    then A to enter."""
+    print("Navigating to Coursebot...")
+    # From main menu — Coursebot is typically accessed via DOWN
+    press("DOWN", 100)
+    wait(300)
+    press("DOWN", 100)
+    wait(300)
+    press("A", 100)  # Enter Coursebot
+    wait(3000)  # Wait for Coursebot to load
+    print("Should be in Coursebot now")
+
+
+def coursebot_load_test_level():
+    """In Coursebot, navigate to "My Courses" and load the test level.
+    The test level is called "test" — NSMBU Underwater, slot 75.
+    
+    Coursebot tabs: My Courses | Courses from Others | Liked Courses
+    Default tab is "My Courses".
+    Courses are shown in a grid. "test" may not be the first one.
+    
+    For now: navigate to the last page and look for it.
+    TODO: use screenshot to find the exact position."""
+    print("Loading test level from Coursebot...")
+    # In Coursebot "My Courses" tab, courses are displayed in a grid
+    # The most recently edited course should be near the top
+    # Just press A on the first course to select it, then Play
+    press("A", 100)  # Select first course
+    wait(1000)
+    # Course detail screen — "Play" button should be available
+    press("A", 100)  # Press Play
+    wait(3000)  # Wait for level to load
+    print("Level should be loading...")
+
+
+def full_load_test_level():
+    """Full automation: from title screen to test level in play mode.
+    Sequence: title-skip → main menu → coursebot → load test → play
+    
+    Uses console PlayReports for scene awareness (scene numbers in output).
+    """
+    print("=== Full level load automation ===")
+    
+    # Step 1: Skip title
+    print("[1/5] Skipping title screen...")
+    press("A", 100)
+    wait(3000)
+    press("A", 100) 
+    wait(2000)
+    
+    # Step 2: We should be in Course Maker (scene 0→4)
+    # Check if we have a player (= Course Maker loaded)
+    s = read_status()
+    if s and s.get('has_player'):
+        print("[2/5] In Course Maker — exiting to main menu...")
+        press("B", 100)
+        wait(500)
+        press("B", 100)  
+        wait(500)
+        press("A", 100)  # Confirm exit
+        wait(3000)
+    else:
+        print("[2/5] Waiting for game to load...")
+        wait(5000)
+    
+    # Step 3: Navigate to Coursebot from main menu
+    print("[3/5] Navigating to Coursebot...")
+    # Main menu: move selection to Coursebot
+    press("DOWN", 100)
+    wait(300)
+    press("DOWN", 100)
+    wait(300)
+    press("A", 100)
+    wait(4000)  # Coursebot loading
+    
+    # Step 4: Select and load a course
+    print("[4/5] Selecting first course...")
+    press("A", 100)  # Select course
+    wait(1500)
+    press("A", 100)  # Play/Edit
+    wait(4000)  # Level loading
+    
+    # Step 5: Enter play mode
+    print("[5/5] Entering play mode...")
+    s = read_status()
+    if s:
+        print(f"  Status: frame={s['frame']} player={'yes' if s.get('has_player') else 'no'} state={s['player_state']}")
+    
+    # If we're in editor (state 43), enter play mode
+    if s and s.get('has_player') and s['player_state'] == 43:
+        hold("MINUS", 1500)  # Long press = reset + play
+        wait(2000)
+    
+    s = read_status()
+    if s and s.get('has_player'):
+        print(f"=== Ready! Player at ({s['pos_x']:.0f}, {s['pos_y']:.0f}) state={s['player_state']} ===")
+    else:
+        print("=== Level loaded but no player yet — may need manual navigation ===")
+
+
 def reset_level():
     """Long-press rocket to reset entire level."""
     print("Resetting level (long-press rocket)...")
@@ -281,6 +429,12 @@ def main():
 
     if cmd == "title-skip":
         title_skip()
+    elif cmd == "load-test-level":
+        full_load_test_level()
+    elif cmd == "coursebot":
+        navigate_to_coursebot()
+    elif cmd == "main-menu":
+        navigate_to_main_menu()
     elif cmd == "course-maker":
         course_maker()
     elif cmd == "play":

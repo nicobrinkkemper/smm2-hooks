@@ -52,10 +52,11 @@ extern "C" void hkMain() {
     smm2::frame::init(on_frame);
 
     // Init plugins
-    smm2::state_logger::init();
-    smm2::func_trace::init();
-    smm2::reimpl::init();
-    smm2::tas::init();  // loads tas.csv if present, otherwise no-op
-    smm2::status::init();
-    smm2::game_phase::init();
+    // Minimal config — bisecting crash
+    smm2::state_logger::init();     // hooks PlayerObject_changeState — needed for player tracking
+    // smm2::func_trace::init();    // 49 delegate hooks — known crash
+    // smm2::reimpl::init();
+    smm2::tas::init();              // hooks GetNpadStates (input injection)
+    smm2::status::init();           // writes status.bin from procFrame_
+    // smm2::game_phase::init();    // reads GamePhaseManager
 }
