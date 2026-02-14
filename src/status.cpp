@@ -2,6 +2,7 @@
 #include "smm2/player.h"
 #include "smm2/tas.h"
 #include "smm2/game_phase.h"
+#include "hk/ro/RoUtil.h"
 #include "nn/fs.h"
 #include <cstring>
 
@@ -61,6 +62,34 @@ void update(uint32_t frame) {
         blk.is_dead       = is_death_state(blk.player_state) ? 1 : 0;
         blk.is_goal       = is_goal_state(blk.player_state) ? 1 : 0;
         blk.has_player    = 1;
+    }
+
+    // Read course theme from sound manager global (elf+0x2c57090 -> ptr+0x58 = theme sound string)
+    // Format: "V_<theme>" where theme = plain/underground/castle/airship/water/hauntedhouse/snow/desert/athletic/woods
+    static uintptr_t s_base = 0;
+    if (s_base == 0) s_base = hk::ro::getMainModule()->range().start();
+    
+    blk.course_theme = 0xFF; // unknown
+    blk.game_style = 0;
+    if (s_base != 0) {
+        uintptr_t sound_mgr = *reinterpret_cast<uintptr_t*>(s_base + 0x2c57090);
+        if (sound_mgr > 0x2000000000ULL && sound_mgr < 0x2200000000ULL) {
+            const char* snd = reinterpret_cast<const char*>(sound_mgr + 0x58);
+            // Skip "V_" prefix, match theme suffix
+            if (snd[0] == 'V' && snd[1] == '_') {
+                const char* n = snd + 2;
+                     if (n[0]=='p' && n[1]=='l') blk.course_theme = 0;  // plain
+                else if (n[0]=='u' && n[1]=='n') blk.course_theme = 1;  // underground
+                else if (n[0]=='c' && n[1]=='a') blk.course_theme = 2;  // castle
+                else if (n[0]=='a' && n[1]=='i') blk.course_theme = 3;  // airship
+                else if (n[0]=='w' && n[1]=='a') blk.course_theme = 4;  // water
+                else if (n[0]=='h' && n[1]=='a') blk.course_theme = 5;  // hauntedhouse
+                else if (n[0]=='s' && n[1]=='n') blk.course_theme = 6;  // snow
+                else if (n[0]=='d' && n[1]=='e') blk.course_theme = 7;  // desert
+                else if (n[0]=='a' && n[1]=='t') blk.course_theme = 8;  // athletic (Sky)
+                else if (n[0]=='w' && n[1]=='o') blk.course_theme = 9;  // woods (Forest)
+            }
+        }
     }
 
     nn::fs::FileHandle f;

@@ -45,11 +45,15 @@ struct StatusBlock {
     float gravity;
     uint32_t buffered_action;
     uint32_t input_poll_count;  // increments when GetNpadStates is called (=play mode)
-    int32_t  real_game_phase;   // from GamePhaseManager: 0=title, 3=course maker, 4=story/coursebot
-    uint32_t _pad[1];
+    int32_t  real_game_phase;   // from GamePhaseManager: 0=title, 2=course maker, 4=story/coursebot
+    uint8_t  course_theme;      // 0x3C: 0=Ground,1=Underground,2=Castle,3=Airship,4=Underwater,5=GhostHouse,6=Snow,7=Desert,8=Sky,9=Forest,0xFF=unknown
+    uint8_t  _pad2[3];
+    uint32_t game_style;        // 0x40: gamestyle from BCD header (0x314d=SMB1,0x334d=SMB3,0x5733=3DW,etc), 0=unknown
 };
 
-static_assert(sizeof(StatusBlock) == 64, "StatusBlock must be 64 bytes");
+static_assert(sizeof(StatusBlock) == 68, "StatusBlock size mismatch");
+
+// static_assert to be updated after size is confirmed
 
 void init();
 void update(uint32_t frame);
