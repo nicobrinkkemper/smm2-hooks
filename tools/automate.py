@@ -11,18 +11,17 @@ Usage:
     python3 tools/automate.py <command> [options]
 
 Commands:
-    title-skip      Get past the title screen (ZL+ZR or A)
-    load-test-level Full automation: title → coursebot → load test level → play
-    main-menu       Exit Course Maker to main menu
-    coursebot        Navigate from main menu to Coursebot
-    course-maker    Navigate to Course Maker
-    play            Enter play mode from editor (MINUS)
-    make            Enter editor mode from play (MINUS)
-    reset-level     Long-press rocket to reset level
-    reposition      Long-press start to reposition Mario
-    release         Release all buttons
+    goto <state>    Navigate to target state: playing, editor, coursebot, main_menu
+    state           Show detected current state
+    set-state <s>   Manually set current state (if detection is wrong)
     press <buttons> Press buttons (comma-separated: A,B,RIGHT,ZL,...)
     hold <buttons> <ms>  Hold buttons for duration
+    release         Release all buttons
+    status          Show status.bin data
+    screenshot      Take a screenshot
+    title-skip      Get past the title screen (ZL+ZR or A)
+    play            Enter play mode from editor (MINUS)
+    make            Enter editor mode from play (MINUS)
 """
 
 import struct
@@ -370,27 +369,19 @@ def full_load_test_level():
         return
     
     # Title screen (phase 0) or unknown — full navigation
+    # Sequence: L+R (dismiss title) → PLUS (main menu) → A (coursebot) → A (select) → A (load) → hold MINUS (play)
     if phase == 0 or phase == -99:
         print("  Title screen — full navigation...")
-        # L+R to dismiss title
         press("L,R", 200)
         wait(4000)
-        # A to get past user select
-        press("A", 100)
+        press("PLUS", 100)
         wait(3000)
-        # RIGHT to Coursebot
-        press("RIGHT", 100)
-        wait(500)
-        # A to enter Coursebot
         press("A", 100)
         wait(4000)
-        # A to select first course
         press("A", 100)
         wait(1500)
-        # A to load
         press("A", 100)
         wait(4000)
-        # Long MINUS to play from start
         hold("MINUS", 1500)
         wait(3000)
     
@@ -414,13 +405,11 @@ def full_load_test_level():
         return
     
     else:
-        print(f"  Unknown phase {phase} — attempting full navigation...")
+        print(f"  Phase {phase} — attempting full navigation...")
         press("L,R", 200)
         wait(4000)
-        press("A", 100)
+        press("PLUS", 100)
         wait(3000)
-        press("RIGHT", 100)
-        wait(500)
         press("A", 100)
         wait(4000)
         press("A", 100)
@@ -459,6 +448,234 @@ def reposition_mario():
 # ============================================================
 # CLI
 # ============================================================
+
+###############################################################################
+# State machine: detect current state and navigate to desired state
+###############################################################################
+
+# Game states (our abstraction over scenes + sub-states)
+STATE_UNKNOWN = "unknown"
+STATE_TITLE = "title"           # Title screen (scene 0)
+STATE_MAIN_MENU = "main_menu"   # Main menu (scene 2)
+STATE_EDITOR = "editor"         # Course Maker edit mode (scene 4, sub: editor)
+STATE_PLAYING = "playing"       # Playing a level (scene 4, sub: playing)
+STATE_COURSEBOT = "coursebot"    # Coursebot course list (scene 4, sub: coursebot)
+STATE_PAUSE = "pause"           # Pause menu during play
+STATE_LOADING = "loading"       # Loading screen (scene -1)
+
+# Persistent state file — written after every navigation action
+_STATE_FILE = os.path.join(SD_BASE, "nav_state.txt")
+
+def _save_state(state):
+    """Persist our believed current state."""
+    with open(_STATE_FILE, 'w') as f:
+        f.write(state)
+
+def _load_state():
+    """Load persisted state, or unknown."""
+    if os.path.exists(_STATE_FILE):
+        with open(_STATE_FILE, 'r') as f:
+            return f.read().strip()
+    return STATE_UNKNOWN
+
+def detect_state():
+    """Best-effort state detection using persisted nav state.
+    
+    status.bin is unreliable right now (s_player=NULL, stale data from dead instances).
+    We rely on our own navigation state tracking instead.
+    TODO: re-enable status.bin detection once player pointer is fixed.
+    """
+    return _load_state()
+
+def goto(target):
+    """Navigate from current state to target state. Returns True on success."""
+    current = detect_state()
+    print(f"goto: {current} → {target}")
+
+    if current == target:
+        print(f"Already at {target}")
+        return True
+
+    # Define transitions
+    if target == STATE_PLAYING:
+        return _goto_playing(current)
+    elif target == STATE_EDITOR:
+        return _goto_editor(current)
+    elif target == STATE_COURSEBOT:
+        return _goto_coursebot(current)
+    elif target == STATE_MAIN_MENU:
+        return _goto_main_menu(current)
+    else:
+        print(f"Don't know how to reach '{target}'")
+        return False
+
+def _goto_playing(current):
+    """Get into play mode on the test level."""
+    if current == STATE_EDITOR:
+        # Two options:
+        # 1. Play the CURRENT editor level: short/long MINUS
+        # 2. Play the TEST level: go via coursebot
+        # Default: play current level from start (long MINUS)
+        print("  Editor → Playing (long MINUS for level start)")
+        hold("MINUS", 1200)
+        wait(3000)
+        _save_state(STATE_PLAYING)
+        return True
+    elif current == STATE_PAUSE:
+        # Unpause
+        print("  Pause → Playing (short MINUS)")
+        press("MINUS", 100)
+        wait(1000)
+        _save_state(STATE_PLAYING)
+        return True
+    elif current == STATE_COURSEBOT:
+        # Already in coursebot — select test level → Play
+        print("  Coursebot → select test → Play")
+        press("A", 100)         # Select first course (test)
+        wait(2000)
+        # Now on course detail — cursor defaults to Make
+        # Navigate to Play: DOWN x3
+        for _ in range(3):
+            press("DOWN", 100)
+            wait(800)
+        press("A", 100)         # Play (single press in coursebot)
+        wait(4000)              # Wait for level load + title card
+        _save_state(STATE_PLAYING)
+        return True
+    elif current == STATE_MAIN_MENU:
+        # Main menu → Coursebot → Play
+        if _goto_coursebot(current):
+            return _goto_playing(STATE_COURSEBOT)
+        return False
+    elif current == STATE_TITLE:
+        # Title → L+R skip → lands in Course Maker editor (NOT main menu)
+        print("  Title → skip (L+R → editor)")
+        hold("ZL,ZR", 500)
+        wait(2000)
+        press("A", 100)
+        wait(5000)              # Editor takes a moment to load
+        _save_state(STATE_EDITOR)
+        # Editor has whatever level was last open — go via coursebot to load test level
+        if _goto_coursebot(STATE_EDITOR):
+            return _goto_playing(STATE_COURSEBOT)
+        return False
+    else:
+        print(f"  Don't know how to go from {current} to playing")
+        return False
+
+def _goto_editor(current):
+    """Get into Course Maker editor."""
+    if current == STATE_PLAYING:
+        # Long MINUS → pause menu → Edit Course (DOWN x2 → A)
+        print("  Playing → Pause → Edit Course")
+        hold("MINUS", 1200)
+        wait(1500)
+        press("DOWN", 100)
+        wait(500)
+        press("DOWN", 100)
+        wait(500)
+        press("A", 100)         # Edit Course
+        wait(2000)
+        _save_state(STATE_EDITOR)
+        return True
+    elif current == STATE_PAUSE:
+        print("  Pause → Edit Course (DOWN x2 → A)")
+        press("DOWN", 100)
+        wait(500)
+        press("DOWN", 100)
+        wait(500)
+        press("A", 100)
+        wait(2000)
+        _save_state(STATE_EDITOR)
+        return True
+    elif current == STATE_COURSEBOT:
+        # Select test → Make
+        print("  Coursebot → select test → Make")
+        press("A", 100)         # Select first course
+        wait(2000)
+        press("A", 100)         # Make (default selection)
+        wait(3000)
+        _save_state(STATE_EDITOR)
+        return True
+    elif current == STATE_MAIN_MENU:
+        if _goto_coursebot(current):
+            return _goto_editor(STATE_COURSEBOT)
+        return False
+    else:
+        print(f"  Don't know how to go from {current} to editor")
+        return False
+
+def _goto_coursebot(current):
+    """Get to the Coursebot course list."""
+    if current == STATE_MAIN_MENU:
+        print("  Main menu → Coursebot (RIGHT → A)")
+        # From main menu, Course Maker is selected. Coursebot is RIGHT.
+        press("RIGHT", 100)
+        wait(800)
+        press("A", 100)
+        wait(3000)              # Coursebot load animation
+        _save_state(STATE_COURSEBOT)
+        return True
+    elif current == STATE_EDITOR:
+        # Editor → PLUS → main menu → RIGHT → coursebot
+        print("  Editor → Main menu (PLUS)")
+        press("PLUS", 100)
+        wait(2000)
+        _save_state(STATE_MAIN_MENU)
+        return _goto_coursebot(STATE_MAIN_MENU)
+    elif current == STATE_PLAYING:
+        # Playing → pause → exit → main menu → coursebot
+        print("  Playing → Pause (long MINUS)")
+        hold("MINUS", 1200)
+        wait(1500)
+        # Exit Course is the 2nd option
+        press("DOWN", 100)
+        wait(500)
+        press("A", 100)         # Exit Course
+        wait(3000)
+        _save_state(STATE_MAIN_MENU)
+        return _goto_coursebot(STATE_MAIN_MENU)
+    else:
+        print(f"  Don't know how to go from {current} to coursebot")
+        return False
+
+def _goto_main_menu(current):
+    """Get to the main menu."""
+    if current == STATE_EDITOR:
+        print("  Editor → Main menu (PLUS)")
+        press("PLUS", 100)
+        wait(2000)
+        _save_state(STATE_MAIN_MENU)
+        return True
+    elif current == STATE_PLAYING:
+        print("  Playing → Pause → Exit Course")
+        hold("MINUS", 1200)
+        wait(1500)
+        press("DOWN", 100)      # Exit Course
+        wait(500)
+        press("A", 100)
+        wait(3000)
+        _save_state(STATE_MAIN_MENU)
+        return True
+    elif current == STATE_COURSEBOT:
+        print("  Coursebot → B to exit")
+        press("B", 100)
+        wait(2000)
+        _save_state(STATE_MAIN_MENU)
+        return True
+    elif current == STATE_TITLE:
+        # L+R skip goes to editor, then PLUS to main menu
+        print("  Title → skip → editor → PLUS → main menu")
+        hold("ZL,ZR", 500)
+        wait(2000)
+        press("A", 100)
+        wait(5000)
+        _save_state(STATE_EDITOR)
+        return _goto_main_menu(STATE_EDITOR)
+    else:
+        print(f"  Don't know how to go from {current} to main_menu")
+        return False
+
 
 def main():
     if len(sys.argv) < 2:
@@ -505,6 +722,28 @@ def main():
     elif cmd == "screenshot":
         path = screenshot()
         print(f"Screenshot saved: {path}")
+    elif cmd == "goto":
+        if len(sys.argv) < 3:
+            print("Usage: automate.py goto <state>")
+            print(f"States: playing, editor, coursebot, main_menu")
+            sys.exit(1)
+        target = sys.argv[2]
+        aliases = {"play": STATE_PLAYING, "playing": STATE_PLAYING,
+                   "edit": STATE_EDITOR, "editor": STATE_EDITOR,
+                   "coursebot": STATE_COURSEBOT, "menu": STATE_MAIN_MENU,
+                   "main_menu": STATE_MAIN_MENU}
+        target = aliases.get(target, target)
+        if not goto(target):
+            sys.exit(1)
+    elif cmd == "state":
+        st = detect_state()
+        print(f"Current state: {st}")
+    elif cmd == "set-state":
+        if len(sys.argv) < 3:
+            print("Usage: automate.py set-state <state>")
+            sys.exit(1)
+        _save_state(sys.argv[2])
+        print(f"State set to: {sys.argv[2]}")
     elif cmd == "status":
         s = read_status()
         if s:
