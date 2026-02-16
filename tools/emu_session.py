@@ -549,14 +549,17 @@ def cmd_game_status(emu_name='eden', raw=False):
                 print(f"    0x{offset:04X} {name:<20} = {val}")
 
 
-def _write_input(buttons=0):
-    """Write controller state to input.bin."""
+def _write_input(buttons=0, stick_lx=0, stick_ly=0):
+    """Write controller state to input.bin (buttons + analog sticks).
+    
+    Analog stick range: -32768 to 32767. 3DW requires analog for movement.
+    """
     info = EMULATORS.get('eden', {})
     sd = info.get('sd_path', '')
     if not sd:
         return
     path = os.path.join(sd, 'input.bin')
-    data = struct.pack('<Qii', buttons, 0, 0)
+    data = struct.pack('<Qii', buttons, stick_lx, stick_ly)
     with open(path, 'wb') as f:
         f.write(data)
 
