@@ -18,6 +18,12 @@ _ZN2nn2os11UnlockMutexEPNS0_9MutexTypeE
 # Frame hook
 procFrame_ = 0x2abb50
 
+# Actor profile registration (1143 calls at boot)
+ActorProfileRegister = 0x1047F40
+
+# StateMachine::registerState
+SMRegisterState = 0x8B8FA0
+
 # StateMachine::changeState (Lp::Utl::StateMachine)
 StateMachine_changeState = 0x8b9320
 
