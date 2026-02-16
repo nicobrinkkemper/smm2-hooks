@@ -104,7 +104,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
     automate.SD_BASE = tmpdir
     automate._STATE_FILE = os.path.join(tmpdir, "nav_state.txt")
     
-    # Editor state (43)
+    # Editor state (43) — NOTE: editor might show state 1 on Eden, but 43 on Ryujinx
     data = make_status_bin(state=43, has_player=1)
     with open(status_path, 'wb') as f:
         f.write(data)
@@ -136,6 +136,45 @@ with tempfile.TemporaryDirectory() as tmpdir:
     
     automate.SD_BASE = old_sd
 
+# Test 2b: wait_for_change
+print("\n--- wait_for_change ---")
+with tempfile.TemporaryDirectory() as tmpdir:
+    status_path = os.path.join(tmpdir, "status.bin")
+    automate.SD_BASE = tmpdir
+    
+    data = make_status_bin(frame=100, state=1)
+    with open(status_path, 'wb') as f:
+        f.write(data)
+    
+    # Should timeout (value doesn't change)
+    result = automate.wait_for_change('player_state', timeout_s=0.3, initial=1)
+    test("wait_for_change timeout when no change", result is None)
+    
+    # Write different state, should detect
+    data = make_status_bin(frame=101, state=5)
+    with open(status_path, 'wb') as f:
+        f.write(data)
+    result = automate.wait_for_change('player_state', timeout_s=0.5, initial=1)
+    test("wait_for_change detects change", result is not None and result['player_state'] == 5)
+    
+    automate.SD_BASE = old_sd
+
+# Test 2c: is_fresh
+print("\n--- is_fresh ---")
+with tempfile.TemporaryDirectory() as tmpdir:
+    status_path = os.path.join(tmpdir, "status.bin")
+    automate.SD_BASE = tmpdir
+    
+    data = make_status_bin(frame=100)
+    with open(status_path, 'wb') as f:
+        f.write(data)
+    
+    # Frame doesn't advance → stale
+    result = automate.is_fresh(timeout_s=0.2)
+    test("is_fresh=False when frame stuck", result == False)
+    
+    automate.SD_BASE = old_sd
+
 # Test 3: button parsing
 print("\n--- parse_buttons ---")
 test("A = 0x01", automate.parse_buttons("A") == 0x01)
@@ -150,7 +189,16 @@ import emu_session
 # With no PID file, should fall back to process scan (returns False if not running)
 test("is_running returns bool", isinstance(emu_session.is_running("eden"), bool))
 
-# Test 5: status.bin byte layout
+# Test 5: screenshot (no process = returns None)
+print("\n--- screenshot ---")
+import automate as _auto_ss
+old_eden = _auto_ss._use_eden
+_auto_ss._use_eden = True  # Force eden mode
+result = _auto_ss.screenshot()  # Should fail gracefully (no eden running... or succeed if running)
+test("screenshot returns path or None", result is None or isinstance(result, str))
+_auto_ss._use_eden = old_eden
+
+# Test 6: status.bin byte layout
 print("\n--- status.bin layout ---")
 data = make_status_bin(frame=1234, state=43, has_player=1, pos_x=100.0, pos_y=200.0, theme=5)
 test("68 bytes", len(data) == 68)

@@ -63,7 +63,7 @@ def is_running(emu_name):
     # Check if PID is still alive via tasklist
     try:
         result = subprocess.run(
-            ['tasklist.exe', '/FI', f'PID eq {pid}', '/NH'],
+            [TASKLIST, '/FI', f'PID eq {pid}', '/NH'],
             capture_output=True, text=True, timeout=3)
         return emu_name in result.stdout.lower()
     except:

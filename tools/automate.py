@@ -132,16 +132,42 @@ def wait(ms):
     time.sleep(ms / 1000.0)
 
 
-def screenshot():
-    """Take a screenshot and return the path."""
-    # Convert WSL path to UNC for PowerShell
-    ps_script = f"\\\\wsl.localhost\\{WSL_DISTRO}{SCREENSHOT_SCRIPT}"
-    ps_out = SCREENSHOT_OUT.replace("/mnt/c/", "C:\\").replace("/", "\\")
-    subprocess.run([
-        "powershell.exe", "-File", ps_script,
-        "-OutPath", ps_out
-    ], capture_output=True)
-    return SCREENSHOT_OUT
+def screenshot(out_path=None):
+    """Take a screenshot of the emulator window and return the WSL path."""
+    emu_name = "eden" if _use_eden else "Ryujinx"
+    out = out_path or SCREENSHOT_OUT or "/mnt/c/temp/smm2_debug/capture.png"
+    # Ensure output directory exists
+    win_out = out.replace("/mnt/c/", "C:\\\\").replace("/", "\\\\")
+    ps = f"""
+Add-Type -AssemblyName System.Drawing
+Add-Type @"
+using System;using System.Runtime.InteropServices;using System.Drawing;
+public class W{{[DllImport("user32.dll")]public static extern bool GetWindowRect(IntPtr h,out R r);[DllImport("user32.dll")]public static extern bool PrintWindow(IntPtr h,IntPtr d,uint f);[StructLayout(LayoutKind.Sequential)]public struct R{{public int L,T,Ri,B;}}}}
+"@
+$p=Get-Process -Name {emu_name} -EA 0|Select -First 1
+if(-not $p){{echo "NO_PROCESS";exit 1}}
+$h=$p.MainWindowHandle
+$r=New-Object W+R;[W]::GetWindowRect($h,[ref]$r)|Out-Null
+$w=$r.Ri-$r.L;$ht=$r.B-$r.T
+if($w -le 0 -or $ht -le 0){{echo "NO_WINDOW";exit 1}}
+$b=New-Object Drawing.Bitmap($w,$ht)
+$g=[Drawing.Graphics]::FromImage($b);$dc=$g.GetHdc();[W]::PrintWindow($h,$dc,2)|Out-Null
+$g.ReleaseHdc($dc);$b.Save("{win_out}");$g.Dispose();$b.Dispose()
+echo "OK"
+"""
+    ps_exe = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+    if not os.path.exists(ps_exe):
+        ps_exe = "powershell.exe"  # fallback to PATH
+    result = subprocess.run([ps_exe, "-Command", ps],
+                          capture_output=True, text=True, timeout=10)
+    if "OK" in result.stdout:
+        return out
+    elif "NO_PROCESS" in result.stdout:
+        print(f"Screenshot failed: {emu_name} not running")
+        return None
+    else:
+        print(f"Screenshot failed: {result.stdout.strip()}")
+        return None
 
 
 def read_status():
@@ -151,7 +177,7 @@ def read_status():
     if not os.path.exists(path):
         return None
     with open(path, 'rb') as f:
-        data = f.read(64)
+        data = f.read(68)
     if len(data) < 32:
         return None
     frame, phase, state, powerup = struct.unpack_from('<IIII', data, 0)
@@ -178,8 +204,12 @@ def read_status():
             'gravity': gravity,
             'buffered_action': buffered,
             'input_polls': input_polls,
-            'real_game_phase': real_phase,  # 0=title, 3=course maker, 4=story/coursebot, -1=loading
+            'real_game_phase': real_phase,
         })
+    # 68-byte block has theme (byte 60) and game_style (uint32 at 64)
+    if len(data) >= 68:
+        result['course_theme'] = data[60]
+        result['game_style'] = struct.unpack_from('<I', data, 64)[0]
     return result
 
 
@@ -234,9 +264,31 @@ def wait_for_has_player(timeout_s=10):
     return None
 
 
-def wait_for_editor(timeout_s=10):
-    """Wait until player state 43 (editor idle) appears."""
-    return wait_for_state(43, timeout_s * 1000)
+def wait_for_change(field, timeout_s=10, initial=None):
+    """Wait until a specific status field changes from its initial value.
+    If initial is None, reads current value first.
+    Returns the new status dict, or None on timeout."""
+    if initial is None:
+        s = read_status()
+        initial = s.get(field) if s else None
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        s = read_status()
+        if s and s.get(field) != initial:
+            return s
+        time.sleep(0.1)
+    return None
+
+
+def is_fresh(timeout_s=0.2):
+    """Check if status.bin is being updated (not stale).
+    Returns True if frame advances within timeout."""
+    s1 = read_status()
+    if not s1:
+        return False
+    time.sleep(timeout_s)
+    s2 = read_status()
+    return s2 is not None and s2['frame'] > s1['frame']
 
 
 def is_playing():
@@ -429,8 +481,16 @@ def boot(target="play"):
         time.sleep(0.3)
     
     print("Title skip (L+R)...")
-    hold("L,R", 500)
-    time.sleep(2)  # Wait for Make/Play to appear
+    # L+R may need to be sent multiple times if title animation is still playing
+    for attempt in range(3):
+        hold("L,R", 500)
+        time.sleep(1.5)
+        # Check if something changed (e.g., phase shifted)
+        s = read_status()
+        if s and s.get('real_game_phase', 0) != s.get('game_phase', 0):
+            break  # Phase changed = menu appeared
+    # Give menu animation time to settle
+    time.sleep(1)
     
     if target == "menu":
         _save_state(STATE_MAIN_MENU)
@@ -977,28 +1037,41 @@ def main():
         _save_state(sys.argv[2])
         print(f"State set to: {sys.argv[2]}")
     elif cmd == "status":
+        # First: check if emulator is running
+        emu = "eden" if _use_eden else "ryujinx"
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import emu_session
+        running = emu_session.is_running(emu)
+        if not running:
+            print(f"❌ {emu} not running")
+            sys.exit(1)
+        
         s = read_status()
-        if s:
-            print(f"Frame:   {s['frame']}")
-            mode_str = {0: '(unknown)', 1: '(playing)', 2: '(goal)', 3: '(dead)'}.get(s['game_phase'], '')
-            print(f"Mode:    {s['game_phase']} {mode_str}")
-            print(f"State:   {s['player_state']}", end="")
-            if s.get('is_dead'): print(" [DEAD]", end="")
-            if s.get('is_goal'): print(" [GOAL]", end="")
-            print()
-            print(f"Powerup: {s['powerup_id']}")
-            print(f"Pos:     ({s['pos_x']:.2f}, {s['pos_y']:.2f})")
-            print(f"Vel:     ({s['vel_x']:.4f}, {s['vel_y']:.4f})")
-            if 'state_frames' in s:
-                print(f"StFrm:   {s['state_frames']}")
-                print(f"Water:   {s['in_water']}  Facing: {s.get('facing', 0):.1f}  Gravity: {s.get('gravity', 0):.2f}")
-                print(f"Player:  {'yes' if s.get('has_player') else 'no'}")
-                print(f"Polls:   {s.get('input_polls', 0)}")
-                phase = s.get('real_game_phase', -99)
-                phase_str = {-1: 'loading', 0: 'title', 3: 'course maker', 4: 'story/coursebot'}.get(phase, f'unknown({phase})')
-                print(f"Phase:   {phase} ({phase_str})")
-        else:
-            print("No status data (game not running or hooks not active)")
+        if not s:
+            print(f"✅ {emu} running | ❌ No status.bin (hooks not loaded?)")
+            sys.exit(1)
+        
+        # Stale detection: read twice, check if frame advances
+        f1 = s['frame']
+        time.sleep(0.1)
+        s2 = read_status()
+        f2 = s2['frame'] if s2 else f1
+        stale = " ⚠️  STALE" if f1 == f2 else ""
+        
+        # Compact one-line summary
+        hp = "👤" if s.get('has_player') else "  "
+        dead = "💀" if s.get('is_dead') else ""
+        goal = "🏁" if s.get('is_goal') else ""
+        phase = s.get('real_game_phase', -99)
+        print(f"Frame:{s['frame']}{stale} | State:{s['player_state']} {hp}{dead}{goal} | "
+              f"Pos:({s['pos_x']:.0f},{s['pos_y']:.0f}) | Vel:({s['vel_x']:.1f},{s['vel_y']:.1f}) | "
+              f"Phase:{phase} | Powerup:{s['powerup_id']} | Polls:{s.get('input_polls',0)}")
+        
+        # Verbose if requested
+        if "--verbose" in sys.argv or "-v" in sys.argv:
+            print(f"  StateFrames: {s.get('state_frames',0)}")
+            print(f"  Water: {s.get('in_water',0)}  Facing: {s.get('facing',0):.1f}  Gravity: {s.get('gravity',0):.2f}")
+            print(f"  Theme: {s.get('course_theme', '?')}  Style: {s.get('game_style', '?')}")
     elif cmd == "boot":
         # Full boot-to-play sequence. Handles GDB connection for Eden.
         # Usage: automate.py [--eden] boot [play|editor|menu]
