@@ -253,17 +253,30 @@ class Game:
 
     # ── Navigation ──────────────────────────────────────────
 
-    def recover(self, timeout=30):
-        """From any state, get back to play mode. Returns True on success."""
+    def recover(self, timeout=30, mode='edit'):
+        """From any state, get back to play mode. Returns True on success.
+        
+        Args:
+            mode: 'edit' = edit/play mode (MINUS toggle, death → editor)
+                  'game' = game-only mode (Coursebot Play, death → restart)
+        """
         sc = self.scene()
 
         if sc == 'play':
             s = self.status()
             if s and s['state'] not in DEATH_STATES:
                 return True
-            # In play but dead — wait for editor return
-            self.wait_for(lambda s: s['scene_mode'] == SCENE_EDITOR, timeout=timeout)
-            sc = 'editor'
+            if mode == 'edit':
+                # Death in edit/play → returns to editor automatically
+                self.wait_for(lambda s: s['scene_mode'] == SCENE_EDITOR, timeout=timeout)
+                sc = 'editor'
+            else:
+                # Death in game-only → auto-restarts, just wait for Walk state
+                result = self.wait_for(
+                    lambda s: s['scene_mode'] == SCENE_PLAY and s['state'] not in DEATH_STATES and s['has_player'],
+                    timeout=timeout
+                )
+                return result is not None
 
         if sc == 'editor':
             # Clear any UI focus, then MINUS to play
@@ -283,9 +296,44 @@ class Game:
             if not self.wait_for(lambda s: s['scene_mode'] == SCENE_EDITOR, timeout=15):
                 return False
             time.sleep(1)
-            return self.recover()  # recurse from editor
+            return self.recover(mode=mode)  # recurse from editor
 
         return False
+
+    def start_over(self):
+        """In game-only play: PLUS → Start Over (first menu option) → A.
+        Resets level from beginning without returning to editor/coursebot."""
+        self.press('PLUS', 200)
+        time.sleep(1)
+        # "Start Over" is first option in pause menu
+        self.press('A', 200)
+        time.sleep(2)
+        return self.wait_for(
+            lambda s: s['scene_mode'] == SCENE_PLAY and s['has_player'] and s['state'] not in DEATH_STATES,
+            timeout=10
+        ) is not None
+
+    def to_coursebot_play(self, slot=0, timeout=30):
+        """Navigate: editor → Coursebot → select level → Play (game-only mode).
+        
+        Args:
+            slot: course slot to select (0 = first/top)
+        """
+        # First get to editor
+        if not self.to_editor():
+            return False
+        
+        # Open Coursebot: press the Coursebot button (right side panel)
+        # From editor, navigate to Coursebot via the robot icon
+        # Coursebot is accessible via the right panel robot button
+        # For now: use the known button sequence
+        # TODO: this needs refinement based on editor state
+        self.press('B', 100)      # clear focus
+        time.sleep(0.3)
+        self.press('MINUS', 200)  # enter Coursebot (hold MINUS from editor?)
+        # Actually Coursebot is accessed differently — need to figure out the exact flow
+        # For now just document that this exists
+        return False  # TODO: implement coursebot navigation
 
     def to_editor(self, timeout=15):
         """Navigate to editor. Returns True on success."""
