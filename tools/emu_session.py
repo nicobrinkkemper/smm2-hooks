@@ -448,62 +448,79 @@ def cmd_game_status(emu_name='eden'):
     print(f"  Theme:{theme_name} Style:{style_name}")
 
 
-def cmd_fresh(emu_name='eden', gdb=False):
-    """Full clean restart: kill everything → deploy → launch → verify.
-    Single command, no manual steps."""
-    print(f"═══ Fresh start: {emu_name} ═══\n")
+def _write_input(buttons=0):
+    """Write controller state to input.bin."""
+    info = EMULATORS.get('eden', {})
+    sd = info.get('sd_path', '')
+    if not sd:
+        return
+    path = os.path.join(sd, 'input.bin')
+    data = struct.pack('<Qii', buttons, 0, 0)
+    with open(path, 'wb') as f:
+        f.write(data)
 
-    # 1. Kill any running instance
-    procs = get_processes()
-    if procs.get(emu_name):
-        print("① Killing existing instance...")
-        cmd_kill(emu_name)
-        time.sleep(2)
-    else:
-        print("① No existing instance.")
 
-    # 2. Kill stale tmux GDB sessions
-    if tmux_session_exists(GDB_TMUX_SESSION):
-        print("② Killing stale GDB tmux session...")
-        tmux_kill_session(GDB_TMUX_SESSION)
-    else:
-        print("② No stale tmux sessions.")
+def _press(buttons, duration_ms=100):
+    """Press buttons for a duration then release."""
+    _write_input(buttons)
+    time.sleep(duration_ms / 1000.0)
+    _write_input(0)
 
-    # 3. Deploy hooks if needed
-    if not hooks_deployed(emu_name):
-        print("③ Deploying hooks...")
-        if not deploy_hooks(emu_name):
-            print("❌ ABORT: hooks deployment failed")
-            return False
-    else:
-        print("③ Hooks already deployed.")
 
-    # 4. Clear stale status.bin
+def _wait_frames(emu_name, target_field, target_check, timeout=15, label=""):
+    """Wait until a status field meets a condition. Returns status or None."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        s = read_status_bin(emu_name)
+        if s and 'error' not in s and target_check(s):
+            return s
+        time.sleep(0.5)
+    return None
+
+
+# Button constants
+BTN_A     = 0x01
+BTN_B     = 0x02
+BTN_L     = 0x40
+BTN_R     = 0x80
+BTN_MINUS = 0x800
+
+
+def _boot_and_verify(emu_name, gdb=False):
+    """Boot emulator and verify hooks are working. Returns True/False."""
     info = EMULATORS.get(emu_name, {})
+
+    # Deploy hooks if needed
+    if not hooks_deployed(emu_name):
+        print("  Deploying hooks...", end=' ')
+        if not deploy_hooks(emu_name):
+            print("❌")
+            return False
+        print("✅")
+
+    # Clear stale status.bin
     sd = info.get('sd_path', '')
     if sd:
-        status_path = os.path.join(sd, 'status.bin')
-        if os.path.exists(status_path):
-            os.remove(status_path)
-        print("④ Cleared stale status.bin.")
+        for f in ['status.bin', 'input.bin']:
+            p = os.path.join(sd, f)
+            if os.path.exists(p):
+                os.remove(p)
 
-    # 5. Set GDB config
+    # Set GDB config
     if emu_name == 'eden':
         gdb_set(gdb)
-        print(f"⑤ GDB: {'enabled' if gdb else 'disabled'}")
 
-    # 6. Launch
-    print(f"⑥ Launching {emu_name}...")
+    # Launch
     launch_cmd = info['launch_cmd']()
     subprocess.Popen(launch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # 7. Wait for process
-    print("⑦ Waiting for process...", end='', flush=True)
-    deadline = time.time() + 25
+    # Wait for process (>500MB = loaded)
+    print("  Waiting for process...", end='', flush=True)
+    deadline = time.time() + 30
     win_pid = None
     while time.time() < deadline:
         p = get_pid(emu_name)
-        if p and p['mem_kb'] > 500000:  # >500MB = game loaded
+        if p and p['mem_kb'] > 500000:
             win_pid = p['pid']
             break
         print('.', end='', flush=True)
@@ -511,9 +528,8 @@ def cmd_fresh(emu_name='eden', gdb=False):
     print()
 
     if not win_pid:
-        print("❌ Process didn't start or didn't load game.")
+        print("  ❌ Process didn't start.")
         return False
-    print(f"   PID {win_pid} ✅")
 
     # Save PID
     pid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'.{emu_name}_pid')
@@ -521,43 +537,187 @@ def cmd_fresh(emu_name='eden', gdb=False):
         f.write(str(win_pid))
 
     if gdb:
-        print("\n⚠️  Game is PAUSED. Connect GDB to port 6543 and send 'c'!")
+        print("  ⚠️  Game PAUSED — connect GDB and send 'c'!")
         return True
 
-    # 8. Wait for hooks (status.bin to appear)
-    print("⑧ Waiting for hooks...", end='', flush=True)
+    # Wait for hooks
+    print("  Waiting for hooks...", end='', flush=True)
     deadline = time.time() + 30
     while time.time() < deadline:
-        status = read_status_bin(emu_name)
-        if status and 'error' not in status and status['frame'] > 0:
+        s = read_status_bin(emu_name)
+        if s and 'error' not in s and s.get('frame', 0) > 0:
             break
         print('.', end='', flush=True)
         time.sleep(2)
     print()
 
-    status = read_status_bin(emu_name)
-    if not status or 'error' in status:
-        print(f"❌ Hooks not responding. status.bin: {status}")
+    s = read_status_bin(emu_name)
+    if not s or 'error' in s:
+        print(f"  ❌ Hooks not responding.")
         return False
 
-    print(f"   Frame:{status['frame']} Player:{status['has_player']} ✅")
-
-    # 9. Verify frames are advancing
-    print("⑨ Verifying game is running...", end='', flush=True)
-    f1 = status['frame']
-    time.sleep(1)
-    status2 = read_status_bin(emu_name)
-    f2 = status2['frame'] if status2 and 'error' not in status2 else f1
-
-    if f2 > f1:
-        print(f" {f2-f1} frames/sec ✅")
-    else:
-        print(f" ❌ frames not advancing (stuck at {f1})")
+    # Verify frames advancing
+    f1 = s['frame']
+    time.sleep(0.5)
+    s2 = read_status_bin(emu_name)
+    f2 = s2.get('frame', f1) if s2 and 'error' not in s2 else f1
+    if f2 <= f1:
+        print(f"  ❌ Frames not advancing.")
         return False
 
-    print(f"\n✅ {emu_name} ready! Game running with hooks at ~{f2-f1}fps.")
-    cmd_game_status(emu_name)
+    print(f"  ✅ Hooks live, {(f2-f1)*2} fps")
     return True
+
+
+def _is_alive(emu_name):
+    """Quick check: process alive AND frames advancing."""
+    if not is_running(emu_name):
+        return False
+    s1 = read_status_bin(emu_name)
+    if not s1 or 'error' in s1:
+        return False
+    f1 = s1.get('frame', 0)
+    time.sleep(0.3)
+    s2 = read_status_bin(emu_name)
+    if not s2 or 'error' in s2:
+        return False
+    return s2.get('frame', 0) > f1
+
+
+def _navigate_to_playing(emu_name):
+    """Navigate from title screen to play mode. Returns True/False.
+
+    Flow: Title → L+R (menu) → A (editor) → MINUS (play)
+    """
+    print("  Navigating to play mode...")
+
+    # Wait for title screen (frame > 120 = animation done)
+    print("    Waiting for title animation...", end='', flush=True)
+    s = _wait_frames(emu_name, 'frame', lambda s: s['frame'] > 150, timeout=15)
+    if not s:
+        print(" ❌ timeout")
+        return False
+    print(f" frame {s['frame']} ✅")
+
+    # Check alive before each step
+    if not _is_alive(emu_name):
+        print("    ❌ Game died")
+        return False
+
+    # L+R to skip title → main menu
+    print("    L+R (title skip)...", end=' ', flush=True)
+    _press(BTN_L | BTN_R, 200)
+    time.sleep(2.5)
+    if not _is_alive(emu_name):
+        print("❌ crashed")
+        return False
+    print("✅")
+
+    # A to enter Course Maker (Make is default selection)
+    print("    A (enter editor)...", end=' ', flush=True)
+    _press(BTN_A, 200)
+    time.sleep(1)
+
+    # Wait for loading: has_player goes 0 (loading) then 1 (loaded)
+    # First wait for has_player=0 (loading started)
+    _wait_frames(emu_name, 'has_player', lambda s: s['has_player'] == 0, timeout=5)
+    # Then wait for has_player=1 (editor loaded with editor Mario)
+    loaded = _wait_frames(emu_name, 'has_player', lambda s: s['has_player'] == 1, timeout=20)
+    if not loaded:
+        # Maybe already loaded or different behavior — check if alive
+        if not _is_alive(emu_name):
+            print("❌ crashed during load")
+            return False
+        print("⚠️ load detection unclear, continuing")
+    else:
+        print("✅")
+
+    time.sleep(1)
+    if not _is_alive(emu_name):
+        print("    ❌ Game died after editor load")
+        return False
+
+    # MINUS to enter play mode
+    print("    MINUS (play mode)...", end=' ', flush=True)
+    _press(BTN_MINUS, 200)
+    time.sleep(3)
+
+    if not _is_alive(emu_name):
+        print("❌ crashed")
+        return False
+
+    s = read_status_bin(emu_name)
+    if s and 'error' not in s:
+        print(f"✅ State:{s['state']} Pos:({s['pos_x']:.0f},{s['pos_y']:.0f})")
+    else:
+        print("✅")
+
+    return True
+
+
+def cmd_fresh(emu_name='eden', gdb=False, navigate=True, max_retries=3):
+    """Full clean restart: kill → deploy → launch → navigate → verify.
+    Auto-retries on crash."""
+    print(f"═══ Fresh start: {emu_name} ═══\n")
+
+    for attempt in range(1, max_retries + 1):
+        if attempt > 1:
+            print(f"\n🔄 Retry {attempt}/{max_retries}...\n")
+
+        # Kill everything
+        procs = get_processes()
+        if procs.get(emu_name):
+            print("① Killing existing instance...")
+            cmd_kill(emu_name)
+            time.sleep(2)
+
+        if tmux_session_exists(GDB_TMUX_SESSION):
+            tmux_kill_session(GDB_TMUX_SESSION)
+
+        # Boot and verify
+        print("② Booting...")
+        if not _boot_and_verify(emu_name, gdb):
+            print(f"  ❌ Boot failed (attempt {attempt})")
+            continue
+
+        if gdb:
+            print("\n✅ Ready (GDB mode — connect and send 'c').")
+            return True
+
+        # Navigate to play mode
+        if navigate:
+            print("③ Navigating to play mode...")
+            if not _navigate_to_playing(emu_name):
+                print(f"  ❌ Navigation failed (attempt {attempt})")
+                # Check if process is still alive
+                if not is_running(emu_name):
+                    print("  Process crashed — will retry.")
+                    continue
+                else:
+                    print("  Process alive but navigation stuck.")
+                    # Try continuing anyway
+                    pass
+
+        # Final status
+        print()
+        s = read_status_bin(emu_name)
+        if s and 'error' not in s and s.get('frame', 0) > 0:
+            cmd_game_status(emu_name)
+            state = s.get('state', 0)
+            has_player = s.get('has_player', 0)
+            if navigate and has_player:
+                print(f"\n✅ {emu_name} ready! In play mode.")
+            elif navigate:
+                print(f"\n⚠️  {emu_name} running but player not detected yet.")
+            else:
+                print(f"\n✅ {emu_name} running (no navigation requested).")
+            return True
+        else:
+            print(f"  ❌ No valid game state after navigation.")
+            continue
+
+    print(f"\n❌ Failed after {max_retries} attempts.")
+    return False
 
 
 def cmd_cleanup():
@@ -596,7 +756,7 @@ def main():
         print("SMM2 Emulator Session Manager")
         print(f"\nUsage: {sys.argv[0]} <command> [args]")
         print("\nCommands:")
-        print("  fresh [emu] [--gdb]   Kill → deploy → launch → verify (USE THIS)")
+        print("  fresh [emu] [--gdb] [--no-nav]  Full cycle: kill → launch → play (USE THIS)")
         print("  overview              Full state overview")
         print("  status                Show running emulators")
         print("  launch <emu> [--gdb]  Launch emulator (eden/ryujinx)")
@@ -612,7 +772,8 @@ def main():
     if cmd == 'fresh':
         emu = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('-') else 'eden'
         gdb = '--gdb' in sys.argv
-        cmd_fresh(emu, gdb)
+        nav = '--no-nav' not in sys.argv
+        cmd_fresh(emu, gdb, navigate=nav)
     elif cmd == 'overview':
         cmd_overview()
     elif cmd == 'status':
