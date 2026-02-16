@@ -247,14 +247,14 @@ def is_playing():
 # ============================================================
 
 def title_skip():
-    """Skip title screen. Press A, wait, press A again."""
-    print("Skipping title screen...")
+    """Skip title screen with L+R (bumpers), then press A to enter Course Maker."""
+    print("Skipping title screen (L+R)...")
+    hold("L,R", 2000)
+    wait(3000)
+    print("Entering Course Maker (A)...")
     press("A", 100)
-    wait(2000)
-    press("A", 100)
-    wait(1000)
-    press("A", 100)
-    print("Done — should be past title screen")
+    wait(3000)
+    print("Done — should be in Course Maker editor")
 
 
 def course_maker():
@@ -354,7 +354,7 @@ def boot(target="play"):
     # Step 1: Check if emulator is already running
     result = subprocess.run([sys.executable, emu_script, "status", emu],
                           capture_output=True, text=True)
-    already_running = "running" in result.stdout.lower()
+    already_running = "running" in result.stdout.lower() and "no emulator" not in result.stdout.lower()
     
     if not already_running:
         print(f"Launching {emu}...")
@@ -399,42 +399,62 @@ def boot(target="play"):
         return False
     print(f"  Game running at frame {s['frame']}")
     
-    # Step 4: Title skip (ZL+ZR)
-    print("Title skip (ZL+ZR)...")
-    hold("ZL,ZR", 2000)
+    # Step 4: Title skip (ZL+ZR) → goes DIRECTLY to Course Maker editor
+    # NOTE: ZL+ZR skip does NOT go to main menu — it goes to editor!
+    # IMPORTANT: Title screen has a cosmetic Mario (state=1, has_player=1)
+    # We must wait for the scene transition (has_player goes 0 during loading)
+    # then wait for editor state 43.
+    # NOTE: SMM2 title says "Press L + R" — that's BUMPERS (L=0x40, R=0x80), not triggers!
+    # ZL+ZR may also work on some versions but L+R is the documented skip.
+    print("Title skip (L+R → Main Menu)...")
+    pre_frame = read_status()['frame'] if read_status() else 0
+    hold("L,R", 2000)
+    
+    # Wait for has_player to drop to 0 (scene transition) then come back
+    # During the title→editor transition, the player pointer resets
+    deadline = time.time() + 5
+    saw_transition = False
+    while time.time() < deadline:
+        s = read_status()
+        if s and not s.get('has_player'):
+            saw_transition = True
+            break
+        time.sleep(0.1)
+    
+    if saw_transition:
+        print("  Scene transition detected (has_player=0)")
+    else:
+        print("  No scene transition seen, waiting...")
+    
+    # L+R goes to MAIN MENU (Make/Play). Wait for transition to settle.
     time.sleep(3)
     
-    # Wait for main menu (frame advances + player changes)
-    s = wait_for_frame_advance(timeout_s=10)
+    # Now press A to enter Course Maker (Make is default selection on main menu)
+    print("  Entering Course Maker (A)...")
+    press("A", 100)
+    
+    # Wait for editor: either state 43 or frame advance + loading transition
+    # NOTE: Editor Mario may not trigger changeState (starts at state 43 directly)
+    # so our hook might not catch it. Wait for scene load instead.
+    s = wait_for_editor(timeout_s=8)
     if s:
-        print(f"  Post-skip: frame {s['frame']}, has_player={s.get('has_player', 0)}")
+        _save_state(STATE_EDITOR)
+        print(f"  In editor: state={s['player_state']}, frame={s['frame']}")
+    else:
+        # Editor Mario didn't trigger changeState — normal, it spawns at state 43
+        # Wait for scene to settle (frame advancing = game running)
+        time.sleep(3)
+        _save_state(STATE_EDITOR)
+        print("  In editor (assumed — editor Mario may not trigger changeState)")
     
     if target == "menu":
+        # Editor → PLUS → main menu
+        print("Editor → Main menu (PLUS)...")
+        press("PLUS", 100)
+        time.sleep(3)
         _save_state(STATE_MAIN_MENU)
         print("✅ At main menu")
         return True
-    
-    # Step 5: Press A to enter Course Maker
-    print("Entering Course Maker (A)...")
-    press("A", 100)
-    time.sleep(3)
-    
-    # Wait for editor state (player state 43)
-    s = wait_for_editor(timeout_s=10)
-    if s:
-        _save_state(STATE_EDITOR)
-        print(f"  In editor: state={s['player_state']}")
-    else:
-        # May need a second A press
-        press("A", 100)
-        time.sleep(3)
-        s = wait_for_editor(timeout_s=5)
-        if s:
-            _save_state(STATE_EDITOR)
-            print(f"  In editor (2nd press): state={s['player_state']}")
-        else:
-            print("  WARNING: Could not confirm editor state")
-            _save_state(STATE_EDITOR)  # assume it worked
     
     if target == "editor":
         print("✅ In editor")
@@ -443,17 +463,20 @@ def boot(target="play"):
     # Step 6: Enter play mode (hold MINUS)
     print("Entering play mode (MINUS hold)...")
     hold("MINUS", 1200)
-    time.sleep(2)
     
-    # Wait for non-editor state (state != 43)
-    deadline = time.time() + 8
+    # Wait for play state: has_player=1, state != 43, and state is a known play state
+    # Play states: 1=Walk, 2=Fall, 3=Jump, etc.
+    # We know we're in play mode (not title) because we confirmed editor (43) first
+    deadline = time.time() + 10
+    confirmed = False
     while time.time() < deadline:
         s = read_status()
-        if s and s.get('has_player') and s['player_state'] != 43:
+        if s and s.get('has_player') and s['player_state'] != 43 and s['player_state'] != 0:
+            confirmed = True
             break
         time.sleep(0.2)
     
-    if s and s.get('has_player') and s['player_state'] != 43:
+    if confirmed:
         _save_state(STATE_PLAYING)
         print(f"✅ Playing: state={s['player_state']}, pos=({s['pos_x']:.0f}, {s['pos_y']:.0f})")
     else:
@@ -751,7 +774,7 @@ def _goto_playing(current):
     elif current == STATE_TITLE:
         # Title → L+R skip → lands in Course Maker editor (NOT main menu)
         print("  Title → skip (L+R → editor)")
-        hold("ZL,ZR", 500)
+        hold("L,R", 2000)
         wait(2000)
         press("A", 100)
         wait(5000)              # Editor takes a moment to load
@@ -868,7 +891,7 @@ def _goto_main_menu(current):
     elif current == STATE_TITLE:
         # L+R skip goes to editor, then PLUS to main menu
         print("  Title → skip → editor → PLUS → main menu")
-        hold("ZL,ZR", 500)
+        hold("L,R", 2000)
         wait(2000)
         press("A", 100)
         wait(5000)
