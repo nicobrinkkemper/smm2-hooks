@@ -13,6 +13,8 @@ Usage:
     python3 emu_session.py gdb-on            # Enable GDB stub (no restart)
     python3 emu_session.py gdb-off           # Disable GDB stub (no restart)
     python3 emu_session.py game-status       # Read status.bin
+    python3 emu_session.py game-status --raw # With hex offsets per field
+    python3 emu_session.py hexdump           # Annotated hex dump of status.bin
     python3 emu_session.py cleanup           # Kill orphans, close stale tmux
 """
 
@@ -211,6 +213,55 @@ def deploy_hooks(emu_name='eden'):
 
 # ─── Game status (status.bin) ───
 
+# Single source of truth for StatusBlock layout.
+# Must match include/smm2/status.h exactly!
+# Format: (offset, size, type_char, name)
+# type_char: I=uint32, i=int32, f=float, B=uint8
+STATUS_FIELDS = [
+    (0x00, 4, 'I', 'frame'),
+    (0x04, 4, 'I', 'game_phase'),
+    (0x08, 4, 'I', 'player_state'),
+    (0x0C, 4, 'I', 'powerup_id'),
+    (0x10, 4, 'f', 'pos_x'),
+    (0x14, 4, 'f', 'pos_y'),
+    (0x18, 4, 'f', 'vel_x'),
+    (0x1C, 4, 'f', 'vel_y'),
+    (0x20, 4, 'I', 'state_frames'),
+    (0x24, 1, 'B', 'in_water'),
+    (0x25, 1, 'B', 'is_dead'),
+    (0x26, 1, 'B', 'is_goal'),
+    (0x27, 1, 'B', 'has_player'),
+    (0x28, 4, 'f', 'facing'),
+    (0x2C, 4, 'f', 'gravity'),
+    (0x30, 4, 'I', 'buffered_action'),
+    (0x34, 4, 'I', 'input_poll_count'),
+    (0x38, 4, 'i', 'real_game_phase'),
+    (0x3C, 1, 'B', 'course_theme'),
+    # 0x3D-0x3F: padding
+    (0x40, 4, 'I', 'game_style'),
+    (0x44, 4, 'I', 'scene_mode'),
+    (0x48, 4, 'I', 'is_playing'),
+    # 0x4C-0x63: gpm_inner[6] (research dump)
+    (0x4C, 4, 'I', 'gpm_inner_0'),
+    (0x50, 4, 'I', 'gpm_inner_1'),
+    (0x54, 4, 'I', 'gpm_inner_2'),
+    (0x58, 4, 'I', 'gpm_inner_3'),
+    (0x5C, 4, 'I', 'gpm_inner_4'),
+    (0x60, 4, 'I', 'gpm_inner_5'),
+]
+
+def _parse_status_fields(data):
+    """Parse status.bin bytes using STATUS_FIELDS layout."""
+    result = {}
+    for offset, size, fmt, name in STATUS_FIELDS:
+        if offset + size > len(data):
+            break
+        if size == 1:
+            result[name] = data[offset]
+        else:
+            result[name] = struct.unpack(f'<{fmt}', data[offset:offset+size])[0]
+    return result
+
 def read_status_bin(emu_name='eden'):
     """Read and parse status.bin from emulator's SD card."""
     info = EMULATORS.get(emu_name, {})
@@ -225,52 +276,23 @@ def read_status_bin(emu_name='eden'):
             data = f.read()
         if len(data) < 68:
             return {'error': f'status.bin too small ({len(data)} bytes)'}
-        # Match StatusBlock layout from status.h:
-        #   0x00: frame, 0x04: game_phase, 0x08: player_state, 0x0C: powerup_id
-        #   0x10: pos_x, 0x14: pos_y, 0x18: vel_x, 0x1C: vel_y
-        #   0x20: state_frames, 0x24: in_water, 0x25: is_dead, 0x26: is_goal, 0x27: has_player
-        #   0x28: facing, 0x2C: gravity, 0x30: buffered_action
-        #   0x34: input_poll_count, 0x38: real_game_phase
-        #   0x3C: course_theme, 0x3D-0x3F: pad, 0x40: game_style(u32)
-        frame = struct.unpack('<I', data[0x00:0x04])[0]
-        game_phase = struct.unpack('<I', data[0x04:0x08])[0]
-        state = struct.unpack('<I', data[0x08:0x0C])[0]
-        powerup = struct.unpack('<I', data[0x0C:0x10])[0]
-        pos_x = struct.unpack('<f', data[0x10:0x14])[0]
-        pos_y = struct.unpack('<f', data[0x14:0x18])[0]
-        vel_x = struct.unpack('<f', data[0x18:0x1C])[0]
-        vel_y = struct.unpack('<f', data[0x1C:0x20])[0]
-        state_frames = struct.unpack('<I', data[0x20:0x24])[0]
-        in_water = data[0x24]
-        is_dead = data[0x25]
-        is_goal = data[0x26]
-        has_player = data[0x27]
-        facing = struct.unpack('<f', data[0x28:0x2C])[0]
-        gravity = struct.unpack('<f', data[0x2C:0x30])[0]
-        buffered_action = struct.unpack('<I', data[0x30:0x34])[0]
-        input_poll_count = struct.unpack('<I', data[0x34:0x38])[0]
-        real_game_phase = struct.unpack('<i', data[0x38:0x3C])[0]
-        theme = data[0x3C]
-        game_style = struct.unpack('<I', data[0x40:0x44])[0]
-        scene_mode = struct.unpack('<I', data[0x44:0x48])[0] if len(data) >= 100 else 0
-        is_playing_flag = struct.unpack('<I', data[0x48:0x4C])[0] if len(data) >= 100 else 0
+        # Parse using shared STATUS_FIELDS layout (single source of truth)
+        fields = _parse_status_fields(data)
         mtime = os.path.getmtime(path)
         age = time.time() - mtime
-        return {
-            'frame': frame, 'game_phase': game_phase, 'state': state,
-            'powerup': powerup, 'pos_x': pos_x, 'pos_y': pos_y,
-            'vel_x': vel_x, 'vel_y': vel_y, 'state_frames': state_frames,
-            'in_water': in_water, 'is_dead': is_dead, 'is_goal': is_goal,
-            'has_player': has_player, 'facing': facing, 'gravity': gravity,
-            'buffered_action': buffered_action, 'input_poll_count': input_poll_count,
-            'real_game_phase': real_game_phase, 'theme': theme,
-            'game_style': game_style, 'phase': real_game_phase,
-            'scene_mode': scene_mode,  # 1=editor, 5=play, 6=title/menu
-            'is_playing_flag': is_playing_flag,
-            'age_seconds': round(age, 1),
-            'stale': age > 5,
-            'style': game_style,  # alias for display
-        }
+        # Build result dict with both raw field names and legacy aliases
+        result = dict(fields)
+        result['state'] = fields.get('player_state', 0)
+        result['powerup'] = fields.get('powerup_id', 0)
+        result['theme'] = fields.get('course_theme', 0xFF)
+        result['phase'] = fields.get('real_game_phase', 0)
+        result['style'] = fields.get('game_style', 0)
+        result['is_playing_flag'] = fields.get('is_playing', 0)
+        result['age_seconds'] = round(age, 1)
+        result['stale'] = age > 5
+        result['_raw_data'] = data  # keep raw bytes for hexdump
+        result['_raw_size'] = len(data)
+        return result
     except Exception as e:
         return {'error': str(e)}
 
@@ -444,7 +466,41 @@ def cmd_deploy(emu_name='eden'):
     deploy_hooks(emu_name)
 
 
-def cmd_game_status(emu_name='eden'):
+def cmd_hexdump(emu_name='eden'):
+    """Show annotated hex dump of status.bin — every byte labeled with field name."""
+    status = read_status_bin(emu_name)
+    if not status or 'error' in status:
+        print(f"❌ {status.get('error', 'no status')}" if status else "No status")
+        return
+    data = status.get('_raw_data', b'')
+    print(f"status.bin: {len(data)} bytes (expect {100} for StatusBlock)")
+    print(f"{'Offset':>6}  {'Hex':16}  {'Field':<20}  {'Value'}")
+    print("-" * 70)
+    # Build offset→field map
+    field_at = {}
+    for offset, size, fmt, name in STATUS_FIELDS:
+        field_at[offset] = (size, fmt, name)
+    i = 0
+    while i < len(data):
+        if i in field_at:
+            size, fmt, name = field_at[i]
+            raw = data[i:i+size]
+            hex_str = raw.hex()
+            if size == 1:
+                val = raw[0]
+            else:
+                val = struct.unpack(f'<{fmt}', raw)[0]
+            if isinstance(val, float):
+                print(f"0x{i:04X}  {hex_str:<16}  {name:<20}  {val:.4f}")
+            else:
+                print(f"0x{i:04X}  {hex_str:<16}  {name:<20}  {val} (0x{val:X})" if isinstance(val, int) and val > 9 else f"0x{i:04X}  {hex_str:<16}  {name:<20}  {val}")
+            i += size
+        else:
+            # padding byte
+            print(f"0x{i:04X}  {data[i]:02x}{'':14}  {'(pad)':<20}  {data[i]}")
+            i += 1
+
+def cmd_game_status(emu_name='eden', raw=False):
     """Read and display game status from status.bin."""
     status = read_status_bin(emu_name)
     if not status:
@@ -483,6 +539,14 @@ def cmd_game_status(emu_name='eden'):
     print(f"  Theme:{theme_name} Style:{style_name} Scene:{scene}")
     if status.get('state_frames'):
         print(f"  StateFrames:{status['state_frames']} Facing:{status['facing']:.1f}")
+    if raw:
+        print("\n  Raw field dump (offset → value):")
+        for offset, size, fmt, name in STATUS_FIELDS:
+            val = status.get(name, '?')
+            if isinstance(val, float):
+                print(f"    0x{offset:04X} {name:<20} = {val:.4f}")
+            else:
+                print(f"    0x{offset:04X} {name:<20} = {val}")
 
 
 def _write_input(buttons=0):
@@ -830,7 +894,11 @@ def main():
         gdb_set(False)
     elif cmd == 'game-status':
         emu = sys.argv[2] if len(sys.argv) > 2 else 'eden'
-        cmd_game_status(emu)
+        raw = '--raw' in sys.argv
+        cmd_game_status(emu, raw=raw)
+    elif cmd == 'hexdump':
+        emu = sys.argv[2] if len(sys.argv) > 2 else 'eden'
+        cmd_hexdump(emu)
     elif cmd == 'cleanup':
         cmd_cleanup()
     else:
