@@ -51,6 +51,25 @@ EMULATORS = {
 }
 
 
+def is_running(emu_name):
+    """Quick check if emulator is running using saved PID."""
+    pid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'.{emu_name}_pid')
+    if not os.path.exists(pid_file):
+        # Fall back to process scan
+        procs = get_processes()
+        return len(procs.get(emu_name, [])) > 0
+    with open(pid_file) as f:
+        pid = f.read().strip()
+    # Check if PID is still alive via tasklist
+    try:
+        result = subprocess.run(
+            ['tasklist.exe', '/FI', f'PID eq {pid}', '/NH'],
+            capture_output=True, text=True, timeout=3)
+        return emu_name in result.stdout.lower()
+    except:
+        return False
+
+
 def get_processes():
     """Get running emulator processes from Windows."""
     try:
@@ -145,22 +164,28 @@ def cmd_launch(emu_name, gdb=False):
     print(f"Launching: {' '.join(cmd)}")
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"Started {emu_name}, WSL PID {proc.pid}")
-    print("Waiting 10s for startup...")
-    time.sleep(10)
 
-    # Check if still alive
-    procs = get_processes()
-    game_procs = [p for p in procs.get(emu_name, []) if p['mem_kb'] > 100000]
-    if game_procs:
-        print(f"✅ {emu_name} running (PID {game_procs[0]['pid']}, {game_procs[0]['mem_kb']//1024} MB)")
+    # Poll for Windows process to appear (much faster than blind sleep)
+    import time as _time
+    deadline = _time.time() + 15
+    win_pid = None
+    while _time.time() < deadline:
+        procs = get_processes()
+        game_procs = [p for p in procs.get(emu_name, []) if p['mem_kb'] > 50000]
+        if game_procs:
+            win_pid = game_procs[0]['pid']
+            break
+        _time.sleep(1)
+
+    if win_pid:
+        # Save PID for quick checks later
+        pid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'.{emu_name}_pid')
+        with open(pid_file, 'w') as f:
+            f.write(str(win_pid))
+        mem_mb = game_procs[0]['mem_kb'] // 1024
+        print(f"✅ {emu_name} running (PID {win_pid}, {mem_mb} MB)")
     else:
-        all_procs = procs.get(emu_name, [])
-        if all_procs:
-            print(f"⚠️  {emu_name} has processes but none look like a game session")
-            for p in all_procs:
-                print(f"   PID {p['pid']} {p['exe']} {p['mem_kb']//1024} MB")
-        else:
-            print(f"❌ {emu_name} crashed on startup")
+        print(f"❌ {emu_name} failed to start within 15s")
 
 
 def main():

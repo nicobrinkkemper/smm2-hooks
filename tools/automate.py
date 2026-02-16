@@ -351,10 +351,11 @@ def boot(target="play"):
     tools_dir = os.path.dirname(os.path.abspath(__file__))
     emu_script = os.path.join(tools_dir, "emu_session.py")
     
-    # Step 1: Check if emulator is already running
-    result = subprocess.run([sys.executable, emu_script, "status", emu],
-                          capture_output=True, text=True)
-    already_running = "running" in result.stdout.lower() and "no emulator" not in result.stdout.lower()
+    # Step 1: Check if emulator is already running (fast PID check)
+    # Import emu_session for direct PID check instead of subprocess
+    sys.path.insert(0, tools_dir)
+    import emu_session
+    already_running = emu_session.is_running(emu)
     
     if not already_running:
         print(f"Launching {emu}...")
@@ -422,14 +423,18 @@ def boot(target="play"):
         time.sleep(0.1)
     
     if saw_transition:
-        print("  Scene transition detected (has_player=0)")
+        print("  Scene transition detected")
     else:
-        print("  No scene transition seen, waiting...")
+        print("  No transition seen")
     
-    # L+R goes to MAIN MENU (Make/Play). Wait for transition to settle.
-    time.sleep(3)
+    # L+R goes to MAIN MENU (Make/Play). Wait for player to reappear.
+    s = wait_for_has_player(timeout_s=8)
+    if s:
+        print(f"  At main menu: frame={s['frame']}")
+    else:
+        time.sleep(2)  # fallback
     
-    # Now press A to enter Course Maker (Make is default selection on main menu)
+    # Press A → Course Maker (Make is default tab-indexed button)
     print("  Entering Course Maker (A)...")
     press("A", 100)
     
