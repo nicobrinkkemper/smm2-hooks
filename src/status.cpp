@@ -6,6 +6,7 @@
 #include "hk/hook/Trampoline.h"
 #include "nn/fs.h"
 #include <cstring>
+#include <cstdio>
 
 namespace smm2 {
 namespace status {
@@ -74,30 +75,23 @@ void update(uint32_t frame) {
         blk.has_player    = 1;
     }
 
-    // Read course theme from sound manager global (elf+0x2c57090 -> ptr+0x58 = theme sound string)
-    // Format: "V_<theme>" where theme = plain/underground/castle/airship/water/hauntedhouse/snow/desert/athletic/woods
+    // Read course theme from noexes pointer chain:
+    // [[main+0x2A67B70]+0x28]+0x210 = theme byte (0=ground, 1=underground, etc.)
+    // Source: noexes-patches.md (well-known patch addresses)
     static uintptr_t s_base = 0;
     if (s_base == 0) s_base = hk::ro::getMainModule()->range().start();
     
     blk.course_theme = 0xFF; // unknown
     blk.game_style = 0;
     if (s_base != 0) {
-        uintptr_t sound_mgr = *reinterpret_cast<uintptr_t*>(s_base + 0x2c57090);
-        if (sound_mgr > 0x2000000000ULL && sound_mgr < 0x2200000000ULL) {
-            const char* snd = reinterpret_cast<const char*>(sound_mgr + 0x58);
-            // Skip "V_" prefix, match theme suffix
-            if (snd[0] == 'V' && snd[1] == '_') {
-                const char* n = snd + 2;
-                     if (n[0]=='p' && n[1]=='l') blk.course_theme = 0;  // plain
-                else if (n[0]=='u' && n[1]=='n') blk.course_theme = 1;  // underground
-                else if (n[0]=='c' && n[1]=='a') blk.course_theme = 2;  // castle
-                else if (n[0]=='a' && n[1]=='i') blk.course_theme = 3;  // airship
-                else if (n[0]=='w' && n[1]=='a') blk.course_theme = 4;  // water
-                else if (n[0]=='h' && n[1]=='a') blk.course_theme = 5;  // hauntedhouse
-                else if (n[0]=='s' && n[1]=='n') blk.course_theme = 6;  // snow
-                else if (n[0]=='d' && n[1]=='e') blk.course_theme = 7;  // desert
-                else if (n[0]=='a' && n[1]=='t') blk.course_theme = 8;  // athletic (Sky)
-                else if (n[0]=='w' && n[1]=='o') blk.course_theme = 9;  // woods (Forest)
+        // Follow pointer chain: main+0x2A67B70 → [+0x28] → theme at +0x210
+        uintptr_t* p1 = reinterpret_cast<uintptr_t*>(s_base + 0x2A67B70);
+        if (*p1 > 0x2000000000ULL && *p1 < 0x2200000000ULL) {
+            uintptr_t* p2 = reinterpret_cast<uintptr_t*>(*p1 + 0x28);
+            if (*p2 > 0x2000000000ULL && *p2 < 0x2200000000ULL) {
+                blk.course_theme = *reinterpret_cast<uint8_t*>(*p2 + 0x210);
+                // Game style is at header offset — check nearby
+                // [[main+0x2A692F8]+0x28] = version area, style might be in header
             }
         }
     }
