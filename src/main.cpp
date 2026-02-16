@@ -61,7 +61,7 @@ extern "C" void hkMain() {
 
     // Init plugins
     // Minimal config — bisecting crash
-    // smm2::state_logger::init();  // DISABLED — changeState hook crashes during scene transitions
+    // smm2::state_logger::init();  // DISABLED — status.cpp now tracks player directly
     // smm2::func_trace::init();    // 49 delegate hooks — known crash
     // smm2::reimpl::init();
     smm2::tas::init();              // hooks GetNpadStates (input injection)

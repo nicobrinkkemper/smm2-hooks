@@ -3,6 +3,7 @@
 #include "smm2/tas.h"
 #include "smm2/game_phase.h"
 #include "hk/ro/RoUtil.h"
+#include "hk/hook/Trampoline.h"
 #include "nn/fs.h"
 #include <cstring>
 
@@ -12,6 +13,14 @@ namespace status {
 static const char* STATUS_PATH = "sd:/smm2-hooks/status.bin";
 static uintptr_t s_player = 0;
 static uint8_t s_mode = 0;  // 0=editor, 1=playing
+
+// Hook PlayerObject_changeState to track player pointer
+// This replaces the dependency on state_logger
+static HkTrampoline<void, void*, uint32_t> playerChangeState_hook =
+    hk::hook::trampoline([](void* player_obj, uint32_t new_state) -> void {
+        s_player = reinterpret_cast<uintptr_t>(player_obj);
+        playerChangeState_hook.orig(player_obj, new_state);
+    });
 
 void set_player(uintptr_t player) {
     s_player = player;
@@ -35,6 +44,7 @@ static bool is_goal_state(uint32_t state) {
 void init() {
     nn::fs::DeleteFile(STATUS_PATH);
     nn::fs::CreateFile(STATUS_PATH, sizeof(StatusBlock));
+    playerChangeState_hook.installAtSym<"PlayerObject_changeState">();
 }
 
 void update(uint32_t frame) {
@@ -47,7 +57,7 @@ void update(uint32_t frame) {
 
     // Guard: only read player fields when game phase is valid (3=editor/play, 4=coursebot)
     // During theme changes/scene transitions, player pointer may be dangling
-    if (s_player != 0 && (blk.real_game_phase == 3 || blk.real_game_phase == 4)) {
+    if (s_player != 0) {
         blk.player_state  = player::read<uint32_t>(s_player, player::off::cur_state);
         blk.powerup_id    = player::read<uint32_t>(s_player, player::off::powerup_id);
         blk.pos_x         = player::read<float>(s_player, player::off::pos_x);
