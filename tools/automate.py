@@ -48,8 +48,11 @@ except ImportError:
 # Paths (all configurable via .env)
 # Support --eden flag to use Eden emulator paths instead of Ryujinx
 _use_eden = "--eden" in sys.argv
+_no_gdb = "--no-gdb" in sys.argv
 if _use_eden:
     sys.argv.remove("--eden")
+if _no_gdb:
+    sys.argv.remove("--no-gdb")
 
 if _use_eden:
     SD_BASE = os.environ.get("EDEN_SD_PATH", "")
@@ -354,9 +357,11 @@ def boot(target="play"):
     import emu_session
     already_running = emu_session.is_running(emu)
     
+    use_gdb = _use_eden and not _no_gdb
+    
     if not already_running:
         print(f"Launching {emu}...")
-        gdb_flag = ["--gdb"] if _use_eden else []
+        gdb_flag = ["--gdb"] if use_gdb else ["--no-gdb"]
         subprocess.run([sys.executable, emu_script, "launch", emu] + gdb_flag,
                       timeout=30)
     else:
@@ -364,7 +369,7 @@ def boot(target="play"):
     
     # Step 2: For Eden with GDB, connect and continue immediately
     # Eden PAUSES on start until GDB connects — do NOT wait!
-    if _use_eden:
+    if use_gdb:
         print("Connecting GDB (Eden pauses until GDB continues)...")
         # Kill any existing GDB sessions
         subprocess.run(["pkill", "-f", "gdb-multiarch"], capture_output=True)
@@ -413,9 +418,19 @@ def boot(target="play"):
     # state=1, has_player=1 from the start — CANNOT distinguish from gameplay!
     # L+R (bumpers) dismisses title overlay → shows Make/Play menu.
     # Demo Mario persists in background — no state/has_player change.
+    # IMPORTANT: Wait for title animation to finish before L+R will be accepted.
+    # The "Press L + R" prompt appears after ~3-5 seconds.
+    print("Waiting for title screen to be ready...")
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        s = read_status()
+        if s and s.get('has_player') and s['frame'] > 120:  # ~2 seconds at 60fps
+            break
+        time.sleep(0.3)
+    
     print("Title skip (L+R)...")
     hold("L,R", 500)
-    time.sleep(1)  # Menu animation
+    time.sleep(2)  # Wait for Make/Play to appear
     
     if target == "menu":
         _save_state(STATE_MAIN_MENU)
@@ -429,13 +444,23 @@ def boot(target="play"):
     f_before = read_status()['frame'] if read_status() else 0
     press("A", 100)
     
-    # Wait for scene transition: frame jumps or has_player toggles
-    # The loading screen may briefly show has_player=0
+    # Wait for scene transition: A press causes loading screen.
+    # During loading: has_player may go 0, phase changes.
+    # Editor loads with a new PlayerObject.
+    # Simple approach: wait for has_player=0 (loading started), then has_player=1 (loaded).
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        s = read_status()
+        if s and not s.get('has_player'):
+            break
+        time.sleep(0.2)
+    
+    # Now wait for editor to finish loading (has_player returns)
     deadline = time.time() + 10
     in_editor = False
     while time.time() < deadline:
         s = read_status()
-        if s and s['frame'] > f_before + 60 and s.get('has_player'):
+        if s and s.get('has_player'):
             in_editor = True
             break
         time.sleep(0.3)
