@@ -132,8 +132,10 @@ def cmd_launch(emu_name, gdb=False):
             with open(config) as f:
                 content = f.read()
             if gdb:
+                content = content.replace('use_gdbstub\\default=true', 'use_gdbstub\\default=false')
                 content = content.replace('use_gdbstub=false', 'use_gdbstub=true')
             else:
+                content = content.replace('use_gdbstub\\default=false', 'use_gdbstub\\default=true')
                 content = content.replace('use_gdbstub=true', 'use_gdbstub=false')
             with open(config, 'w') as f:
                 f.write(content)
