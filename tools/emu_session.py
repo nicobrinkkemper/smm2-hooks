@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-Emulator session manager. Tracks running game instances,
-launches/kills them, and prevents orphaned processes.
+Emulator session manager. Single tool for all SMM2 emulator operations.
 
 Usage:
-    python3 emu_session.py status          # Show running emulators
-    python3 emu_session.py launch eden     # Launch Eden with SMM2
-    python3 emu_session.py launch ryujinx  # Launch Ryujinx with SMM2
-    python3 emu_session.py kill eden       # Kill Eden
-    python3 emu_session.py kill all        # Kill all emulators
+    python3 emu_session.py overview          # Full state overview
+    python3 emu_session.py status            # Show running emulators
+    python3 emu_session.py launch eden       # Launch Eden (no GDB)
+    python3 emu_session.py launch eden --gdb # Launch Eden with GDB stub
+    python3 emu_session.py kill eden         # Kill Eden
+    python3 emu_session.py kill all          # Kill all emulators
+    python3 emu_session.py deploy eden       # Deploy hooks to Eden
+    python3 emu_session.py gdb-on            # Enable GDB stub (no restart)
+    python3 emu_session.py gdb-off           # Disable GDB stub (no restart)
+    python3 emu_session.py game-status       # Read status.bin
+    python3 emu_session.py cleanup           # Kill orphans, close stale tmux
 """
 
 import subprocess
@@ -16,6 +21,7 @@ import sys
 import os
 import json
 import time
+import struct
 
 TASKLIST = "/mnt/c/Windows/System32/tasklist.exe"
 TASKKILL = "/mnt/c/Windows/System32/taskkill.exe"
@@ -31,44 +37,37 @@ if os.path.exists(env_path):
                 k, v = line.split('=', 1)
                 ENV[k.strip()] = v.strip()
 
+EDEN_CONFIG = '/mnt/c/Users/nico/AppData/Roaming/eden/config/qt-config.ini'
+EDEN_SD = ENV.get('EDEN_SD_PATH', '/mnt/c/Users/nico/AppData/Roaming/eden/sdmc/smm2-hooks')
+EDEN_MODS = ENV.get('EDEN_MODS_PATH', '/mnt/c/Users/nico/Documents/eden/load/01009B90006DC000/smm2-hooks/exefs')
+RYUJINX_SD = ENV.get('RYUJINX_SD_PATH', '')
+HOOKS_BUILD = os.path.join(os.path.dirname(__file__), '..', 'build', 'smm2-hooks.nso')
+
 EMULATORS = {
     'eden': {
         'exe_name': 'eden.exe',
         'cli_name': 'eden-cli.exe',
-        'launch_cmd': lambda gdb=False: [
+        'launch_cmd': lambda: [
             ENV.get('EDEN_EXE', '/mnt/c/Users/nico/Documents/eden/eden.exe'),
             '-g', ENV.get('EDEN_GAME_PATH', '')
         ],
-        'config_path': '/mnt/c/Users/nico/AppData/Roaming/eden/config/qt-config.ini',
+        'sd_path': EDEN_SD,
+        'mods_path': EDEN_MODS,
     },
     'ryujinx': {
         'exe_name': 'Ryujinx.exe',
-        'launch_cmd': lambda gdb=False: [
+        'launch_cmd': lambda: [
             ENV.get('RYUJINX_EXE', ''),
             ENV.get('GAME_NSP', '')
         ],
+        'sd_path': RYUJINX_SD,
     },
 }
 
+GDB_TMUX_SESSION = 'eden-gdb'
 
-def is_running(emu_name):
-    """Quick check if emulator is running using saved PID."""
-    pid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'.{emu_name}_pid')
-    if not os.path.exists(pid_file):
-        # Fall back to process scan
-        procs = get_processes()
-        return len(procs.get(emu_name, [])) > 0
-    with open(pid_file) as f:
-        pid = f.read().strip()
-    # Check if PID is still alive via tasklist
-    try:
-        result = subprocess.run(
-            [TASKLIST, '/FI', f'PID eq {pid}', '/NH'],
-            capture_output=True, text=True, timeout=3)
-        return emu_name in result.stdout.lower()
-    except:
-        return False
 
+# ─── Process management ───
 
 def get_processes():
     """Get running emulator processes from Windows."""
@@ -93,13 +92,243 @@ def get_processes():
         return {}
 
 
+def is_running(emu_name):
+    """Check if emulator is running."""
+    procs = get_processes()
+    return len(procs.get(emu_name, [])) > 0
+
+
+def get_pid(emu_name):
+    """Get PID of running emulator, or None."""
+    procs = get_processes()
+    plist = procs.get(emu_name, [])
+    if plist:
+        # Prefer the one with most memory (actual game vs cli)
+        return max(plist, key=lambda p: p['mem_kb'])
+    return None
+
+
+# ─── GDB config ───
+
+def gdb_is_enabled():
+    """Check if GDB stub is enabled in Eden config."""
+    if not os.path.exists(EDEN_CONFIG):
+        return None
+    with open(EDEN_CONFIG) as f:
+        content = f.read()
+    # use_gdbstub\default=false AND use_gdbstub=true means enabled
+    has_custom = 'use_gdbstub\\default=false' in content
+    has_true = '\nuse_gdbstub=true' in content or content.startswith('use_gdbstub=true')
+    return has_custom and has_true
+
+
+def gdb_set(enabled):
+    """Enable or disable GDB stub in Eden config."""
+    if not os.path.exists(EDEN_CONFIG):
+        print(f"❌ Config not found: {EDEN_CONFIG}")
+        return False
+    with open(EDEN_CONFIG) as f:
+        content = f.read()
+    if enabled:
+        content = content.replace('use_gdbstub\\default=true', 'use_gdbstub\\default=false')
+        content = content.replace('use_gdbstub=false', 'use_gdbstub=true')
+    else:
+        content = content.replace('use_gdbstub\\default=false', 'use_gdbstub\\default=true')
+        content = content.replace('use_gdbstub=true', 'use_gdbstub=false')
+    with open(EDEN_CONFIG, 'w') as f:
+        f.write(content)
+    print(f"GDB stub: {'✅ enabled' if enabled else '❌ disabled'}")
+    return True
+
+
+# ─── tmux session management ───
+
+def tmux_session_exists(name):
+    """Check if a tmux session exists."""
+    try:
+        result = subprocess.run(['tmux', 'has-session', '-t', name],
+                              capture_output=True, timeout=3)
+        return result.returncode == 0
+    except:
+        return False
+
+
+def tmux_list_sessions():
+    """List all tmux sessions."""
+    try:
+        result = subprocess.run(['tmux', 'list-sessions'],
+                              capture_output=True, text=True, timeout=3)
+        if result.returncode == 0:
+            return result.stdout.strip().splitlines()
+    except:
+        pass
+    return []
+
+
+def tmux_kill_session(name):
+    """Kill a tmux session."""
+    try:
+        subprocess.run(['tmux', 'kill-session', '-t', name],
+                      capture_output=True, timeout=3)
+        return True
+    except:
+        return False
+
+
+# ─── Hooks deployment ───
+
+def hooks_deployed(emu_name='eden'):
+    """Check if hooks NSO is deployed to emulator's mod directory."""
+    info = EMULATORS.get(emu_name, {})
+    mods = info.get('mods_path', '')
+    if not mods:
+        return None  # unknown
+    subsdk = os.path.join(mods, 'subsdk4')
+    return os.path.exists(subsdk)
+
+
+def hooks_built():
+    """Check if hooks NSO exists in build dir."""
+    return os.path.exists(HOOKS_BUILD)
+
+
+def deploy_hooks(emu_name='eden'):
+    """Deploy built hooks to emulator mod directory."""
+    if not hooks_built():
+        print(f"❌ Hooks not built. Run: cd ~/code/smm2-hooks && cmake -B build && ninja -C build")
+        return False
+    info = EMULATORS.get(emu_name, {})
+    mods = info.get('mods_path', '')
+    if not mods:
+        print(f"❌ No mods path configured for {emu_name}")
+        return False
+    os.makedirs(mods, exist_ok=True)
+    import shutil
+    shutil.copy2(HOOKS_BUILD, os.path.join(mods, 'subsdk4'))
+    print(f"✅ Deployed hooks to {mods}/subsdk4")
+    return True
+
+
+# ─── Game status (status.bin) ───
+
+def read_status_bin(emu_name='eden'):
+    """Read and parse status.bin from emulator's SD card."""
+    info = EMULATORS.get(emu_name, {})
+    sd = info.get('sd_path', '')
+    if not sd:
+        return None
+    path = os.path.join(sd, 'status.bin')
+    if not os.path.exists(path):
+        return {'error': 'status.bin not found'}
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+        if len(data) < 68:
+            return {'error': f'status.bin too small ({len(data)} bytes)'}
+        frame = struct.unpack('<I', data[0:4])[0]
+        state = struct.unpack('<I', data[4:8])[0]
+        has_player = data[8]
+        phase = struct.unpack('<I', data[12:16])[0]
+        pos_x = struct.unpack('<f', data[16:20])[0]
+        pos_y = struct.unpack('<f', data[20:24])[0]
+        vel_x = struct.unpack('<f', data[24:28])[0]
+        vel_y = struct.unpack('<f', data[28:32])[0]
+        gravity = struct.unpack('<f', data[32:36])[0]
+        powerup = struct.unpack('<I', data[44:48])[0]
+        theme = data[64]
+        style = data[65]
+        mtime = os.path.getmtime(path)
+        age = time.time() - mtime
+        return {
+            'frame': frame, 'state': state, 'has_player': has_player,
+            'phase': phase, 'pos_x': pos_x, 'pos_y': pos_y,
+            'vel_x': vel_x, 'vel_y': vel_y, 'gravity': gravity,
+            'powerup': powerup, 'theme': theme, 'style': style,
+            'age_seconds': round(age, 1),
+            'stale': age > 5,
+        }
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def is_status_fresh(emu_name='eden', window=0.5):
+    """Check if status.bin is being actively updated."""
+    info = EMULATORS.get(emu_name, {})
+    sd = info.get('sd_path', '')
+    path = os.path.join(sd, 'status.bin') if sd else ''
+    if not os.path.exists(path):
+        return False
+    try:
+        s1 = read_status_bin(emu_name)
+        time.sleep(window)
+        s2 = read_status_bin(emu_name)
+        return s1 and s2 and s1.get('frame', 0) != s2.get('frame', 0)
+    except:
+        return False
+
+
+# ─── Commands ───
+
+def cmd_overview():
+    """Full state overview — everything at a glance."""
+    print("═══ SMM2 Session Overview ═══\n")
+
+    # Processes
+    procs = get_processes()
+    if procs:
+        for name, plist in procs.items():
+            for p in plist:
+                mem_mb = p['mem_kb'] / 1024
+                label = "🎮 RUNNING" if mem_mb > 100 else "⚠️  small"
+                print(f"  {label}  {name}  PID {p['pid']}  {mem_mb:.0f} MB")
+    else:
+        print("  No emulators running.")
+
+    # GDB config
+    gdb = gdb_is_enabled()
+    if gdb is not None:
+        print(f"\n  GDB stub: {'✅ enabled' if gdb else '❌ disabled'}")
+
+    # Hooks
+    print(f"\n  Hooks built: {'✅' if hooks_built() else '❌'}")
+    for emu in ['eden', 'ryujinx']:
+        deployed = hooks_deployed(emu)
+        if deployed is not None:
+            print(f"  Hooks deployed ({emu}): {'✅' if deployed else '❌'}")
+
+    # tmux sessions
+    sessions = tmux_list_sessions()
+    if sessions:
+        print(f"\n  tmux sessions:")
+        for s in sessions:
+            print(f"    {s}")
+    else:
+        print(f"\n  tmux sessions: none")
+
+    # Game status
+    for emu in ['eden', 'ryujinx']:
+        if procs.get(emu) or hooks_deployed(emu):
+            status = read_status_bin(emu)
+            if status and 'error' not in status:
+                fresh = "🟢 live" if not status['stale'] else "🔴 stale"
+                print(f"\n  Game state ({emu}): {fresh} (age: {status['age_seconds']}s)")
+                print(f"    Frame:{status['frame']} State:{status['state']} "
+                      f"Player:{status['has_player']} Phase:{status['phase']}")
+                print(f"    Pos:({status['pos_x']:.1f}, {status['pos_y']:.1f}) "
+                      f"Vel:({status['vel_x']:.1f}, {status['vel_y']:.1f})")
+                print(f"    Powerup:{status['powerup']} Theme:{status['theme']} Style:{status['style']}")
+            elif status:
+                print(f"\n  Game state ({emu}): {status['error']}")
+
+    print()
+
+
 def cmd_status():
     """Show running emulator sessions."""
     procs = get_processes()
     if not procs:
         print("No emulator processes running.")
         return
-
     for name, plist in procs.items():
         print(f"\n{name}:")
         for p in plist:
@@ -137,70 +366,139 @@ def cmd_launch(emu_name, gdb=False):
     info = EMULATORS[emu_name]
 
     # Check if already running
-    procs = get_processes()
-    game_procs = [p for p in procs.get(emu_name, []) if p['mem_kb'] > 100000]
-    if game_procs:
-        print(f"{emu_name} already running (PID {game_procs[0]['pid']}, {game_procs[0]['mem_kb']//1024} MB)")
-        print("Kill it first with: emu_session.py kill " + emu_name)
+    p = get_pid(emu_name)
+    if p and p['mem_kb'] > 100000:
+        print(f"❌ {emu_name} already running (PID {p['pid']}, {p['mem_kb']//1024} MB)")
+        print(f"   Kill first: emu_session.py kill {emu_name}")
         return
 
-    # Enable/disable GDB stub for Eden
-    if emu_name == 'eden' and 'config_path' in info:
-        config = info['config_path']
-        if os.path.exists(config):
-            with open(config) as f:
-                content = f.read()
-            if gdb:
-                content = content.replace('use_gdbstub\\default=true', 'use_gdbstub\\default=false')
-                content = content.replace('use_gdbstub=false', 'use_gdbstub=true')
-            else:
-                content = content.replace('use_gdbstub\\default=false', 'use_gdbstub\\default=true')
-                content = content.replace('use_gdbstub=true', 'use_gdbstub=false')
-            with open(config, 'w') as f:
-                f.write(content)
-            print(f"GDB stub: {'enabled' if gdb else 'disabled'}")
+    # Check hooks deployed
+    if not hooks_deployed(emu_name):
+        print(f"⚠️  Hooks not deployed to {emu_name}. Run: emu_session.py deploy {emu_name}")
 
-    cmd = info['launch_cmd'](gdb)
+    # Clear stale status.bin
+    sd = info.get('sd_path', '')
+    if sd:
+        status_path = os.path.join(sd, 'status.bin')
+        if os.path.exists(status_path):
+            os.remove(status_path)
+            print("Cleared stale status.bin")
+
+    # Set GDB config for Eden
+    if emu_name == 'eden':
+        gdb_set(gdb)
+
+    # Launch
+    cmd = info['launch_cmd']()
     print(f"Launching: {' '.join(cmd)}")
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    print(f"Started {emu_name}, WSL PID {proc.pid}")
 
-    # Poll for Windows process to appear (much faster than blind sleep)
-    import time as _time
-    deadline = _time.time() + 15
+    # Wait for process to appear
+    deadline = time.time() + 20
     win_pid = None
-    while _time.time() < deadline:
-        procs = get_processes()
-        game_procs = [p for p in procs.get(emu_name, []) if p['mem_kb'] > 50000]
-        if game_procs:
-            win_pid = game_procs[0]['pid']
+    while time.time() < deadline:
+        p = get_pid(emu_name)
+        if p and p['mem_kb'] > 50000:
+            win_pid = p['pid']
             break
-        _time.sleep(1)
+        time.sleep(1)
 
     if win_pid:
-        # Save PID for quick checks later
+        # Save PID
         pid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'.{emu_name}_pid')
         with open(pid_file, 'w') as f:
             f.write(str(win_pid))
-        mem_mb = game_procs[0]['mem_kb'] // 1024
-        print(f"✅ {emu_name} running (PID {win_pid}, {mem_mb} MB)")
+        print(f"✅ {emu_name} running (PID {win_pid})")
+        if gdb:
+            print(f"⚠️  Game is PAUSED — connect GDB to port 6543 and send 'c' immediately!")
     else:
-        print(f"❌ {emu_name} failed to start within 15s")
+        print(f"❌ {emu_name} failed to start within 20s")
+
+
+def cmd_deploy(emu_name='eden'):
+    """Deploy hooks to emulator."""
+    deploy_hooks(emu_name)
+
+
+def cmd_game_status(emu_name='eden'):
+    """Read and display game status from status.bin."""
+    status = read_status_bin(emu_name)
+    if not status:
+        print(f"No status available for {emu_name}")
+        return
+    if 'error' in status:
+        print(f"❌ {status['error']}")
+        return
+
+    STATES = {1:'Walk', 2:'Fall', 3:'Jump', 4:'Landing', 5:'Crouch',
+              6:'CrouchEnd', 113:'Death', 114:'Goal'}
+    THEMES = {0:'Ground', 1:'Underground', 2:'Castle', 3:'Airship',
+              4:'Water', 5:'GhostHouse', 6:'Snow', 7:'Desert', 8:'Sky', 9:'Forest'}
+    STYLES = {0:'SMB1', 1:'SMB3', 2:'SMW', 3:'NSMBU', 4:'3DW'}
+
+    fresh = "🟢" if not status['stale'] else "🔴"
+    state_name = STATES.get(status['state'], f"#{status['state']}")
+    theme_name = THEMES.get(status['theme'], f"#{status['theme']}")
+    style_name = STYLES.get(status['style'], f"#{status['style']}")
+
+    print(f"{fresh} Frame:{status['frame']} Age:{status['age_seconds']}s")
+    print(f"  Player:{status['has_player']} State:{state_name}({status['state']}) Phase:{status['phase']}")
+    print(f"  Pos:({status['pos_x']:.1f}, {status['pos_y']:.1f}) Vel:({status['vel_x']:.2f}, {status['vel_y']:.2f})")
+    print(f"  Gravity:{status['gravity']:.2f} Powerup:{status['powerup']}")
+    print(f"  Theme:{theme_name} Style:{style_name}")
+
+
+def cmd_cleanup():
+    """Kill orphaned processes and stale tmux sessions."""
+    # Kill orphaned emulator processes
+    procs = get_processes()
+    for name, plist in procs.items():
+        for p in plist:
+            if p['mem_kb'] < 100000:  # small = probably stale
+                try:
+                    subprocess.run([TASKKILL, '/PID', str(p['pid']), '/F'],
+                                 capture_output=True, timeout=5)
+                    print(f"Killed orphaned {p['exe']} PID {p['pid']} ({p['mem_kb']//1024} MB)")
+                except:
+                    pass
+
+    # List tmux sessions for manual review
+    sessions = tmux_list_sessions()
+    gdb_sessions = [s for s in sessions if 'gdb' in s.lower()]
+    if gdb_sessions:
+        print(f"\nGDB tmux sessions found:")
+        for s in gdb_sessions:
+            print(f"  {s}")
+        print(f"Kill with: tmux kill-session -t {GDB_TMUX_SESSION}")
+
+    # Clean up PID files for dead processes
+    for emu in EMULATORS:
+        pid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'.{emu}_pid')
+        if os.path.exists(pid_file) and not is_running(emu):
+            os.remove(pid_file)
+            print(f"Cleaned stale PID file for {emu}")
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Emulator Session Manager")
+        print("SMM2 Emulator Session Manager")
         print(f"\nUsage: {sys.argv[0]} <command> [args]")
         print("\nCommands:")
-        print("  status              Show running emulators")
-        print("  launch <emu>        Launch emulator (eden/ryujinx)")
-        print("  launch <emu> --gdb  Launch with GDB stub enabled")
-        print("  kill <emu|all>      Kill emulator processes")
+        print("  overview              Full state overview (start here!)")
+        print("  status                Show running emulators")
+        print("  launch <emu> [--gdb]  Launch emulator (eden/ryujinx)")
+        print("  kill <emu|all>        Kill emulator processes")
+        print("  deploy <emu>          Deploy hooks to emulator")
+        print("  gdb-on                Enable GDB stub in config")
+        print("  gdb-off               Disable GDB stub in config")
+        print("  game-status [emu]     Read game state from status.bin")
+        print("  cleanup               Kill orphans, clean stale state")
         sys.exit(0)
 
     cmd = sys.argv[1]
-    if cmd == 'status':
+    if cmd == 'overview':
+        cmd_overview()
+    elif cmd == 'status':
         cmd_status()
     elif cmd == 'kill':
         cmd_kill(sys.argv[2] if len(sys.argv) > 2 else 'all')
@@ -208,8 +506,21 @@ def main():
         emu = sys.argv[2] if len(sys.argv) > 2 else 'eden'
         gdb = '--gdb' in sys.argv
         cmd_launch(emu, gdb)
+    elif cmd == 'deploy':
+        emu = sys.argv[2] if len(sys.argv) > 2 else 'eden'
+        cmd_deploy(emu)
+    elif cmd == 'gdb-on':
+        gdb_set(True)
+    elif cmd == 'gdb-off':
+        gdb_set(False)
+    elif cmd == 'game-status':
+        emu = sys.argv[2] if len(sys.argv) > 2 else 'eden'
+        cmd_game_status(emu)
+    elif cmd == 'cleanup':
+        cmd_cleanup()
     else:
         print(f"Unknown command: {cmd}")
+        print("Run without args for help.")
 
 
 if __name__ == '__main__':
