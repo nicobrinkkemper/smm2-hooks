@@ -46,10 +46,21 @@ except ImportError:
                     os.environ.setdefault(_k.strip(), _v.strip())
 
 # Paths (all configurable via .env)
-SD_BASE = os.environ.get("RYUJINX_SD_PATH", "")
-if not SD_BASE:
-    print("Error: RYUJINX_SD_PATH not set. Copy .env.example to .env and configure it.")
-    sys.exit(1)
+# Support --eden flag to use Eden emulator paths instead of Ryujinx
+_use_eden = "--eden" in sys.argv
+if _use_eden:
+    sys.argv.remove("--eden")
+
+if _use_eden:
+    SD_BASE = os.environ.get("EDEN_SD_PATH", "")
+    if not SD_BASE:
+        print("Error: EDEN_SD_PATH not set in .env")
+        sys.exit(1)
+else:
+    SD_BASE = os.environ.get("RYUJINX_SD_PATH", "")
+    if not SD_BASE:
+        print("Error: RYUJINX_SD_PATH not set. Copy .env.example to .env and configure it.")
+        sys.exit(1)
 INPUT_BIN = os.path.join(SD_BASE, "input.bin")
 SCREENSHOT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshot_ryujinx.ps1")
 SCREENSHOT_OUT = os.environ.get("SCREENSHOT_OUT", "/mnt/c/temp/smm2_debug/capture.png")
@@ -768,6 +779,30 @@ def main():
                 print(f"Phase:   {phase} ({phase_str})")
         else:
             print("No status data (game not running or hooks not active)")
+    elif cmd == "deploy":
+        # Deploy built NSO to emulator mod folder
+        import shutil
+        build_nso = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "smm2-hooks.nso")
+        build_npdm = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "main.npdm")
+        if not os.path.exists(build_nso):
+            print("Error: build/smm2-hooks.nso not found. Run ninja -C build first.")
+            sys.exit(1)
+        if _use_eden:
+            dest = os.environ.get("EDEN_MODS_PATH", "")
+            if not dest:
+                print("Error: EDEN_MODS_PATH not set in .env")
+                sys.exit(1)
+        else:
+            dest = os.environ.get("MODS_DEPLOY_PATH", "")
+            if not dest:
+                print("Error: MODS_DEPLOY_PATH not set in .env")
+                sys.exit(1)
+        os.makedirs(dest, exist_ok=True)
+        shutil.copy2(build_nso, os.path.join(dest, "subsdk4"))
+        if os.path.exists(build_npdm):
+            shutil.copy2(build_npdm, os.path.join(dest, "main.npdm"))
+        emu = "Eden" if _use_eden else "Ryujinx"
+        print(f"Deployed to {emu}: {dest}")
     else:
         print(f"Unknown command: {cmd}")
         print(__doc__)
