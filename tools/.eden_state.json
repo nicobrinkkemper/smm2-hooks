@@ -1,0 +1,15 @@
+{
+  "text_base": "ASLR - must search each session",
+  "changeState_addr": "0x819939b0 (session-specific)",
+  "player_object": "0x218eb50798 (session-specific)",
+  "notes": [
+    "Eden has ASLR - addresses change every launch",
+    "Use FUNC_SIGNATURES to find functions by byte pattern each session",
+    "changeState bytes: f657bda9 f44f01a9 fd7b02a9 fd830091 080840b9 f303012a",
+    "Hardware watchpoints CONFIRMED WORKING",
+    "Must use persistent tmux GDB session (eden-gdb) - batch connections crash Eden",
+    "Connect AFTER game loads, set breakpoints AFTER gameplay starts",
+    "PlayerObject = StateMachine_ptr - 0x3F0",
+    "Use handle SIGTRAP nostop noprint pass to avoid spurious stops"
+  ]
+}
