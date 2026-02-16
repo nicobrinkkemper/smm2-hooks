@@ -114,45 +114,53 @@ static int32_t cur_lx = 0;
 static int32_t cur_ly = 0;
 static uint32_t s_input_poll_count = 0;  // increments each GetNpadStates call
 
-// Hook nn::hid::GetNpadStates
-static HkTrampoline<int, nn::hid::full_key_state*, int, const uint32_t&> npad_hook =
+// Common input update logic (called from any NpadStates variant hook)
+static void update_input() {
+    s_input_poll_count++;
+
+    // Script mode: advance keyframes
+    if (script_active && script_len > 0) {
+        uint32_t f = frame::current();
+        while (script_idx < script_len && script[script_idx].frame <= f) {
+            cur_buttons = script[script_idx].buttons;
+            cur_lx = script[script_idx].stick_lx;
+            cur_ly = script[script_idx].stick_ly;
+            script_idx++;
+        }
+        if (script_idx >= script_len && cur_buttons == 0) {
+            script_active = false;
+        }
+    }
+
+    // Live mode: read input file every 2 frames
+    if (live_mode && (frame::current() % 2 == 0)) {
+        LiveInput inp;
+        if (read_live_input(inp)) {
+            cur_buttons = inp.buttons;
+            cur_lx = inp.stick_lx;
+            cur_ly = inp.stick_ly;
+        }
+    }
+}
+
+static void inject_buttons(nn::hid::full_key_state* out, int written) {
+    for (int i = 0; i < written; i++) {
+        out[i].buttons |= cur_buttons;
+        if (cur_lx != 0) out[i].sl_x = cur_lx;
+        if (cur_ly != 0) out[i].sl_y = cur_ly;
+    }
+}
+
+// Hook GetNpadStates(NpadFullKeyState*) — Pro Controller
+static HkTrampoline<int, nn::hid::full_key_state*, int, const uint32_t&> npad_fullkey_hook =
     hk::hook::trampoline([](nn::hid::full_key_state* out, int count, const uint32_t& id) -> int {
-        int written = npad_hook.orig(out, count, id);
-        s_input_poll_count++;
-
-        // Script mode: advance keyframes
-        if (script_active && script_len > 0) {
-            uint32_t f = frame::current();
-            while (script_idx < script_len && script[script_idx].frame <= f) {
-                cur_buttons = script[script_idx].buttons;
-                cur_lx = script[script_idx].stick_lx;
-                cur_ly = script[script_idx].stick_ly;
-                script_idx++;
-            }
-            if (script_idx >= script_len && cur_buttons == 0) {
-                script_active = false;
-            }
-        }
-
-        // Live mode: read input file every 2 frames
-        if (live_mode && (frame::current() % 2 == 0)) {
-            LiveInput inp;
-            if (read_live_input(inp)) {
-                cur_buttons = inp.buttons;
-                cur_lx = inp.stick_lx;
-                cur_ly = inp.stick_ly;
-            }
-        }
-
-        // Inject: OR our buttons with real controller (so real input still works)
-        for (int i = 0; i < written; i++) {
-            out[i].buttons |= cur_buttons;
-            if (cur_lx != 0) out[i].sl_x = cur_lx;
-            if (cur_ly != 0) out[i].sl_y = cur_ly;
-        }
-
+        int written = npad_fullkey_hook.orig(out, count, id);
+        update_input();
+        inject_buttons(out, written);
         return written;
     });
+
+// Other NpadStates variants removed — extra hooks crash on Eden (symbol lookup failure)
 
 uint32_t input_poll_count() {
     return s_input_poll_count;
@@ -169,7 +177,7 @@ void init() {
         live_mode = true;
     }
 
-    npad_hook.installAtSym<"_ZN2nn3hid13GetNpadStatesEPNS0_16NpadFullKeyStateEiRKj">();
+    npad_fullkey_hook.installAtSym<"_ZN2nn3hid13GetNpadStatesEPNS0_16NpadFullKeyStateEiRKj">();
 }
 
 } // namespace tas
