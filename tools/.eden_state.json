@@ -1,7 +1,7 @@
 {
   "text_base": "ASLR - must search each session",
   "changeState_addr": "0x819939b0 (session-specific)",
-  "player_object": "0x218eb50798 (session-specific)",
+  "player_object": "0x2108cc9108",
   "notes": [
     "Eden has ASLR - addresses change every launch",
     "Use FUNC_SIGNATURES to find functions by byte pattern each session",
@@ -11,5 +11,6 @@
     "Connect AFTER game loads, set breakpoints AFTER gameplay starts",
     "PlayerObject = StateMachine_ptr - 0x3F0",
     "Use handle SIGTRAP nostop noprint pass to avoid spurious stops"
-  ]
+  ],
+  "state_machine": "0x2108cc94f8"
 }
