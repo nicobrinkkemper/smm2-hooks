@@ -205,6 +205,37 @@ def wait_for_state(target_state, timeout_ms=10000):
     return None
 
 
+def wait_for_frame_advance(timeout_s=10, start_frame=None):
+    """Wait until status.bin frame counter advances (proves game is running).
+    Returns the status dict, or None on timeout."""
+    if start_frame is None:
+        s = read_status()
+        start_frame = s['frame'] if s else 0
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        s = read_status()
+        if s and s['frame'] > start_frame:
+            return s
+        time.sleep(0.1)
+    return None
+
+
+def wait_for_has_player(timeout_s=10):
+    """Wait until has_player becomes 1 in status.bin."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        s = read_status()
+        if s and s.get('has_player'):
+            return s
+        time.sleep(0.1)
+    return None
+
+
+def wait_for_editor(timeout_s=10):
+    """Wait until player state 43 (editor idle) appears."""
+    return wait_for_state(43, timeout_s * 1000)
+
+
 def is_playing():
     """Check if we're in gameplay (player state != 0)."""
     s = read_status()
@@ -298,6 +329,138 @@ def navigate_to_main_menu():
     press("A", 100)
     wait(3000)
     print("Should be at main menu now")
+
+
+def boot(target="play"):
+    """Full boot sequence: launch emulator, connect GDB (Eden), navigate to target.
+    
+    Handles:
+    - Eden GDB pause-on-start (connects GDB immediately, sends continue)
+    - Title screen skip (ZL+ZR)
+    - Menu navigation to Course Maker
+    - Editor → play mode transition
+    
+    Uses status.bin polling instead of blind sleeps.
+    
+    Args:
+        target: "play", "editor", or "menu"
+    """
+    import subprocess
+    
+    emu = "eden" if _use_eden else "ryujinx"
+    tools_dir = os.path.dirname(os.path.abspath(__file__))
+    emu_script = os.path.join(tools_dir, "emu_session.py")
+    
+    # Step 1: Check if emulator is already running
+    result = subprocess.run([sys.executable, emu_script, "status", emu],
+                          capture_output=True, text=True)
+    already_running = "running" in result.stdout.lower()
+    
+    if not already_running:
+        print(f"Launching {emu}...")
+        gdb_flag = ["--gdb"] if _use_eden else []
+        subprocess.run([sys.executable, emu_script, "launch", emu] + gdb_flag,
+                      timeout=30)
+    else:
+        print(f"{emu} already running")
+    
+    # Step 2: For Eden with GDB, connect and continue immediately
+    # Eden PAUSES on start until GDB connects — do NOT wait!
+    if _use_eden:
+        print("Connecting GDB (Eden pauses until GDB continues)...")
+        # Kill any existing GDB sessions
+        subprocess.run(["pkill", "-f", "gdb-multiarch"], capture_output=True)
+        subprocess.run(["tmux", "kill-session", "-t", "eden-gdb"],
+                      capture_output=True)
+        time.sleep(0.5)
+        
+        # Create persistent GDB session
+        subprocess.run(["tmux", "new-session", "-d", "-s", "eden-gdb"])
+        time.sleep(0.5)
+        subprocess.run(["tmux", "send-keys", "-t", "eden-gdb",
+                       "gdb-multiarch -q", "Enter"])
+        time.sleep(2)
+        
+        gdb_host = os.environ.get("EDEN_GDB_HOST", "172.19.32.1")
+        gdb_port = os.environ.get("EDEN_GDB_PORT", "6543")
+        subprocess.run(["tmux", "send-keys", "-t", "eden-gdb",
+                       f"target remote {gdb_host}:{gdb_port}", "Enter"])
+        time.sleep(3)
+        subprocess.run(["tmux", "send-keys", "-t", "eden-gdb", "c", "Enter"])
+        time.sleep(1)
+        print("GDB connected and continued")
+    
+    # Step 3: Wait for game to start (frame counter advancing)
+    print("Waiting for game to start...")
+    s = wait_for_frame_advance(timeout_s=15, start_frame=0)
+    if not s:
+        print("ERROR: Game not responding (frame counter not advancing)")
+        print("If Eden: is GDB stub enabled? Check config.")
+        return False
+    print(f"  Game running at frame {s['frame']}")
+    
+    # Step 4: Title skip (ZL+ZR)
+    print("Title skip (ZL+ZR)...")
+    hold("ZL,ZR", 2000)
+    time.sleep(3)
+    
+    # Wait for main menu (frame advances + player changes)
+    s = wait_for_frame_advance(timeout_s=10)
+    if s:
+        print(f"  Post-skip: frame {s['frame']}, has_player={s.get('has_player', 0)}")
+    
+    if target == "menu":
+        _save_state(STATE_MAIN_MENU)
+        print("✅ At main menu")
+        return True
+    
+    # Step 5: Press A to enter Course Maker
+    print("Entering Course Maker (A)...")
+    press("A", 100)
+    time.sleep(3)
+    
+    # Wait for editor state (player state 43)
+    s = wait_for_editor(timeout_s=10)
+    if s:
+        _save_state(STATE_EDITOR)
+        print(f"  In editor: state={s['player_state']}")
+    else:
+        # May need a second A press
+        press("A", 100)
+        time.sleep(3)
+        s = wait_for_editor(timeout_s=5)
+        if s:
+            _save_state(STATE_EDITOR)
+            print(f"  In editor (2nd press): state={s['player_state']}")
+        else:
+            print("  WARNING: Could not confirm editor state")
+            _save_state(STATE_EDITOR)  # assume it worked
+    
+    if target == "editor":
+        print("✅ In editor")
+        return True
+    
+    # Step 6: Enter play mode (hold MINUS)
+    print("Entering play mode (MINUS hold)...")
+    hold("MINUS", 1200)
+    time.sleep(2)
+    
+    # Wait for non-editor state (state != 43)
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        s = read_status()
+        if s and s.get('has_player') and s['player_state'] != 43:
+            break
+        time.sleep(0.2)
+    
+    if s and s.get('has_player') and s['player_state'] != 43:
+        _save_state(STATE_PLAYING)
+        print(f"✅ Playing: state={s['player_state']}, pos=({s['pos_x']:.0f}, {s['pos_y']:.0f})")
+    else:
+        _save_state(STATE_PLAYING)
+        print("  WARNING: Could not confirm play state")
+    
+    return True
 
 
 def navigate_to_coursebot():
@@ -490,12 +653,39 @@ def _load_state():
     return STATE_UNKNOWN
 
 def detect_state():
-    """Best-effort state detection using persisted nav state.
+    """Detect game state from status.bin + nav_state.txt fallback.
     
-    status.bin is unreliable right now (s_player=NULL, stale data from dead instances).
-    We rely on our own navigation state tracking instead.
-    TODO: re-enable status.bin detection once player pointer is fixed.
+    Uses real-time hook data when available:
+    - has_player + player_state 43 = editor (state 43 is universal editor idle)
+    - has_player + player_state != 43 + game is interactive = playing or title
+    - real_game_phase -1 = loading
+    - Distinguishes title vs play via nav_state.txt tracking
     """
+    status = read_status()
+    if status is None:
+        return _load_state()  # no status.bin, use persisted state
+    
+    # Check if game is running at all
+    if status.get('real_game_phase', -1) == -1:
+        return STATE_UNKNOWN  # loading
+    
+    has_player = status.get('has_player', 0)
+    player_state = status.get('player_state', 0)
+    
+    if has_player:
+        # State 43 = editor idle (only appears in Course Maker editor)
+        if player_state == 43:
+            return STATE_EDITOR
+        # Any other state with a player = playing (or title cosmetic Mario)
+        # Use nav_state to disambiguate title vs play
+        persisted = _load_state()
+        if persisted in (STATE_PLAYING, STATE_EDITOR, STATE_PAUSE):
+            return persisted
+        # If we have a player but nav_state says title/unknown,
+        # it's likely the title screen cosmetic Mario
+        return persisted if persisted != STATE_UNKNOWN else STATE_TITLE
+    
+    # No player — could be main menu, coursebot, or between screens
     return _load_state()
 
 def goto(target):
@@ -779,6 +969,12 @@ def main():
                 print(f"Phase:   {phase} ({phase_str})")
         else:
             print("No status data (game not running or hooks not active)")
+    elif cmd == "boot":
+        # Full boot-to-play sequence. Handles GDB connection for Eden.
+        # Usage: automate.py [--eden] boot [play|editor|menu]
+        target = sys.argv[2] if len(sys.argv) > 2 else "play"
+        boot(target)
+
     elif cmd == "deploy":
         # Deploy built NSO to emulator mod folder
         import shutil
