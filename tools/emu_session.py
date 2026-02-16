@@ -695,9 +695,9 @@ def _navigate_to_playing(emu_name):
     """
     print("  Navigating to play mode...")
 
-    # Wait for title screen (frame > 120 = animation done)
+    # Wait for title screen (frame > 200 = animation done, L+R banner visible)
     print("    Waiting for title animation...", end='', flush=True)
-    s = _wait_frames(emu_name, 'frame', lambda s: s['frame'] > 150, timeout=15)
+    s = _wait_frames(emu_name, 'frame', lambda s: s['frame'] > 200, timeout=15)
     if not s:
         print(" ❌ timeout")
         return False
@@ -708,53 +708,64 @@ def _navigate_to_playing(emu_name):
         print("    ❌ Game died")
         return False
 
-    # L+R to skip title → main menu
-    print("    L+R (title skip)...", end=' ', flush=True)
-    _press(BTN_L | BTN_R, 200)
-    time.sleep(2.5)
-    if not _is_alive(emu_name):
-        print("❌ crashed")
-        return False
-    print("✅")
+    # L+R to skip title → Make/Play menu (hold 1.5s, retry up to 3 times)
+    for attempt in range(3):
+        print(f"    L+R (title skip, attempt {attempt+1})...", end=' ', flush=True)
+        _press(BTN_L | BTN_R, 1500)
+        time.sleep(2)
+        # Verify: scene_mode should still be 6 (title) but we should see a menu
+        # The Make/Play menu appears as an overlay on the title — scene_mode stays 6
+        # but pressing A should now enter editor. We verify by checking if A works.
+        if not _is_alive(emu_name):
+            print("❌ crashed")
+            return False
+        print("✅")
+        break  # Can't verify L+R separately — proceed to A and check scene_mode there
 
     # A to enter Course Maker (Make is default selection)
-    print("    A (enter editor)...", end=' ', flush=True)
-    _press(BTN_A, 200)
-    time.sleep(1)
-
-    # Wait for loading: has_player goes 0 (loading) then 1 (loaded)
-    # First wait for has_player=0 (loading started)
-    _wait_frames(emu_name, 'has_player', lambda s: s['has_player'] == 0, timeout=5)
-    # Then wait for has_player=1 (editor loaded with editor Mario)
-    loaded = _wait_frames(emu_name, 'has_player', lambda s: s['has_player'] == 1, timeout=20)
-    if not loaded:
-        # Maybe already loaded or different behavior — check if alive
+    # If L+R didn't work, A does nothing and scene_mode stays 6.
+    # Retry the whole L+R → A sequence if scene_mode doesn't reach 1.
+    for enter_attempt in range(3):
+        print(f"    A (enter editor)...", end=' ', flush=True)
+        _press(BTN_A, 300)
+        loaded = _wait_frames(emu_name, 'scene_mode', lambda s: s.get('scene_mode') == 1, timeout=15)
+        if loaded:
+            print("✅")
+            break
         if not _is_alive(emu_name):
             print("❌ crashed during load")
             return False
-        print("⚠️ load detection unclear, continuing")
+        # scene_mode still 6 — L+R probably didn't register. Retry L+R → A.
+        print(f"⚠️ still on title (scene_mode=6), retrying L+R...")
+        _press(BTN_L | BTN_R, 1500)
+        time.sleep(3)
     else:
-        print("✅")
+        print("    ❌ Could not enter editor after 3 attempts")
+        return False
 
     time.sleep(1)
     if not _is_alive(emu_name):
         print("    ❌ Game died after editor load")
         return False
 
-    # MINUS to enter play mode
+    # B to clear any panel focus, then MINUS to enter play mode
+    _press(BTN_B, 100)
+    time.sleep(0.3)
     print("    MINUS (play mode)...", end=' ', flush=True)
     _press(BTN_MINUS, 200)
-    time.sleep(3)
-
-    if not _is_alive(emu_name):
-        print("❌ crashed")
-        return False
-
-    s = read_status_bin(emu_name)
-    if s and 'error' not in s:
-        print(f"✅ State:{s['state']} Pos:({s['pos_x']:.0f},{s['pos_y']:.0f})")
+    # Wait for scene_mode to change from 1 (editor) to 5 (play)
+    playing = _wait_frames(emu_name, 'scene_mode', lambda s: s.get('scene_mode') == 5, timeout=10)
+    if not playing:
+        if not _is_alive(emu_name):
+            print("❌ crashed")
+            return False
+        print("⚠️ scene_mode not 5")
     else:
-        print("✅")
+        s = read_status_bin(emu_name)
+        if s and 'error' not in s:
+            print(f"✅ State:{s['state']} Pos:({s['pos_x']:.0f},{s['pos_y']:.0f})")
+        else:
+            print("✅")
 
     return True
 
