@@ -252,6 +252,8 @@ def read_status_bin(emu_name='eden'):
         real_game_phase = struct.unpack('<i', data[0x38:0x3C])[0]
         theme = data[0x3C]
         game_style = struct.unpack('<I', data[0x40:0x44])[0]
+        scene_mode = struct.unpack('<I', data[0x44:0x48])[0] if len(data) >= 100 else 0
+        is_playing_flag = struct.unpack('<I', data[0x48:0x4C])[0] if len(data) >= 100 else 0
         mtime = os.path.getmtime(path)
         age = time.time() - mtime
         return {
@@ -263,6 +265,8 @@ def read_status_bin(emu_name='eden'):
             'buffered_action': buffered_action, 'input_poll_count': input_poll_count,
             'real_game_phase': real_game_phase, 'theme': theme,
             'game_style': game_style, 'phase': real_game_phase,
+            'scene_mode': scene_mode,  # 1=editor, 5=play, 6=title/menu
+            'is_playing_flag': is_playing_flag,
             'age_seconds': round(age, 1),
             'stale': age > 5,
             'style': game_style,  # alias for display
@@ -474,7 +478,9 @@ def cmd_game_status(emu_name='eden'):
     print(f"  Player:{status['has_player']} State:{state_name}({status['state']}) Phase:{status['real_game_phase']}")
     print(f"  Pos:({status['pos_x']:.1f}, {status['pos_y']:.1f}) Vel:({status['vel_x']:.2f}, {status['vel_y']:.2f})")
     print(f"  Gravity:{status['gravity']:.2f} Powerup:{powerup_name}({status['powerup']})")
-    print(f"  Theme:{theme_name} Style:{style_name}")
+    SCENES = {0: '???', 1: 'Editor', 5: 'Play', 6: 'Title/Menu'}
+    scene = SCENES.get(status.get('scene_mode', 0), f"#{status.get('scene_mode', 0)}")
+    print(f"  Theme:{theme_name} Style:{style_name} Scene:{scene}")
     if status.get('state_frames'):
         print(f"  StateFrames:{status['state_frames']} Facing:{status['facing']:.1f}")
 

@@ -48,10 +48,15 @@ struct StatusBlock {
     int32_t  real_game_phase;   // from GamePhaseManager: 0=title, 2=course maker, 4=story/coursebot
     uint8_t  course_theme;      // 0x3C: 0=Ground,1=Underground,2=Castle,3=Airship,4=Underwater,5=GhostHouse,6=Snow,7=Desert,8=Sky,9=Forest,0xFF=unknown
     uint8_t  _pad2[3];
-    uint32_t game_style;        // 0x40: gamestyle from BCD header (0x314d=SMB1,0x334d=SMB3,0x5733=3DW,etc), 0=unknown
+    uint32_t game_style;        // 0x40: gamestyle index (0-4) from GamePhaseManager inner+0x1C
+    // Scene detection from GamePhaseManager inner struct
+    uint32_t scene_mode;        // 0x44: inner+0x14: 1=editor, 5=play, 6=title/menu
+    uint32_t is_playing;        // 0x48: inner+0x10: 0=editor, 1=playing/title
+    // GPM inner dump for research
+    uint32_t gpm_inner[6];      // 0x4C: inner struct offsets 0x00-0x14 (24 bytes)
 };
 
-static_assert(sizeof(StatusBlock) == 68, "StatusBlock size mismatch");
+static_assert(sizeof(StatusBlock) == 100, "StatusBlock size mismatch");
 
 // static_assert to be updated after size is confirmed
 
