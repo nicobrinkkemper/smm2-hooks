@@ -66,6 +66,17 @@ else:
         sys.exit(1)
 INPUT_BIN = os.path.join(SD_BASE, "input.bin")
 SCREENSHOT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screenshot_ryujinx.ps1")
+
+def set_emulator(emu='eden'):
+    """Switch SD_BASE to a different emulator. Call before using read_status/write_input."""
+    global SD_BASE, INPUT_BIN, _use_eden
+    if emu == 'eden':
+        SD_BASE = os.environ.get("EDEN_SD_PATH", "")
+        _use_eden = True
+    else:
+        SD_BASE = os.environ.get("RYUJINX_SD_PATH", "")
+        _use_eden = False
+    INPUT_BIN = os.path.join(SD_BASE, "input.bin")
 SCREENSHOT_OUT = os.environ.get("SCREENSHOT_OUT", "/mnt/c/temp/smm2_debug/capture.png")
 WSL_DISTRO = os.environ.get("WSL_DISTRO", "Ubuntu")
 

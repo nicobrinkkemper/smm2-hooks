@@ -62,6 +62,7 @@ static_assert(sizeof(StatusBlock) == 100, "StatusBlock size mismatch");
 
 void init();
 void update(uint32_t frame);
+void update_from_input_poll();  // fallback: called from NpadStates hook, fires in ALL scenes
 void set_player(uintptr_t player);
 void set_mode(uint8_t mode);  // 0=editor, 1=playing
 

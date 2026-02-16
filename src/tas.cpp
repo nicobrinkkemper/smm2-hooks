@@ -1,5 +1,6 @@
 #include "smm2/tas.h"
 #include "smm2/frame.h"
+#include "smm2/status.h"
 #include "smm2/log.h"
 #include "nn/hid.h"
 #include "nn/fs.h"
@@ -117,6 +118,8 @@ static uint32_t s_input_poll_count = 0;  // increments each GetNpadStates call
 // Common input update logic (called from any NpadStates variant hook)
 static void update_input() {
     s_input_poll_count++;
+    // Fallback status update — fires in ALL scenes (editor, menu, loading)
+    status::update_from_input_poll();
 
     // Script mode: advance keyframes
     if (script_active && script_len > 0) {

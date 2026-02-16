@@ -14,6 +14,8 @@ namespace status {
 static const char* STATUS_PATH = "sd:/smm2-hooks/status.bin";
 static uintptr_t s_player = 0;
 static uint8_t s_mode = 0;  // 0=editor, 1=playing
+static uint32_t s_last_procframe = 0;    // last frame from procFrame_ callback
+static uint32_t s_input_poll_frame = 0;  // monotonic counter from input polls
 
 // Hook PlayerObject_changeState to track player pointer
 // This replaces the dependency on state_logger
@@ -33,8 +35,8 @@ void set_mode(uint8_t mode) {
 
 static bool is_death_state(uint32_t state) {
     // States 9, 10 = damage/death from state_logger observations
-    // State 113 = death (from earlier captures)
-    return state == 9 || state == 10 || state == 113;
+    // State 113 = death, 114 = post-death (from 3DW captures)
+    return state == 9 || state == 10 || state == 113 || state == 114;
 }
 
 static bool is_goal_state(uint32_t state) {
@@ -45,10 +47,30 @@ static bool is_goal_state(uint32_t state) {
 void init() {
     nn::fs::DeleteFile(STATUS_PATH);
     nn::fs::CreateFile(STATUS_PATH, sizeof(StatusBlock));
+    // Verify it was created by trying to open it
+    nn::fs::FileHandle f;
+    if (nn::fs::OpenFile(&f, STATUS_PATH, nn::fs::MODE_WRITE) == 0) {
+        // Zero it out
+        StatusBlock blk;
+        std::memset(&blk, 0, sizeof(blk));
+        nn::fs::WriteOption opt = {.flags = nn::fs::WRITE_OPTION_FLUSH};
+        nn::fs::WriteFile(f, 0, &blk, sizeof(blk), opt);
+        nn::fs::CloseFile(f);
+    }
     playerChangeState_hook.installAtSym<"PlayerObject_changeState">();
 }
 
+void update_from_input_poll() {
+    s_input_poll_frame++;
+    // If procFrame_ hasn't fired in 30+ input polls, it's stalled (editor/menu/loading)
+    // Use input poll as fallback frame source
+    if (s_input_poll_frame - s_last_procframe > 30) {
+        update(s_input_poll_frame);
+    }
+}
+
 void update(uint32_t frame) {
+    s_last_procframe = frame;
     StatusBlock blk;
     std::memset(&blk, 0, sizeof(blk));
     blk.frame = frame;
@@ -56,8 +78,31 @@ void update(uint32_t frame) {
     blk.input_poll_count = tas::input_poll_count();
     blk.real_game_phase = game_phase::read_phase();
 
-    // Guard: only read player fields when game phase is valid (3=editor/play, 4=coursebot)
-    // During theme changes/scene transitions, player pointer may be dangling
+    // Detect stale player pointer: if player data looks frozen (same state_frames for many
+    // consecutive updates, or death state persisting), clear pointer.
+    // Also: validate player pointer by checking if read produces sensible values.
+    if (s_player != 0) {
+        uint32_t cur_state = player::read<uint32_t>(s_player, player::off::cur_state);
+        float cur_y = player::read<float>(s_player, player::off::pos_y);
+        static uint32_t s_prev_state_frames = 0;
+        static uint32_t s_stale_count = 0;
+        uint32_t sf = player::read<uint32_t>(s_player, player::off::state_frames);
+        
+        // If state_frames hasn't changed in 120+ frames (2 seconds), pointer is stale
+        if (sf == s_prev_state_frames) {
+            s_stale_count++;
+        } else {
+            s_stale_count = 0;
+            s_prev_state_frames = sf;
+        }
+        
+        if (s_stale_count > 120) {
+            s_player = 0;  // Clear stale pointer
+            s_stale_count = 0;
+        }
+    }
+
+    // Guard: only read player fields when player pointer is valid
     if (s_player != 0) {
         blk.player_state  = player::read<uint32_t>(s_player, player::off::cur_state);
         blk.powerup_id    = player::read<uint32_t>(s_player, player::off::powerup_id);
@@ -118,11 +163,15 @@ void update(uint32_t frame) {
     }
 
     nn::fs::FileHandle f;
-    if (nn::fs::OpenFile(&f, STATUS_PATH, nn::fs::MODE_WRITE) == 0) {
-        nn::fs::WriteOption opt = {.flags = nn::fs::WRITE_OPTION_FLUSH};
-        nn::fs::WriteFile(f, 0, &blk, sizeof(blk), opt);
-        nn::fs::CloseFile(f);
+    if (nn::fs::OpenFile(&f, STATUS_PATH, nn::fs::MODE_WRITE) != 0) {
+        // File missing — recreate it (can happen if deleted externally)
+        nn::fs::CreateFile(STATUS_PATH, sizeof(StatusBlock));
+        if (nn::fs::OpenFile(&f, STATUS_PATH, nn::fs::MODE_WRITE) != 0)
+            return;  // still can't open, give up this frame
     }
+    nn::fs::WriteOption opt = {.flags = nn::fs::WRITE_OPTION_FLUSH};
+    nn::fs::WriteFile(f, 0, &blk, sizeof(blk), opt);
+    nn::fs::CloseFile(f);
 }
 
 } // namespace status
