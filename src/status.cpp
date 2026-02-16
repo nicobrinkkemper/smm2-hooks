@@ -86,12 +86,22 @@ void update(uint32_t frame) {
     if (s_base != 0) {
         // Follow pointer chain: main+0x2A67B70 → [+0x28] → theme at +0x210
         uintptr_t* p1 = reinterpret_cast<uintptr_t*>(s_base + 0x2A67B70);
-        if (*p1 > 0x2000000000ULL && *p1 < 0x2200000000ULL) {
+        if (*p1 > 0x1000000ULL && *p1 < 0x3000000000ULL) {
             uintptr_t* p2 = reinterpret_cast<uintptr_t*>(*p1 + 0x28);
-            if (*p2 > 0x2000000000ULL && *p2 < 0x2200000000ULL) {
+            if (*p2 > 0x1000000ULL && *p2 < 0x3000000000ULL) {
                 blk.course_theme = *reinterpret_cast<uint8_t*>(*p2 + 0x210);
-                // Game style is at header offset — check nearby
-                // [[main+0x2A692F8]+0x28] = version area, style might be in header
+            }
+        }
+    }
+
+    // Read game style from noexes: [[main+0x2C57D58]+0x30]+0x1C
+    // This is the GamePhaseManager inner phase struct
+    if (s_base != 0) {
+        uintptr_t* gpm = reinterpret_cast<uintptr_t*>(s_base + 0x2C57D58);
+        if (*gpm > 0x1000000ULL && *gpm < 0x3000000000ULL) {
+            uintptr_t* inner = reinterpret_cast<uintptr_t*>(*gpm + 0x30);
+            if (*inner > 0x1000000ULL && *inner < 0x3000000000ULL) {
+                blk.game_style = *reinterpret_cast<uint32_t*>(*inner + 0x1C);
             }
         }
     }

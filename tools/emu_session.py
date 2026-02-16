@@ -225,27 +225,47 @@ def read_status_bin(emu_name='eden'):
             data = f.read()
         if len(data) < 68:
             return {'error': f'status.bin too small ({len(data)} bytes)'}
-        frame = struct.unpack('<I', data[0:4])[0]
-        state = struct.unpack('<I', data[4:8])[0]
-        has_player = data[8]
-        phase = struct.unpack('<I', data[12:16])[0]
-        pos_x = struct.unpack('<f', data[16:20])[0]
-        pos_y = struct.unpack('<f', data[20:24])[0]
-        vel_x = struct.unpack('<f', data[24:28])[0]
-        vel_y = struct.unpack('<f', data[28:32])[0]
-        gravity = struct.unpack('<f', data[32:36])[0]
-        powerup = struct.unpack('<I', data[44:48])[0]
-        theme = data[64]
-        style = data[65]
+        # Match StatusBlock layout from status.h:
+        #   0x00: frame, 0x04: game_phase, 0x08: player_state, 0x0C: powerup_id
+        #   0x10: pos_x, 0x14: pos_y, 0x18: vel_x, 0x1C: vel_y
+        #   0x20: state_frames, 0x24: in_water, 0x25: is_dead, 0x26: is_goal, 0x27: has_player
+        #   0x28: facing, 0x2C: gravity, 0x30: buffered_action
+        #   0x34: input_poll_count, 0x38: real_game_phase
+        #   0x3C: course_theme, 0x3D-0x3F: pad, 0x40: game_style(u32)
+        frame = struct.unpack('<I', data[0x00:0x04])[0]
+        game_phase = struct.unpack('<I', data[0x04:0x08])[0]
+        state = struct.unpack('<I', data[0x08:0x0C])[0]
+        powerup = struct.unpack('<I', data[0x0C:0x10])[0]
+        pos_x = struct.unpack('<f', data[0x10:0x14])[0]
+        pos_y = struct.unpack('<f', data[0x14:0x18])[0]
+        vel_x = struct.unpack('<f', data[0x18:0x1C])[0]
+        vel_y = struct.unpack('<f', data[0x1C:0x20])[0]
+        state_frames = struct.unpack('<I', data[0x20:0x24])[0]
+        in_water = data[0x24]
+        is_dead = data[0x25]
+        is_goal = data[0x26]
+        has_player = data[0x27]
+        facing = struct.unpack('<f', data[0x28:0x2C])[0]
+        gravity = struct.unpack('<f', data[0x2C:0x30])[0]
+        buffered_action = struct.unpack('<I', data[0x30:0x34])[0]
+        input_poll_count = struct.unpack('<I', data[0x34:0x38])[0]
+        real_game_phase = struct.unpack('<i', data[0x38:0x3C])[0]
+        theme = data[0x3C]
+        game_style = struct.unpack('<I', data[0x40:0x44])[0]
         mtime = os.path.getmtime(path)
         age = time.time() - mtime
         return {
-            'frame': frame, 'state': state, 'has_player': has_player,
-            'phase': phase, 'pos_x': pos_x, 'pos_y': pos_y,
-            'vel_x': vel_x, 'vel_y': vel_y, 'gravity': gravity,
-            'powerup': powerup, 'theme': theme, 'style': style,
+            'frame': frame, 'game_phase': game_phase, 'state': state,
+            'powerup': powerup, 'pos_x': pos_x, 'pos_y': pos_y,
+            'vel_x': vel_x, 'vel_y': vel_y, 'state_frames': state_frames,
+            'in_water': in_water, 'is_dead': is_dead, 'is_goal': is_goal,
+            'has_player': has_player, 'facing': facing, 'gravity': gravity,
+            'buffered_action': buffered_action, 'input_poll_count': input_poll_count,
+            'real_game_phase': real_game_phase, 'theme': theme,
+            'game_style': game_style, 'phase': real_game_phase,
             'age_seconds': round(age, 1),
             'stale': age > 5,
+            'style': game_style,  # alias for display
         }
     except Exception as e:
         return {'error': str(e)}
@@ -430,22 +450,33 @@ def cmd_game_status(emu_name='eden'):
         print(f"❌ {status['error']}")
         return
 
-    STATES = {1:'Walk', 2:'Fall', 3:'Jump', 4:'Landing', 5:'Crouch',
-              6:'CrouchEnd', 113:'Death', 114:'Goal'}
+    STATES = {0:'None', 1:'Walk', 2:'Fall', 3:'Jump', 4:'Landing', 5:'Crouch',
+              6:'CrouchEnd', 16:'Swim', 113:'Death', 114:'Goal'}
     THEMES = {0:'Ground', 1:'Underground', 2:'Castle', 3:'Airship',
-              4:'Water', 5:'GhostHouse', 6:'Snow', 7:'Desert', 8:'Sky', 9:'Forest'}
-    STYLES = {0:'SMB1', 1:'SMB3', 2:'SMW', 3:'NSMBU', 4:'3DW'}
+              4:'Water', 5:'GhostHouse', 6:'Snow', 7:'Desert', 8:'Sky', 9:'Forest', 0xFF:'Unknown'}
+    # game_style from BCD header or noexes pointer chain
+    STYLES = {
+        0x314D: 'SMB1', 0x334D: 'SMB3', 0x574D: 'SMW', 0x5557: 'NSMBU', 0x5733: '3DW',
+        # Also accept simple index values
+        0: 'SMB1', 1: 'SMB3', 2: 'SMW', 3: 'NSMBU', 4: '3DW',
+    }
+    POWERUPS = {0:'Normal', 1:'Super', 2:'Fire', 3:'Propeller', 4:'Mant', 5:'Sippo',
+                6:'Mega', 7:'Neko', 8:'Builder', 9:'SuperBall', 10:'Link', 11:'Frog',
+                12:'Balloon', 13:'Flying', 14:'Boomerang', 15:'USA'}
 
     fresh = "🟢" if not status['stale'] else "🔴"
     state_name = STATES.get(status['state'], f"#{status['state']}")
     theme_name = THEMES.get(status['theme'], f"#{status['theme']}")
-    style_name = STYLES.get(status['style'], f"#{status['style']}")
+    style_name = STYLES.get(status['game_style'], f"#{status['game_style']:#x}")
+    powerup_name = POWERUPS.get(status['powerup'], f"#{status['powerup']}")
 
     print(f"{fresh} Frame:{status['frame']} Age:{status['age_seconds']}s")
-    print(f"  Player:{status['has_player']} State:{state_name}({status['state']}) Phase:{status['phase']}")
+    print(f"  Player:{status['has_player']} State:{state_name}({status['state']}) Phase:{status['real_game_phase']}")
     print(f"  Pos:({status['pos_x']:.1f}, {status['pos_y']:.1f}) Vel:({status['vel_x']:.2f}, {status['vel_y']:.2f})")
-    print(f"  Gravity:{status['gravity']:.2f} Powerup:{status['powerup']}")
+    print(f"  Gravity:{status['gravity']:.2f} Powerup:{powerup_name}({status['powerup']})")
     print(f"  Theme:{theme_name} Style:{style_name}")
+    if status.get('state_frames'):
+        print(f"  StateFrames:{status['state_frames']} Facing:{status['facing']:.1f}")
 
 
 def _write_input(buttons=0):
