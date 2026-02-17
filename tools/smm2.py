@@ -421,18 +421,30 @@ class Game:
             timeout=timeout
         ) is not None
 
-    def to_editor(self, timeout=15):
+    def to_editor(self, timeout=45):
         """Navigate to editor. Returns True on success."""
-        sc = self.scene()
+        # Wait for valid scene first
+        for _ in range(30):
+            sc = self.scene()
+            if sc in ('editor', 'play', 'title'):
+                break
+            time.sleep(0.5)
+        
         if sc == 'editor':
             return True
         if sc == 'play':
             self.press('MINUS', 200)
             return self.wait_for(lambda s: s['scene_mode'] == SCENE_EDITOR, timeout=timeout) is not None
         if sc == 'title':
-            self.hold('L+R', 1500)
-            time.sleep(2)
-            self.press('A', 300)
+            # Wait for frame > 1000 before L+R skip works reliably
+            for _ in range(30):
+                s = self.status()
+                if s and s['frame'] > 1000:
+                    break
+                time.sleep(0.5)
+            self.hold('L+R', 2000)
+            time.sleep(2.5)
+            self.press('A', 500)
             return self.wait_for(lambda s: s['scene_mode'] == SCENE_EDITOR, timeout=timeout) is not None
         return False
 
