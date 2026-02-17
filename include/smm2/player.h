@@ -21,6 +21,15 @@ namespace off {
     constexpr uint32_t style_features = 0x2308; // u32
 }
 
+// Game style IDs (from GamePhaseManager inner+0x1C)
+namespace style {
+    constexpr uint32_t SMB1  = 0;  // Super Mario Bros.
+    constexpr uint32_t SMB3  = 1;  // Super Mario Bros. 3
+    constexpr uint32_t SMW   = 2;  // Super Mario World
+    constexpr uint32_t NSMBU = 3;  // New Super Mario Bros. U
+    constexpr uint32_t SM3DW = 4;  // Super Mario 3D World
+}
+
 // State IDs (from Possamodder's enum, GDB-confirmed subset)
 namespace state {
     constexpr uint32_t None         = 0;
@@ -37,6 +46,12 @@ namespace state {
     constexpr uint32_t TailFlying   = 73;
     constexpr uint32_t TailSlowFall = 74;
     constexpr uint32_t TailAttack   = 75;
+    
+    // Yoshi states — style-conditional (Possamodder's analysis, PR #25)
+    // SMW (style==2) uses YoshiJumpWorld, all others use YoshiJumpWii
+    constexpr uint32_t YoshiJumpWii   = 103; // 0x67 — SMB1, SMB3, NSMBU, 3DW
+    constexpr uint32_t YoshiJumpWorld = 104; // 0x68 — SMW only
+    
     constexpr uint32_t GoalPole     = 122;
     constexpr uint32_t GoalBackJump = 124;
 }

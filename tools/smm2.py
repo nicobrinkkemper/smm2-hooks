@@ -35,11 +35,24 @@ SCENE_EDITOR = 1
 SCENE_PLAY = 5
 SCENE_TITLE = 6
 
+# Game style IDs (from GamePhaseManager inner+0x1C)
+STYLE_SMB1  = 0
+STYLE_SMB3  = 1
+STYLE_SMW   = 2
+STYLE_NSMBU = 3
+STYLE_SM3DW = 4
+
+STYLE_NAMES = {0: 'SMB1', 1: 'SMB3', 2: 'SMW', 3: 'NSMBU', 4: '3DW'}
+
 # State names for common states
 STATE_NAMES = {
     1: 'Walk', 2: 'Fall', 3: 'Jump', 4: 'Landing', 5: 'Crouch',
     6: 'CrouchEnd', 9: 'Damage', 10: 'Death', 23: 'TumbleLand',
-    43: 'EditorIdle', 113: 'Death2', 114: 'PostDeath',
+    43: 'EditorIdle', 
+    # Yoshi states — style-conditional (Possamodder's analysis)
+    103: 'YoshiJumpWii',   # 0x67 — all styles except SMW
+    104: 'YoshiJumpWorld', # 0x68 — SMW only
+    113: 'Death2', 114: 'PostDeath',
     122: 'GoalPole', 124: 'GoalEnter',
 }
 
