@@ -109,6 +109,15 @@ void update(uint32_t frame) {
             }
         }
     }
+    
+    // Track scene changes for instant navigation detection
+    static uint32_t s_prev_scene_mode = 0;
+    static uint32_t s_scene_change_count = 0;
+    if (blk.scene_mode != s_prev_scene_mode) {
+        s_scene_change_count++;
+        s_prev_scene_mode = blk.scene_mode;
+    }
+    blk.scene_change_count = s_scene_change_count;
 
     // CRITICAL: Only trust player data when scene_mode == 5 (play mode)
     // Clear player pointer when not in play mode to prevent stale data

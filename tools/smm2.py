@@ -157,6 +157,7 @@ class Game:
             'style':       struct.unpack_from('<I', d, 0x40)[0],
             'scene_mode':  struct.unpack_from('<I', d, 0x44)[0],
             'is_playing':  struct.unpack_from('<I', d, 0x48)[0],
+            'scene_change_count': struct.unpack_from('<I', d, 0x8C)[0] if len(d) >= 0x90 else 0,
         }
 
     def scene(self):
@@ -291,14 +292,14 @@ class Game:
         """Jump. hold_ms controls height."""
         self.press('A', hold_ms)
 
-    def wait_for(self, condition, timeout=10):
+    def wait_for(self, condition, timeout=10, poll_interval=0.1):
         """Wait until condition(status) is True. Returns status or None."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             s = self.status()
             if s and condition(s):
                 return s
-            time.sleep(0.3)
+            time.sleep(poll_interval)
         return None
 
     # ── Navigation ──────────────────────────────────────────
@@ -421,31 +422,38 @@ class Game:
             timeout=timeout
         ) is not None
 
-    def to_editor(self, timeout=45):
+    def to_editor(self, timeout=30, debug=False):
         """Navigate to editor. Returns True on success."""
         # Wait for valid scene first
-        for _ in range(30):
-            sc = self.scene()
-            if sc in ('editor', 'play', 'title'):
-                break
-            time.sleep(0.5)
+        s = self.wait_for(lambda s: s['scene_mode'] in (SCENE_EDITOR, SCENE_PLAY, SCENE_TITLE), timeout=15)
+        if not s:
+            if debug: print(f'to_editor: wait_for valid scene returned None')
+            return False
         
-        if sc == 'editor':
+        scene_mode = s['scene_mode']
+        if debug: print(f'to_editor: scene_mode={scene_mode}')
+        
+        if scene_mode == SCENE_EDITOR:
             return True
-        if sc == 'play':
+        if scene_mode == SCENE_PLAY:
             self.press('MINUS', 200)
             return self.wait_for(lambda s: s['scene_mode'] == SCENE_EDITOR, timeout=timeout) is not None
-        if sc == 'title':
-            # Wait for frame > 1000 before L+R skip works reliably
-            for _ in range(30):
-                s = self.status()
-                if s and s['frame'] > 1000:
-                    break
-                time.sleep(0.5)
+        if scene_mode == SCENE_TITLE:
+            start_count = s['scene_change_count']
+            if debug: print(f'to_editor: title, start_count={start_count}')
+            
+            # L+R to skip title animation, then A to enter
             self.hold('L+R', 2000)
-            time.sleep(2.5)
             self.press('A', 500)
-            return self.wait_for(lambda s: s['scene_mode'] == SCENE_EDITOR, timeout=timeout) is not None
+            
+            # Wait for scene change (instant detection via counter)
+            result = self.wait_for(
+                lambda s: s['scene_change_count'] > start_count and s['scene_mode'] == SCENE_EDITOR,
+                timeout=10
+            )
+            if debug: print(f'to_editor: wait result={result}')
+            return result is not None
+        if debug: print(f'to_editor: unknown scene_mode {scene_mode}')
         return False
 
     def to_play(self, timeout=15):
