@@ -30,6 +30,12 @@ StateMachine_changeState = 0x8b9320
 # StateMachine::initialize
 StateMachine_initialize = 0x8b8dd0
 
+# xlink2::EnumPropertyDefinition::EnumPropertyDefinition(const char*, int, sead::Heap*, bool)
+xlink2_EnumPropertyDefinition_ctor = 0x59D9E0
+
+# xlink2::EnumPropertyDefinition::entry(int, const char*)
+xlink2_EnumPropertyDefinition_entry = 0x59DDA0
+
 # PlayerObject changeState wrapper (sub_71015E3FB0)
 PlayerObject_changeState = 0x15E3FB0
 

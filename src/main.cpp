@@ -39,6 +39,11 @@ namespace smm2 { namespace actor_profile {
     void init();
 }}
 
+namespace smm2 { namespace xlink2_enum {
+    void init();
+    void flush();
+}}
+
 static void on_frame(uint32_t frame) {
     // smm2::state_logger::per_frame(frame);  // DISABLED — crashes during scene transitions
     smm2::game_phase::per_frame(frame);
@@ -47,6 +52,7 @@ static void on_frame(uint32_t frame) {
     // Flush logs periodically
     if (frame % 300 == 0) {
         smm2::func_trace::flush();
+        smm2::xlink2_enum::flush();
     }
 }
 
@@ -69,4 +75,5 @@ extern "C" void hkMain() {
     smm2::game_phase::init();      // reads GamePhaseManager — needed for scene detection
     smm2::course_data::init();     // hooks WriteFile to intercept BCD saves
     smm2::actor_profile::init();   // logs actor profile registrations + state names
+    smm2::xlink2_enum::init();     // captures xlink2 enum definitions at boot
 }
