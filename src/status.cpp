@@ -85,17 +85,43 @@ void update(uint32_t frame) {
     blk.input_poll_count = tas::input_poll_count();
     blk.real_game_phase = game_phase::read_phase();
 
-    // Detect stale player pointer: if player data looks frozen (same state_frames for many
-    // consecutive updates, or death state persisting), clear pointer.
-    // Also: validate player pointer by checking if read produces sensible values.
+    // Get base address for pointer chains
+    static uintptr_t s_base = 0;
+    if (s_base == 0) s_base = hk::ro::getMainModule()->range().start();
+
+    // READ SCENE_MODE FIRST - determines if player data is valid
+    // GamePhaseManager: [[main+0x2C57D58]+0x30] = inner struct
+    blk.scene_mode = 0;
+    blk.is_playing = 0;
+    blk.game_style = 0;
+    for (int i = 0; i < 6; i++) blk.gpm_inner[i] = 0;
+    if (s_base != 0) {
+        uintptr_t* gpm = reinterpret_cast<uintptr_t*>(s_base + 0x2C57D58);
+        if (*gpm > 0x1000000ULL && *gpm < 0x3000000000ULL) {
+            uintptr_t* inner = reinterpret_cast<uintptr_t*>(*gpm + 0x30);
+            if (*inner > 0x1000000ULL && *inner < 0x3000000000ULL) {
+                blk.scene_mode = *reinterpret_cast<uint32_t*>(*inner + 0x14); // 1=editor, 5=play, 6=title
+                blk.is_playing = *reinterpret_cast<uint32_t*>(*inner + 0x10);
+                blk.game_style = *reinterpret_cast<uint32_t*>(*inner + 0x1C);
+                for (int i = 0; i < 6; i++) {
+                    blk.gpm_inner[i] = *reinterpret_cast<uint32_t*>(*inner + i * 4);
+                }
+            }
+        }
+    }
+
+    // CRITICAL: Only trust player data when scene_mode == 5 (play mode)
+    // Clear player pointer when not in play mode to prevent stale data
+    if (blk.scene_mode != 5) {
+        s_player = 0;
+    }
+
+    // Additional stale detection: if player data looks frozen, clear pointer
     if (s_player != 0) {
-        uint32_t cur_state = player::read<uint32_t>(s_player, player::off::cur_state);
-        float cur_y = player::read<float>(s_player, player::off::pos_y);
         static uint32_t s_prev_state_frames = 0;
         static uint32_t s_stale_count = 0;
         uint32_t sf = player::read<uint32_t>(s_player, player::off::state_frames);
         
-        // If state_frames hasn't changed in 120+ frames (2 seconds), pointer is stale
         if (sf == s_prev_state_frames) {
             s_stale_count++;
         } else {
@@ -104,13 +130,13 @@ void update(uint32_t frame) {
         }
         
         if (s_stale_count > 120) {
-            s_player = 0;  // Clear stale pointer
+            s_player = 0;
             s_stale_count = 0;
         }
     }
 
-    // Guard: only read player fields when player pointer is valid
-    if (s_player != 0) {
+    // Guard: only read player fields when player pointer is valid AND in play mode
+    if (s_player != 0 && blk.scene_mode == 5) {
         blk.player_state  = player::read<uint32_t>(s_player, player::off::cur_state);
         blk.powerup_id    = player::read<uint32_t>(s_player, player::off::powerup_id);
         blk.pos_x         = player::read<float>(s_player, player::off::pos_x);
@@ -138,11 +164,7 @@ void update(uint32_t frame) {
     // Read course theme from noexes pointer chain:
     // [[main+0x2A67B70]+0x28]+0x210 = theme byte (0=ground, 1=underground, etc.)
     // Source: noexes-patches.md (well-known patch addresses)
-    static uintptr_t s_base = 0;
-    if (s_base == 0) s_base = hk::ro::getMainModule()->range().start();
-    
     blk.course_theme = 0xFF; // unknown
-    blk.game_style = 0;
     if (s_base != 0) {
         // Follow pointer chain: main+0x2A67B70 → [+0x28] → theme at +0x210
         uintptr_t* p1 = reinterpret_cast<uintptr_t*>(s_base + 0x2A67B70);
@@ -150,29 +172,6 @@ void update(uint32_t frame) {
             uintptr_t* p2 = reinterpret_cast<uintptr_t*>(*p1 + 0x28);
             if (*p2 > 0x1000000ULL && *p2 < 0x3000000000ULL) {
                 blk.course_theme = *reinterpret_cast<uint8_t*>(*p2 + 0x210);
-            }
-        }
-    }
-
-    // Read game style + dump GPM inner struct for screen detection research
-    // GamePhaseManager: [[main+0x2C57D58]+0x30] = inner struct
-    // Known fields: +0x1C = game_style, +0x28 = version
-    blk.scene_mode = 0;
-    blk.is_playing = 0;
-    for (int i = 0; i < 6; i++) blk.gpm_inner[i] = 0;
-    if (s_base != 0) {
-        uintptr_t* gpm = reinterpret_cast<uintptr_t*>(s_base + 0x2C57D58);
-        if (*gpm > 0x1000000ULL && *gpm < 0x3000000000ULL) {
-            uintptr_t* inner = reinterpret_cast<uintptr_t*>(*gpm + 0x30);
-            if (*inner > 0x1000000ULL && *inner < 0x3000000000ULL) {
-                blk.game_style = *reinterpret_cast<uint32_t*>(*inner + 0x1C);
-                // Scene detection fields
-                blk.scene_mode = *reinterpret_cast<uint32_t*>(*inner + 0x14); // 1=editor, 5=play, 6=title
-                blk.is_playing = *reinterpret_cast<uint32_t*>(*inner + 0x10); // 0=editor, 1=playing/title
-                // Dump remaining inner struct for research
-                for (int i = 0; i < 6; i++) {
-                    blk.gpm_inner[i] = *reinterpret_cast<uint32_t*>(*inner + i * 4);
-                }
             }
         }
     }
