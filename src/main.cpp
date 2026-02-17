@@ -45,7 +45,6 @@ namespace smm2 { namespace xlink2_enum {
 }}
 
 static void on_frame(uint32_t frame) {
-    // smm2::state_logger::per_frame(frame);  // DISABLED — crashes during scene transitions
     smm2::game_phase::per_frame(frame);
     smm2::status::update(frame);
 
@@ -58,22 +57,16 @@ static void on_frame(uint32_t frame) {
 
 extern "C" void hkMain() {
     nn::fs::MountSdCardForDebug("sd");
-    // CreateDirectoryRecursively may not be available on all Ryujinx versions
-    // The directory should already exist from prior runs, or be created manually
     nn::fs::CreateDirectory("sd:/smm2-hooks");
 
     // Init framework
     smm2::frame::init(on_frame);
 
-    // Init plugins
-    // Minimal config — bisecting crash
-    // smm2::state_logger::init();  // DISABLED — status.cpp now tracks player directly
-    // smm2::func_trace::init();    // 49 delegate hooks — known crash
-    // smm2::reimpl::init();
+    // Init plugins - ALL ENABLED
     smm2::tas::init();              // hooks GetNpadStates (input injection)
-    smm2::status::init();           // writes status.bin from procFrame_
-    smm2::game_phase::init();      // reads GamePhaseManager — needed for scene detection
-    smm2::course_data::init();     // hooks WriteFile to intercept BCD saves
-    smm2::actor_profile::init();   // logs actor profile registrations + state names
-    smm2::xlink2_enum::init();     // captures xlink2 enum definitions at boot
+    smm2::status::init();           // writes status.bin, hooks PlayerObject_changeState
+    smm2::game_phase::init();       // reads GamePhaseManager
+    smm2::course_data::init();      // hooks WriteFile for BCD
+    smm2::actor_profile::init();    // logs actor profiles + state names
+    smm2::xlink2_enum::init();      // captures xlink2 enum definitions
 }
