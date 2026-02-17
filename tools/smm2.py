@@ -18,6 +18,9 @@ import time
 import subprocess
 from pathlib import Path
 
+# Max age in seconds before status.bin is considered stale
+STATUS_MAX_AGE = 5.0
+
 # Button constants (nn::hid::NpadFullKeyState)
 BTN = {
     'A': 0x01, 'B': 0x02, 'X': 0x04, 'Y': 0x08,
@@ -69,10 +72,43 @@ class Game:
         self.status_path = os.path.join(self.sd, 'status.bin')
         self.input_path = os.path.join(self.sd, 'input.bin')
 
+    # ── Process Detection ───────────────────────────────────
+
+    def is_running(self):
+        """Check if the emulator process is actually running."""
+        proc_name = 'eden' if self.emu == 'eden' else 'Ryujinx'
+        try:
+            result = subprocess.run(
+                ['tasklist.exe'],
+                capture_output=True, text=True, timeout=5
+            )
+            return proc_name.lower() in result.stdout.lower()
+        except Exception:
+            return False
+
+    def _status_age(self):
+        """Get age of status.bin in seconds, or None if missing."""
+        try:
+            mtime = os.path.getmtime(self.status_path)
+            return time.time() - mtime
+        except (FileNotFoundError, OSError):
+            return None
+
     # ── Status ──────────────────────────────────────────────
 
-    def status(self):
-        """Read status.bin → dict. Returns None if unavailable."""
+    def status(self, allow_stale=False):
+        """Read status.bin → dict. Returns None if unavailable or stale.
+        
+        Args:
+            allow_stale: If False (default), returns None when file is older
+                        than STATUS_MAX_AGE seconds (game not running).
+        """
+        # Check file freshness first
+        if not allow_stale:
+            age = self._status_age()
+            if age is None or age > STATUS_MAX_AGE:
+                return None
+        
         for attempt in range(3):
             try:
                 with open(self.status_path, 'rb') as f:
@@ -128,12 +164,13 @@ class Game:
 
     def alive(self):
         """Is the game process running and hooks active?"""
+        # Quick check: is status fresh?
         s = self.status()
         if not s:
             return False
-        # Check frame advances
+        # Double-check: frame counter advancing?
         f1 = s['frame']
-        time.sleep(0.3)
+        time.sleep(0.35)
         s2 = self.status()
         return s2 and s2['frame'] > f1
 
@@ -389,7 +426,10 @@ class Game:
     def __repr__(self):
         s = self.status()
         if not s:
-            return f"Game({self.emu}) [no status]"
+            age = self._status_age()
+            if age is not None:
+                return f"Game({self.emu}) [stale: {age:.0f}s old, game not running]"
+            return f"Game({self.emu}) [no status file]"
         sc = self.scene()
         state_name = STATE_NAMES.get(s['state'], f"#{s['state']}")
         return (
