@@ -5,3 +5,6 @@ lib/
 compile_commands.json
 .env
 __pycache__/
+tools/.eden_pid
+tools/.ryujinx_pid
+tools/.eden_state.json
