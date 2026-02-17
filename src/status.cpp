@@ -125,6 +125,14 @@ void update(uint32_t frame) {
         blk.is_dead       = is_death_state(blk.player_state) ? 1 : 0;
         blk.is_goal       = is_goal_state(blk.player_state) ? 1 : 0;
         blk.has_player    = 1;
+        // Debug: player pointer for GDB
+        blk.player_ptr    = s_player;
+        // Debug: wearable detection candidates
+        blk.carried_obj   = player::read<uint64_t>(s_player, 0x2718);
+        blk.carried_obj_2 = player::read<uint64_t>(s_player, 0x2A30);
+        blk.debug_field_1 = player::read<uint32_t>(s_player, 0x22E4); // powerup_flags
+        blk.debug_field_2 = player::read<uint32_t>(s_player, 0x2720);
+        blk.debug_field_3 = player::read<uint32_t>(s_player, 0x2728);
     }
 
     // Read course theme from noexes pointer chain:

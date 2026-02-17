@@ -54,9 +54,16 @@ struct StatusBlock {
     uint32_t is_playing;        // 0x48: inner+0x10: 0=editor, 1=playing/title
     // GPM inner dump for research
     uint32_t gpm_inner[6];      // 0x4C: inner struct offsets 0x00-0x14 (24 bytes)
+    // Debug: wearable/equipment detection
+    uint64_t player_ptr;        // 0x64: raw PlayerObject* for GDB
+    uint64_t carried_obj;       // 0x6C: PlayerObject+0x2718
+    uint64_t carried_obj_2;     // 0x74: PlayerObject+0x2A30
+    uint32_t debug_field_1;     // 0x7C: PlayerObject+0x22E4 (powerup_flags)
+    uint32_t debug_field_2;     // 0x80: PlayerObject+0x2720 (after carried_obj)
+    uint32_t debug_field_3;     // 0x84: PlayerObject+0x2728
 };
 
-static_assert(sizeof(StatusBlock) == 100, "StatusBlock size mismatch");
+static_assert(sizeof(StatusBlock) == 144, "StatusBlock size mismatch");
 
 // static_assert to be updated after size is confirmed
 
