@@ -17,15 +17,20 @@ static uint8_t s_mode = 0;  // 0=editor, 1=playing
 static uint32_t s_last_procframe = 0;    // last frame from procFrame_ callback
 static uint32_t s_input_poll_frame = 0;  // monotonic counter from input polls
 
-// NOTE: Hooking PlayerObject_changeState breaks NSMBU/3DW crouch/ground pound!
-// The trampoline likely corrupts registers or has calling convention issues.
+// Hook PlayerObject_changeState to track player pointer.
 // 
-// TODO: Find alternative way to track player pointer:
-// - Hook a less invasive function (procFrame per-actor callback?)
-// - Read from a global (PlayerManager singleton?)
-// - Get from ActorMgr when PlayerObject is spawned
+// CRITICAL: Must call orig() FIRST before any other code!
+// The original function's prologue (stack setup, register saves) must execute
+// before we touch anything. Doing work before orig() corrupts NSMBU/3DW
+// crouch, ground pound, and SMB1 Link down-thrust.
 //
-// For now, player tracking is disabled. s_player must be set externally.
+// Root cause: trampoline relocates prologue instructions, but our lambda's
+// own prologue/work can clobber registers the relocated code expects.
+static HkTrampoline<void, void*, uint32_t> playerChangeState_hook =
+    hk::hook::trampoline([](void* player_obj, uint32_t new_state) -> void {
+        playerChangeState_hook.orig(player_obj, new_state);
+        s_player = reinterpret_cast<uintptr_t>(player_obj);
+    });
 
 void set_player(uintptr_t player) {
     s_player = player;
@@ -59,7 +64,7 @@ void init() {
         nn::fs::WriteFile(f, 0, &blk, sizeof(blk), opt);
         nn::fs::CloseFile(f);
     }
-    // playerChangeState hook REMOVED - see note above about NSMBU/3DW bug
+    playerChangeState_hook.installAtSym<"PlayerObject_changeState">();
 }
 
 void update_from_input_poll() {
