@@ -367,23 +367,59 @@ class Game:
         """Navigate: editor → Coursebot → select level → Play (game-only mode).
         
         Args:
-            slot: course slot to select (0 = first/top)
+            slot: course slot to select (0 = first/top, supports 0-based index)
+            
+        Flow: Editor → PLUS (menu) → RIGHT (coursebot) → A (enter) → 
+              navigate to slot → A (select) → DOWN×3 (Play) → A (start)
         """
         # First get to editor
         if not self.to_editor():
             return False
         
-        # Open Coursebot: press the Coursebot button (right side panel)
-        # From editor, navigate to Coursebot via the robot icon
-        # Coursebot is accessible via the right panel robot button
-        # For now: use the known button sequence
-        # TODO: this needs refinement based on editor state
-        self.press('B', 100)      # clear focus
+        # Clear any focus
+        self.press('B', 100)
         time.sleep(0.3)
-        self.press('MINUS', 200)  # enter Coursebot (hold MINUS from editor?)
-        # Actually Coursebot is accessed differently — need to figure out the exact flow
-        # For now just document that this exists
-        return False  # TODO: implement coursebot navigation
+        
+        # PLUS → Main Menu
+        self.press('PLUS', 150)
+        time.sleep(1.5)  # wait for menu animation
+        
+        # RIGHT → Coursebot icon
+        self.press('RIGHT', 100)
+        time.sleep(0.3)
+        
+        # A → Enter Coursebot
+        self.press('A', 100)
+        time.sleep(2.0)  # wait for coursebot animation
+        
+        # Navigate to slot (grid is 4 columns wide)
+        # slot 0 is already selected, navigate for others
+        row = slot // 4
+        col = slot % 4
+        for _ in range(col):
+            self.press('RIGHT', 100)
+            time.sleep(0.2)
+        for _ in range(row):
+            self.press('DOWN', 100)
+            time.sleep(0.2)
+        
+        # A → Select course
+        self.press('A', 100)
+        time.sleep(2.0)  # wait for course details
+        
+        # Navigate to "Play" option (4th option: Make, Upload, Play Together, Play)
+        for _ in range(3):
+            self.press('DOWN', 100)
+            time.sleep(0.2)
+        
+        # A → Start playing
+        self.press('A', 100)
+        
+        # Wait for play mode
+        return self.wait_for(
+            lambda s: s['scene_mode'] == SCENE_PLAY and s['has_player'],
+            timeout=timeout
+        ) is not None
 
     def to_editor(self, timeout=15):
         """Navigate to editor. Returns True on success."""
