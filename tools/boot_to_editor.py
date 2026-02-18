@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from smm2 import Game
 
 POLL_MS = 50  # 50ms = 20Hz polling
-DEFAULT_FRAME_THRESHOLD = 60  # ~1 second after title loads
+DEFAULT_FRAME_THRESHOLD = 400  # ~6.7s - intro animation must fully complete
 
 def wait_scene(g, target_mode, timeout=30):
     """Wait for scene_mode, polling every POLL_MS."""
