@@ -150,9 +150,9 @@ def main():
         print(f"Editor in {time.time()-t0:.1f}s")
         
         if args.play:
-            g.press('B', 100)
-            time.sleep(0.1)
-            g.press('MINUS', 200)
+            # Hold B+MINUS to enter play mode (MINUS needs ~1s hold)
+            g.hold('B', 200)
+            g.hold('MINUS', 1000)  # Hold for 1 second
             s = wait_scene(g, 5, timeout=10)
             if not s:
                 print("ERROR: No play")
