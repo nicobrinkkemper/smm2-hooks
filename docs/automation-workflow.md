@@ -1,37 +1,44 @@
 # SMM2 Automation Workflow
 
-## Boot Sequence (Fully Automated)
+## Boot Modes
 
+### 1. Editor Demo (default)
 ```
-Launch Eden
-    ↓
-Loading (frame 0-200)
-    ↓
-Title Screen (frame ~200+)
-    ↓
-Wait for frame > 1000       ← Required! L+R doesn't work before this
-    ↓
-Hold L+R for 2 seconds      ← Skips title animation
-    ↓
-Wait 2.5 seconds
-    ↓
-Press A for 500ms           ← Enters Course Maker
-    ↓
-Editor (scene_mode=1)
-    ↓
-Press B (clear focus) + MINUS  ← Enter play mode
-    ↓
-Play Mode (scene_mode=5)    ← Full TAS control available
+Title → L+R → A → Editor (scene_mode=1)
 ```
+Uses the hardcoded demo level from the editor.
+
+### 2. Editor Play (`--play`)
+```
+Title → L+R → A → Editor → B+MINUS → Play (scene_mode=5)
+```
+Test-play the editor demo level.
+
+### 3. Coursebot (`--slot N`)
+```
+Title → L+R → RIGHT → A → DOWN×3 → A → [wait 5s] → A → [wait 1s] → A → Play (scene_mode=7)
+```
+Play a saved course from Coursebot. Slot 0 = first course, 4 slots per row.
+
+## Scene Modes
+
+| Mode | Description |
+|------|-------------|
+| 0 | Loading/transition |
+| 1 | Editor |
+| 5 | Editor play (test-play) |
+| 6 | Title/menu |
+| 7 | Coursebot play (play-only) |
 
 ## Key Timings
 
 | Step | Timing | Notes |
 |------|--------|-------|
-| Wait for title | frame > 1000 | L+R skip doesn't work earlier |
-| L+R hold | 2000ms | Skips title screen animation |
-| Wait after L+R | 2500ms | Let animation complete |
-| A press | 500ms | Enter menu/Course Maker |
+| Wait for title | frame > 400 | L+R doesn't work reliably earlier |
+| L+R hold | 1500ms | Opens menu from title |
+| Coursebot load | 5000ms | UI needs time to populate |
+| Details slide | 1000ms | Animation after selecting course |
+| A press | 150-200ms | Menu selections |
 
 ## Patches Applied
 
@@ -74,9 +81,17 @@ def to_editor(self, timeout=45):
 
 ### boot_to_editor.py
 ```bash
-python3 boot_to_editor.py eden         # → editor
-python3 boot_to_editor.py eden --play  # → play mode
+python3 boot_to_editor.py eden              # → editor (demo level)
+python3 boot_to_editor.py eden --play       # → play mode (demo level)
+python3 boot_to_editor.py eden --slot 0     # → play Coursebot slot 0
+python3 boot_to_editor.py eden --slot 75    # → play Coursebot slot 75
+python3 boot_to_editor.py eden --frame 600  # → custom frame threshold
 ```
+
+Typical boot times:
+- Editor: ~17s
+- Editor play: ~18s  
+- Coursebot play: ~30s
 
 ## What Does NOT Work
 

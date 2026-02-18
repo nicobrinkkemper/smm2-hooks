@@ -1,5 +1,17 @@
 # Status System Spec
 
+## Scene Modes (GPM inner+0x14)
+
+| Mode | Name | Description |
+|------|------|-------------|
+| 0 | Loading/Transition | Loading screens, UI transitions, Coursebot details popup |
+| 1 | Editor | Course Maker edit mode |
+| 5 | Editor Play | Test-play from Course Maker (B+MINUS) |
+| 6 | Title | Title screen, main menu, Play menu |
+| 7 | Coursebot Play | Playing a course from Coursebot (play-only, no editing) |
+
+**Note**: Scene mode 0 can persist during UI animations and loading. Use frame advancement to verify game is responsive.
+
 ## Requirements
 
 ### status.bin must ALWAYS reflect reality

@@ -19,5 +19,8 @@ uint16_t gamestyle();
 // Returns the last-seen course name (UTF-16LE decoded to ASCII), or empty string.
 const char* course_name();
 
+// Dump collected OpenFile paths to log (call after status system is running)
+void dump_open_log();
+
 } // namespace course_data
 } // namespace smm2

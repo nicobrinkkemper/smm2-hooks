@@ -2,6 +2,7 @@
 #include "smm2/player.h"
 #include "smm2/tas.h"
 #include "smm2/game_phase.h"
+#include "smm2/course_data.h"
 #include "hk/ro/RoUtil.h"
 #include "hk/hook/Trampoline.h"
 #include "nn/fs.h"
@@ -78,6 +79,14 @@ void update_from_input_poll() {
 
 void update(uint32_t frame) {
     s_last_procframe = frame;
+    
+    // Dump OpenFile log once after system is stable (frame 100)
+    static bool s_dumped_opens = false;
+    if (!s_dumped_opens && frame > 100) {
+        course_data::dump_open_log();
+        s_dumped_opens = true;
+    }
+    
     StatusBlock blk;
     std::memset(&blk, 0, sizeof(blk));
     blk.frame = frame;
