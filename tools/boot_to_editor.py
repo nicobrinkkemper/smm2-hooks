@@ -45,21 +45,19 @@ def main():
         return 1
     print(f"Title in {time.time()-t0:.1f}s")
     
-    # Wait for frame >= 450 (title animation must finish)
+    # Wait for frame >= 500 (title ready to accept L+R)
     while True:
         s = g.status()
-        if s and s['frame'] >= 450:
+        if s and s['frame'] >= 500:
             break
         time.sleep(POLL_MS / 1000)
     
-    # L+R (1.5s) then A - one clean attempt, retry once if needed
-    for attempt in range(2):
-        g.hold('L+R', 1500)
-        g.press('A', 200)
-        s = wait_scene(g, 1, timeout=1)
-        if s:
-            break
-    else:
+    # L+R (1.5s) then A - single attempt, no retry
+    g.hold('L+R', 1500)
+    g.press('A', 200)
+    
+    s = wait_scene(g, 1, timeout=3)
+    if not s:
         print("ERROR: No editor")
         return 1
     print(f"Editor in {time.time()-t0:.1f}s")
