@@ -45,40 +45,24 @@ def main():
         return 1
     print(f"Title in {time.time()-t0:.1f}s")
     
-    # Pulse L+R+A rapidly, watch for scene change
-    start_count = s['scene_change_count']
-    import struct
-    BTN_LRA = 0x40 | 0x80 | 0x01  # L+R+A
-    
-    def write_input(buttons):
-        for _ in range(5):
-            try:
-                with open(g.input_path, 'wb') as f:
-                    f.write(struct.pack('<Qii', buttons, 0, 0))
-                return
-            except PermissionError:
-                time.sleep(0.01)
-    
-    deadline = time.time() + 10
-    success = False
-    
-    while time.time() < deadline:
-        write_input(BTN_LRA)
-        time.sleep(0.1)
-        write_input(0)
-        
+    # Wait for frame >= 450 (title animation must finish)
+    while True:
         s = g.status()
-        if s and s['scene_change_count'] > start_count and s['scene_mode'] == 1:
-            print(f"Editor in {time.time()-t0:.1f}s")
-            success = True
+        if s and s['frame'] >= 450:
             break
-        time.sleep(0.05)
+        time.sleep(POLL_MS / 1000)
     
-    g.release()
-    
-    if not success:
+    # L+R (1.5s) then A - one clean attempt, retry once if needed
+    for attempt in range(2):
+        g.hold('L+R', 1500)
+        g.press('A', 200)
+        s = wait_scene(g, 1, timeout=1)
+        if s:
+            break
+    else:
         print("ERROR: No editor")
         return 1
+    print(f"Editor in {time.time()-t0:.1f}s")
     
     if target == 'play':
         g.press('B', 100)
