@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Boot game and navigate to editor/play. Fully automated, rapid polling."""
+import argparse
 import subprocess
 import time
 import sys
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from smm2 import Game
 
 POLL_MS = 50  # 50ms = 20Hz polling
+DEFAULT_FRAME_THRESHOLD = 60  # ~1 second after title loads
 
 def wait_scene(g, target_mode, timeout=30):
     """Wait for scene_mode, polling every POLL_MS."""
@@ -21,8 +23,15 @@ def wait_scene(g, target_mode, timeout=30):
     return None
 
 def main():
-    emu = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ('eden', 'ryujinx') else 'eden'
-    target = 'play' if '--play' in sys.argv else 'editor'
+    parser = argparse.ArgumentParser(description='Boot SMM2 to editor/play')
+    parser.add_argument('emu', nargs='?', default='eden', choices=['eden', 'ryujinx'])
+    parser.add_argument('--play', action='store_true', help='Navigate to play mode')
+    parser.add_argument('--frame', type=int, default=DEFAULT_FRAME_THRESHOLD,
+                        help=f'Frame threshold before input (default: {DEFAULT_FRAME_THRESHOLD})')
+    args = parser.parse_args()
+    
+    emu = args.emu
+    target = 'play' if args.play else 'editor'
     tools = Path(__file__).parent
     
     # Kill & launch with retry
@@ -45,12 +54,13 @@ def main():
         return 1
     print(f"Title in {time.time()-t0:.1f}s")
     
-    # Wait for frame >= 400 then L+R (1.5s) + A
+    # Wait for frame threshold then L+R + A
     while True:
         s = g.status()
-        if s and s['frame'] >= 400:
+        if s and s['frame'] >= args.frame:
             break
         time.sleep(POLL_MS / 1000)
+    print(f"Input at frame {s['frame']}")
     
     g.hold('L+R', 1500)
     g.press('A', 200)
