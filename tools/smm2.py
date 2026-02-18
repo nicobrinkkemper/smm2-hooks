@@ -490,6 +490,25 @@ class Game:
         )
         return out_path if result.returncode == 0 else None
 
+    # ── Quick Reset ──────────────────────────────────────────
+
+    def reset(self, timeout=5):
+        """Quick reset: play → editor → play. Much faster than reboot."""
+        s = self.status()
+        if not s or s['scene_mode'] != 5:
+            return self.to_play(timeout)
+        
+        # play → editor
+        self.press('MINUS', 200)
+        if not self.wait_for(lambda s: s['scene_mode'] == 1, timeout=timeout):
+            return False
+        
+        # editor → play
+        self.press('B', 100)
+        time.sleep(0.1)
+        self.press('MINUS', 200)
+        return self.wait_for(lambda s: s['scene_mode'] == 5, timeout=timeout) is not None
+
     # ── Display ─────────────────────────────────────────────
 
     def __repr__(self):
