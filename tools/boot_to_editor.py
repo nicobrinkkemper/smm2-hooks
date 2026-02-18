@@ -25,41 +25,37 @@ def main():
     target = 'play' if '--play' in sys.argv else 'editor'
     tools = Path(__file__).parent
     
-    # Kill & launch
+    # Kill & launch with retry
     subprocess.run(['python3', 'emu_session.py', 'kill', emu], capture_output=True, cwd=tools)
     time.sleep(0.5)
-    subprocess.run(['python3', 'emu_session.py', 'launch', emu], capture_output=True, cwd=tools)
     
     g = Game(emu)
+    t0 = time.time()
     
-    # Wait for title (scene_mode=6) with enough frames loaded
-    print("Waiting for title...")
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        s = g.status()
-        if s and s['scene_mode'] == 6 and s['frame'] > 1000:
+    for launch_attempt in range(2):
+        subprocess.run(['python3', 'emu_session.py', 'launch', emu], capture_output=True, cwd=tools)
+        s = wait_scene(g, 6, timeout=20)
+        if s:
             break
-        time.sleep(POLL_MS / 1000)
+        # Launch failed, kill and retry
+        subprocess.run(['python3', 'emu_session.py', 'kill', emu], capture_output=True, cwd=tools)
+        time.sleep(1)
     else:
-        print("ERROR: No title screen")
+        print("ERROR: No title")
         return 1
-    print(f"At title, frame={s['frame']}")
+    print(f"Title in {time.time()-t0:.1f}s")
     
-    # L+R to skip title animation, then A to enter
-    print("L+R skip...")
-    g.hold('L+R', 1500)
-    print("Pressing A...")
-    g.press('A', 300)
-    
-    # Wait for editor (scene_mode=1)
-    print("Waiting for editor...")
-    s = wait_scene(g, 1, timeout=10)
-    if not s:
-        # Debug: what scene are we at?
-        s2 = g.status()
-        print(f"ERROR: No editor (scene_mode={s2['scene_mode'] if s2 else '?'})")
+    # Try L+R+A repeatedly until it works
+    for attempt in range(10):
+        g.hold('L+R', 500)
+        g.press('A', 150)
+        s = wait_scene(g, 1, timeout=1)  # quick check
+        if s:
+            print(f"Editor in {time.time()-t0:.1f}s (attempt {attempt+1})")
+            break
+    else:
+        print("ERROR: No editor")
         return 1
-    print(f"In editor, frame={s['frame']}")
     
     if target == 'play':
         g.press('B', 100)
