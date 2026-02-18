@@ -45,14 +45,13 @@ def main():
         return 1
     print(f"Title in {time.time()-t0:.1f}s")
     
-    # Wait for frame >= 500 (title ready to accept L+R)
+    # Wait for frame >= 400 then L+R (1.5s) + A
     while True:
         s = g.status()
-        if s and s['frame'] >= 500:
+        if s and s['frame'] >= 400:
             break
         time.sleep(POLL_MS / 1000)
     
-    # L+R (1.5s) then A - single attempt, no retry
     g.hold('L+R', 1500)
     g.press('A', 200)
     
