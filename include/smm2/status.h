@@ -62,10 +62,15 @@ struct StatusBlock {
     uint32_t debug_field_2;     // 0x84: PlayerObject+0x2720 (after carried_obj)
     uint32_t debug_field_3;     // 0x88: PlayerObject+0x2728
     uint32_t scene_change_count; // 0x8C: increments each time scene_mode changes
-    uint32_t _pad3;             // 0x90: padding for alignment
+    // Collision data (from PlayerObject collision arrays)
+    int32_t  collision_index;    // 0x90: PlayerObject+0x1680 (-1 = no collision)
+    uint8_t  collision_normal;   // 0x94: from normal array at +0x1B30
+    uint8_t  _coll_pad[3];       // 0x95-0x97
+    int32_t  collision_slope;    // 0x98: slope angle from normal+0x08
+    uint32_t _pad3;              // 0x9C: padding for alignment
 };
 
-static_assert(sizeof(StatusBlock) == 152, "StatusBlock size mismatch");
+static_assert(sizeof(StatusBlock) == 160, "StatusBlock size mismatch");
 
 // static_assert to be updated after size is confirmed
 

@@ -163,8 +163,6 @@ static HkTrampoline<int, nn::hid::full_key_state*, int, const uint32_t&> npad_fu
         return written;
     });
 
-// Other NpadStates variants removed — extra hooks crash on Eden (symbol lookup failure)
-
 uint32_t input_poll_count() {
     return s_input_poll_count;
 }

@@ -128,9 +128,10 @@ void update(uint32_t frame) {
     }
     blk.scene_change_count = s_scene_change_count;
 
-    // CRITICAL: Only trust player data when scene_mode == 5 (play mode)
+    // CRITICAL: Only trust player data when actually playing
+    // scene_mode 5 = editor test-play, scene_mode 7 = coursebot play
     // Clear player pointer when not in play mode to prevent stale data
-    if (blk.scene_mode != 5) {
+    if (blk.scene_mode != 5 && blk.scene_mode != 7) {
         s_player = 0;
     }
 
@@ -154,7 +155,8 @@ void update(uint32_t frame) {
     }
 
     // Guard: only read player fields when player pointer is valid AND in play mode
-    if (s_player != 0 && blk.scene_mode == 5) {
+    // scene_mode 5 = editor test-play, scene_mode 7 = coursebot play
+    if (s_player != 0 && (blk.scene_mode == 5 || blk.scene_mode == 7)) {
         blk.player_state  = player::read<uint32_t>(s_player, player::off::cur_state);
         blk.powerup_id    = player::read<uint32_t>(s_player, player::off::powerup_id);
         blk.pos_x         = player::read<float>(s_player, player::off::pos_x);
@@ -177,6 +179,19 @@ void update(uint32_t frame) {
         blk.debug_field_1 = player::read<uint32_t>(s_player, 0x22E4); // powerup_flags
         blk.debug_field_2 = player::read<uint32_t>(s_player, 0x2720);
         blk.debug_field_3 = player::read<uint32_t>(s_player, 0x2728);
+        
+        // Collision data from parallel arrays (discovered in decomp)
+        blk.collision_index = player::read<int32_t>(s_player, 0x1680);
+        if (blk.collision_index >= 0 && blk.collision_index < 16) {
+            // Normal array at +0x1B30, stride 0x38
+            // direction at +0x00, slope_angle at +0x08
+            uintptr_t normalEntry = s_player + 0x1B30 + blk.collision_index * 0x38;
+            blk.collision_normal = *reinterpret_cast<uint8_t*>(normalEntry);
+            blk.collision_slope = *reinterpret_cast<int32_t*>(normalEntry + 0x08);
+        } else {
+            blk.collision_normal = 0;
+            blk.collision_slope = 0;
+        }
     }
 
     // Read course theme from noexes pointer chain:

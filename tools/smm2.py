@@ -32,8 +32,9 @@ BTN = {
 
 # Scene mode values from GPM inner struct +0x14
 SCENE_EDITOR = 1
-SCENE_PLAY = 5
+SCENE_PLAY = 5      # Editor test-play
 SCENE_TITLE = 6
+SCENE_COURSEBOT = 7 # Coursebot play (game-only, no editing)
 
 # Game style IDs (from GamePhaseManager inner+0x1C)
 STYLE_SMB1  = 0
@@ -158,10 +159,14 @@ class Game:
             'scene_mode':  struct.unpack_from('<I', d, 0x44)[0],
             'is_playing':  struct.unpack_from('<I', d, 0x48)[0],
             'scene_change_count': struct.unpack_from('<I', d, 0x8C)[0] if len(d) >= 0x90 else 0,
+            # Collision data (from decomp discovery)
+            'collision_index': struct.unpack_from('<i', d, 0x90)[0] if len(d) >= 0xA0 else -1,
+            'collision_normal': d[0x94] if len(d) >= 0xA0 else 0,
+            'collision_slope': struct.unpack_from('<i', d, 0x98)[0] if len(d) >= 0xA0 else 0,
         }
 
     def scene(self):
-        """Current screen: 'editor', 'play', 'title', 'loading', or 'unknown'."""
+        """Current screen: 'editor', 'play', 'coursebot', 'title', 'loading', or 'unknown'."""
         s = self.status()
         if not s:
             return 'unknown'
@@ -170,6 +175,8 @@ class Game:
             return 'editor'
         elif sc == SCENE_PLAY:
             return 'play'
+        elif sc == SCENE_COURSEBOT:
+            return 'coursebot'
         elif sc == SCENE_TITLE:
             return 'title'
         elif s['real_phase'] == -1:
@@ -372,6 +379,8 @@ class Game:
             
         Flow: Editor → PLUS (menu) → RIGHT (coursebot) → A (enter) → 
               navigate to slot → A (select) → DOWN×3 (Play) → A (start)
+              
+        Note: Coursebot play is scene_mode=7 (not 5 like editor test-play)
         """
         # First get to editor
         if not self.to_editor():
@@ -391,7 +400,7 @@ class Game:
         
         # A → Enter Coursebot
         self.press('A', 100)
-        time.sleep(2.0)  # wait for coursebot animation
+        time.sleep(3.0)  # wait for coursebot to load courses
         
         # Navigate to slot (grid is 4 columns wide)
         # slot 0 is already selected, navigate for others
@@ -416,11 +425,13 @@ class Game:
         # A → Start playing
         self.press('A', 100)
         
-        # Wait for play mode
-        return self.wait_for(
-            lambda s: s['scene_mode'] == SCENE_PLAY and s['has_player'],
+        # Wait for coursebot play mode (scene 7)
+        # Note: has_player may be 0 in coursebot mode, check state + position instead
+        result = self.wait_for(
+            lambda s: s['scene_mode'] == SCENE_COURSEBOT and s['state'] > 0,
             timeout=timeout
-        ) is not None
+        )
+        return result is not None
 
     def to_editor(self, timeout=30, debug=False):
         """Navigate to editor. Returns True on success."""
