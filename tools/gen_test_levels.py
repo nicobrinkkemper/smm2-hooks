@@ -371,11 +371,12 @@ def level_flat_ground() -> LevelBuilder:
     NOTE: Start area is 7 tiles wide (x=0 to x=6).
     Goal area is ~4 tiles wide before goal_x.
     Safe zone: x >= 7 and x <= goal_x - 4
+    Ground must extend to goal area for valid path!
     """
     b = LevelBuilder("Flat Ground", "SMB1", "Ground")
-    # Safe zone: x=7 to x=13 (like your Test NSMBU)
+    # Ground from x=7 to x=23 (goal_x=27, so goal area starts ~x=23)
     # Connected ground block with proper surface + fill tiles
-    b.add_ground_block(7, 13, y_surface=4, height=5)
+    b.add_ground_block(7, 23, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -444,7 +445,7 @@ def level_underwater() -> LevelBuilder:
 def level_3dw_flat() -> LevelBuilder:
     """3D World style flat ground."""
     b = LevelBuilder("3DW Flat", "3DW", "Ground")
-    b.add_ground_block(7, 13, y_surface=4, height=5)
+    b.add_ground_block(7, 23, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -454,7 +455,7 @@ def level_3dw_flat() -> LevelBuilder:
 def level_smb3_flat() -> LevelBuilder:
     """SMB3 style flat ground."""
     b = LevelBuilder("SMB3 Flat", "SMB3", "Ground")
-    b.add_ground_block(7, 13, y_surface=4, height=5)
+    b.add_ground_block(7, 23, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -464,7 +465,7 @@ def level_smb3_flat() -> LevelBuilder:
 def level_smw_flat() -> LevelBuilder:
     """Super Mario World style flat ground."""
     b = LevelBuilder("SMW Flat", "SMW", "Ground")
-    b.add_ground_block(7, 13, y_surface=4, height=5)
+    b.add_ground_block(7, 23, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -474,7 +475,7 @@ def level_smw_flat() -> LevelBuilder:
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
     b = LevelBuilder("NSMBU Flat", "NSMBU", "Ground")
-    b.add_ground_block(7, 13, y_surface=4, height=5)
+    b.add_ground_block(7, 23, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
