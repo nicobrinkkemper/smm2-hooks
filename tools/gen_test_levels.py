@@ -208,42 +208,67 @@ class LevelBuilder:
     def add_ground_block(self, x_start: int, x_end: int, y_surface: int, height: int = 5):
         """Add a connected ground block with proper tile visuals.
         
-        Creates a 2D rectangle of tiles. NO left edge needed (start area auto-connects).
-        Uses different tile IDs for surface vs fill rows, with special right-edge tiles.
-        
-        Args:
-            x_start: Left edge X coordinate (no special tile - auto-connects to start)
-            x_end: Right edge X coordinate
-            y_surface: Top surface Y coordinate (player walks on this)
-            height: How many rows tall (default 5 = surface + 4 fill rows)
+        Uses style-specific tile patterns:
+        - 2D styles (SMB1/SMB3/SMW/NSMBU): uniform fill
+        - 3DW: detailed edges with texture variation
         """
+        is_3dw = (self.style_id == 4)  # 3DW style
+        
         # Surface row (top)
         for x in range(x_start, x_end + 1):
-            if x == x_end:
-                tile_id = GROUND_SURFACE_RIGHT
-            elif x == x_end - 2:
-                tile_id = GROUND_SURFACE_PRE_GOAL  # Special connector before goal
+            if x == x_start:
+                # Left edge: 3DW uses 10, 2D styles use 59 (no special left)
+                tile_id = 10 if is_3dw else GROUND_SURFACE_MID
+            elif x == x_end:
+                tile_id = GROUND_SURFACE_RIGHT  # 60
+            elif x == x_end - 1 and is_3dw:
+                tile_id = 10  # 3DW has special pre-right tile
             else:
-                tile_id = GROUND_SURFACE_MID
+                tile_id = GROUND_SURFACE_MID  # 59
             self.ground_tiles.append((x, y_surface, tile_id))
         
         # Fill rows (below surface)
+        import random
+        random.seed(42)  # Deterministic but varied
+        
         for y in range(y_surface - 1, y_surface - height, -1):
             if y < 0:
                 break
             for x in range(x_start, x_end + 1):
-                if x == x_end:
-                    # Right edge varies by row
-                    if y == y_surface - 1:  # y=3 when surface=4
-                        tile_id = GROUND_FILL_RIGHT_Y3
-                    elif y == y_surface - 2:  # y=2
-                        tile_id = GROUND_FILL_RIGHT_Y2
-                    elif y == 0:
-                        tile_id = GROUND_FILL_RIGHT_Y0
+                is_left = (x == x_start)
+                is_right = (x == x_end)
+                is_bottom = (y == 0)
+                
+                if is_right:
+                    # Right edge
+                    if y == y_surface - 1:
+                        tile_id = GROUND_FILL_RIGHT_Y3  # 68
                     else:
-                        tile_id = GROUND_FILL_MID
+                        tile_id = GROUND_FILL_MID  # 62
+                elif is_3dw:
+                    # 3DW: scatter variation tiles (12, 13)
+                    if is_left and is_bottom:
+                        tile_id = 12  # bottom-left corner
+                    elif is_bottom and random.random() < 0.3:
+                        tile_id = 12  # scattered on bottom
+                    elif is_left and random.random() < 0.5:
+                        tile_id = 12  # scattered on left edge
+                    elif random.random() < 0.25:
+                        tile_id = 12 if random.random() < 0.8 else 13
+                    else:
+                        tile_id = GROUND_FILL_MID  # 62
                 else:
-                    tile_id = GROUND_FILL_MID
+                    # 2D styles: uniform fill with edge specials
+                    if is_right:
+                        if y == y_surface - 2:
+                            tile_id = GROUND_FILL_RIGHT_Y2  # 12
+                        elif y == 0:
+                            tile_id = GROUND_FILL_RIGHT_Y0  # 13
+                        else:
+                            tile_id = GROUND_FILL_MID
+                    else:
+                        tile_id = GROUND_FILL_MID  # 62
+                
                 self.ground_tiles.append((x, y, tile_id))
     
     def add_ice(self, x_start: int, x_end: int, y: int):
@@ -467,10 +492,11 @@ def level_underwater() -> LevelBuilder:
 
 @test_level(5, "Flat Ground (3DW)")
 def level_3dw_flat() -> LevelBuilder:
-    """3D World style flat ground."""
+    """3D World style flat ground with detailed edges."""
     b = LevelBuilder("3DW Flat", "3DW", "Ground")
-    b.add_ground_block(7, 24, y_surface=4, height=5)
-    b.goal_x = 27
+    # 3DW: smaller level like Nico's example (x=7-13)
+    b.add_ground_block(7, 13, y_surface=4, height=5)
+    b.goal_x = 17  # Closer goal for smaller level
     b.goal_y = 5
     return b
 
