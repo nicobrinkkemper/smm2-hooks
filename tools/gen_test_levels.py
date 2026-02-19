@@ -443,11 +443,10 @@ def level_flat_ground() -> LevelBuilder:
 def level_jump_platforms() -> LevelBuilder:
     """Platforms at different heights for jump testing."""
     b = LevelBuilder("Jump Test", "SMB1", "Ground")
-    b.add_ground(5, 10, 4)     # Start ground (safe zone)
+    b.add_ground_block(7, 10, y_surface=4, height=5)  # Start at x=7
     b.add_platform(12, 6, 3)   # Low platform
     b.add_platform(16, 8, 3)   # Medium platform
     b.add_platform(20, 10, 3)  # High platform
-    # No end ground - goal area is auto-generated
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -488,10 +487,11 @@ def level_ice() -> LevelBuilder:
 def level_underwater() -> LevelBuilder:
     """Underwater level for water physics."""
     b = LevelBuilder("Water Test", "SMB1", "Underwater")
-    b.add_ground(5, 23, 2)  # Low floor (safe zone only)
+    # Ground must start at x=7 (outside start area) and extend to x=24
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.start_y = 10
     b.goal_x = 27
-    b.goal_y = 3
+    b.goal_y = 5
     return b
 
 
