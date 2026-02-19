@@ -93,9 +93,10 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     data = bytearray(0x5BFC0)
     
     # === Header (0x000 - 0x1FF) ===
+    # For flat ground: position goal close to start so auto-generated areas connect
     data[0x00] = 5   # start_y (tiles from bottom)
-    data[0x01] = 5   # goal_y (tiles)
-    struct.pack_into('<h', data, 0x02, 25)   # goal_x (tiles) - matches goal object
+    data[0x01] = 4   # goal_y - ONE TILE DOWN to align ground levels
+    struct.pack_into('<h', data, 0x02, 11)   # goal_x - close to start (start=7 tiles)
     struct.pack_into('<h', data, 0x04, 300)  # time_limit (seconds)
     struct.pack_into('<h', data, 0x06, 0)    # clear_condition_magnitude
     
@@ -148,37 +149,13 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     struct.pack_into('<i', data, area + 0x14, 0)         # boundary_bottom
     struct.pack_into('<i', data, area + 0x18, 0)         # unk_flag
     
-    # === Ground tiles at area + 0x247A4 (each = 4 bytes: x, y, tile_id[2]) ===
-    # Create a flat ground floor from x=0 to x=30 at y=0 (minimal valid level)
-    ground_base = area + 0x247A4
+    # === Ground tiles at area + 0x247A4 ===
+    # DO NOT place custom ground tiles - auto-generated start/goal areas provide ground
+    # If ground is needed in safe zone: x >= 7 AND x <= goal_x - 4
     ground_count = 0
     
-    # Ground tile IDs (from real level analysis):
-    # 0x19 = left edge top, 0x1a = middle ground, 0x1b = right edge top
-    # 0x06 = right edge, 0x07 = left edge (alternate)
-    GROUND_LEFT = 0x19   # Left edge
-    GROUND_MID = 0x1a    # Middle ground
-    GROUND_RIGHT = 0x1b  # Right edge
-    
-    # Add ground from x=0 to x=30 at y=4 (matching test level height)
-    ground_y = 4
-    for x in range(31):
-        # Determine tile ID based on position
-        if x == 0:
-            tile_id = GROUND_LEFT
-        elif x == 30:
-            tile_id = GROUND_RIGHT
-        else:
-            tile_id = GROUND_MID
-        
-        offset = ground_base + ground_count * 4
-        data[offset + 0] = x         # x position (tile coords)
-        data[offset + 1] = ground_y  # y position
-        struct.pack_into('<H', data, offset + 2, tile_id)  # tile ID (2 bytes!)
-        ground_count += 1
-    
     # Set counts in area header
-    struct.pack_into('<i', data, area + 0x1C, 1)  # object_count (just goal pole)
+    struct.pack_into('<i', data, area + 0x1C, 0)  # object_count (no objects - goal auto-generated)
     struct.pack_into('<i', data, area + 0x20, 0)  # sound_effect_count
     struct.pack_into('<i', data, area + 0x24, 0)  # snake_block_count
     struct.pack_into('<i', data, area + 0x28, 0)  # clear_pipe_count
@@ -186,43 +163,23 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     struct.pack_into('<i', data, area + 0x30, 0)  # exclamation_mark_block_count
     struct.pack_into('<i', data, area + 0x34, 0)  # track_block_count
     struct.pack_into('<i', data, area + 0x38, 0)  # unk1
-    struct.pack_into('<i', data, area + 0x3C, ground_count)  # ground_count
+    struct.pack_into('<i', data, area + 0x3C, 0)  # ground_count (no custom ground)
     struct.pack_into('<i', data, area + 0x40, 0)  # track_count
     struct.pack_into('<i', data, area + 0x44, 0)  # ice_count
     
-    # === Objects at area+0x48 (each = 0x20 bytes) ===
-    # Positions are in 0.1 pixel units (deci-pixels)
-    # 1 tile = 16 pixels = 160 deci-pixels
-    # CRITICAL: Grid alignment - positions must be exact tile boundaries!
-    TILE_SIZE = 160  # deci-pixels per tile
+    # === Objects at area+0x48 ===
+    # DO NOT place goal object - it's auto-generated from header goal_x/goal_y
+    # If objects are needed: place in safe zone (x >= 7 AND x <= goal_x - 4)
+    # and outside spawn exclusion (3 tiles from player spawn at x=0)
     
-    # Spawn exclusion zone: 3 tiles (48 pixels) in each direction from spawn
-    # Player spawns at x=0, y=start_y (tile 5 from header)
-    # So keep objects at x >= 4 tiles (outside 3-tile exclusion)
-    SPAWN_EXCLUSION = 4  # tiles - objects must start at this x or greater
-    
-    obj = area + 0x48
-    
-    # Object 0: Goal pole (id=30) - REQUIRED, place far from spawn
-    # Place at tile 25 to be safe, on ground level + 1
-    goal_x = 25
-    goal_y = ground_y + 1  # 1 tile above ground
-    struct.pack_into('<i', data, obj + 0x00, goal_x * TILE_SIZE)  # x (exact tile boundary)
-    struct.pack_into('<i', data, obj + 0x04, goal_y * TILE_SIZE)  # y (exact tile boundary)
-    struct.pack_into('<h', data, obj + 0x08, 0)               # unk1
-    data[obj + 0x0A] = 1                                       # width
-    data[obj + 0x0B] = 8                                       # height
-    struct.pack_into('<i', data, obj + 0x0C, 0x06000040)      # flag
-    struct.pack_into('<i', data, obj + 0x10, 0x06000040)      # cflag (same as flag)
-    struct.pack_into('<i', data, obj + 0x14, 0)               # ex
-    struct.pack_into('<h', data, obj + 0x18, 27)              # id (27 = goal, NOT 30!)
-    struct.pack_into('<h', data, obj + 0x1A, -1)              # cid (0xFFFF = none)
-    struct.pack_into('<h', data, obj + 0x1C, -1)              # lid (0xFFFF = none)
-    struct.pack_into('<h', data, obj + 0x1E, -1)              # sid (0xFFFF = none)
-    
-    # That's all we need - just the goal pole (object_count = 1)
-    # Minimal valid level: ground tiles + goal pole
-    # No extra objects to avoid any overlap issues
+    # === Subworld (Area 1) at 0x2E0E0 ===
+    # Must be initialized even if empty, or pipes will crash
+    area1 = 0x2E0E0
+    data[area1 + 0x00] = theme_id  # Same theme as main
+    data[area1 + 0x02] = 1         # Boundary flags
+    data[area1 + 0x04] = 1         # Unknown flag
+    struct.pack_into('<i', data, area1 + 0x08, 84 * 16)   # Width: 1344 (84 tiles)
+    struct.pack_into('<i', data, area1 + 0x0C, 27 * 16)   # Height: 432 (27 tiles)
     
     return bytes(data)
 
