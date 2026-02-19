@@ -68,6 +68,16 @@ GROUND_FILL = 0x3E
 GROUND_LEFT = 0x19
 GROUND_MID = 0x1a
 GROUND_RIGHT = 0x1b
+
+# Connected ground block tile IDs (proper visual connection)
+# Surface row (top of ground)
+GROUND_SURFACE_LEFT = 0x3A   # 58
+GROUND_SURFACE_MID = 0x3B    # 59
+GROUND_SURFACE_RIGHT = 0x3C  # 60
+# Fill rows (below surface)
+GROUND_FILL_LEFT = 0x3D      # 61
+GROUND_FILL_MID = 0x3E       # 62
+GROUND_FILL_RIGHT = 0x3F     # 63
 ICE_LEFT = 0x4D
 ICE_MID = 0x4E
 ICE_RIGHT = 0x4F
@@ -187,6 +197,41 @@ class LevelBuilder:
         """Add solid ground fill (tile 0x3E) from x_start to x_end at height y."""
         for x in range(x_start, x_end + 1):
             self.ground_tiles.append((x, y, GROUND_FILL))
+    
+    def add_ground_block(self, x_start: int, x_end: int, y_surface: int, height: int = 5):
+        """Add a connected ground block with proper tile visuals.
+        
+        Creates a 2D rectangle of tiles from y=0 to y=y_surface.
+        Uses different tile IDs for surface vs fill rows, and left/mid/right edges.
+        
+        Args:
+            x_start: Left edge X coordinate
+            x_end: Right edge X coordinate  
+            y_surface: Top surface Y coordinate (player walks on this)
+            height: How many rows tall (default 5 = surface + 4 fill rows)
+        """
+        # Surface row (top)
+        for x in range(x_start, x_end + 1):
+            if x == x_start:
+                tile_id = GROUND_SURFACE_LEFT
+            elif x == x_end:
+                tile_id = GROUND_SURFACE_RIGHT
+            else:
+                tile_id = GROUND_SURFACE_MID
+            self.ground_tiles.append((x, y_surface, tile_id))
+        
+        # Fill rows (below surface)
+        for y in range(y_surface - 1, y_surface - height, -1):
+            if y < 0:
+                break
+            for x in range(x_start, x_end + 1):
+                if x == x_start:
+                    tile_id = GROUND_FILL_LEFT
+                elif x == x_end:
+                    tile_id = GROUND_FILL_RIGHT
+                else:
+                    tile_id = GROUND_FILL_MID
+                self.ground_tiles.append((x, y, tile_id))
     
     def add_ice(self, x_start: int, x_end: int, y: int):
         """Add ice tiles from x_start to x_end."""
@@ -328,8 +373,9 @@ def level_flat_ground() -> LevelBuilder:
     Safe zone: x >= 7 and x <= goal_x - 4
     """
     b = LevelBuilder("Flat Ground", "SMB1", "Ground")
-    # Safe zone: x=7 to x=22 (start area ends at x=6, goal at x=27)
-    b.add_ground(7, 22, 4)
+    # Safe zone: x=7 to x=13 (like your Test NSMBU)
+    # Connected ground block with proper surface + fill tiles
+    b.add_ground_block(7, 13, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -398,7 +444,7 @@ def level_underwater() -> LevelBuilder:
 def level_3dw_flat() -> LevelBuilder:
     """3D World style flat ground."""
     b = LevelBuilder("3DW Flat", "3DW", "Ground")
-    b.add_ground(5, 23, 4)  # Safe zone only
+    b.add_ground_block(7, 13, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -408,7 +454,7 @@ def level_3dw_flat() -> LevelBuilder:
 def level_smb3_flat() -> LevelBuilder:
     """SMB3 style flat ground."""
     b = LevelBuilder("SMB3 Flat", "SMB3", "Ground")
-    b.add_ground(5, 23, 4)  # Safe zone only
+    b.add_ground_block(7, 13, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -418,7 +464,7 @@ def level_smb3_flat() -> LevelBuilder:
 def level_smw_flat() -> LevelBuilder:
     """Super Mario World style flat ground."""
     b = LevelBuilder("SMW Flat", "SMW", "Ground")
-    b.add_ground(5, 23, 4)  # Safe zone only
+    b.add_ground_block(7, 13, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -428,7 +474,7 @@ def level_smw_flat() -> LevelBuilder:
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
     b = LevelBuilder("NSMBU Flat", "NSMBU", "Ground")
-    b.add_ground(5, 23, 4)  # Safe zone only
+    b.add_ground_block(7, 13, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
