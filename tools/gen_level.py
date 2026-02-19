@@ -143,37 +143,40 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     data[area + 0x06] = 0            # liquid_speed
     data[area + 0x07] = 0            # liquid_start_height
     
-    # Boundaries (in pixels, not deci-pixels)
-    struct.pack_into('<i', data, area + 0x08, 35 * 16)   # boundary_right (560 pixels = 35 tiles)
+    # Boundaries (in pixels) - controls actual level width
+    # Minimum level width is 24 tiles
+    level_width_tiles = 24
+    struct.pack_into('<i', data, area + 0x08, level_width_tiles * 16)  # boundary_right
     struct.pack_into('<i', data, area + 0x0C, 27 * 16)   # boundary_top (432 pixels = 27 tiles)
     struct.pack_into('<i', data, area + 0x10, 0)         # boundary_left
     struct.pack_into('<i', data, area + 0x14, 0)         # boundary_bottom
     struct.pack_into('<i', data, area + 0x18, 0)         # unk_flag
     
     # === Ground tiles at area + 0x247A4 ===
-    # Place ground ONLY in safe zone: x >= 7 AND x <= goal_x - 4
-    # This connects start area to goal area so Mario can walk straight through
+    # Place ground ONLY in safe zone: x >= 7 AND x <= goal_x - 7
+    # Fill multiple rows (y=0 to ground_top) for solid visual connection
     ground_base = area + 0x247A4
     ground_count = 0
     
-    # Get goal_x from header (we set it to 11)
+    # Get goal_x from header
     goal_x = struct.unpack_from('<h', data, 0x02)[0]
     
-    # Safe zone: start at x=7 (after 7-tile start area), end at goal_x - 7
-    # Using -7 instead of -4 leaves cleaner visual gap before goal
+    # Safe zone: after 7-tile start area, before goal area
     safe_start = 7
-    safe_end = goal_x - 7  # Leave extra visual space before goal area
-    ground_y = 4  # Same level as start area ground (start_y - 1)
+    safe_end = goal_x - 7  # Leave visual space before goal
+    ground_top = 4  # Top of ground (same as goal_y)
     
     GROUND_FILL = 0x3E  # Solid ground tile
     
+    # Fill ground as solid block from y=0 to y=ground_top
     if safe_end >= safe_start:
-        for x in range(safe_start, safe_end + 1):
-            offset = ground_base + ground_count * 4
-            data[offset + 0] = x
-            data[offset + 1] = ground_y
-            struct.pack_into('<H', data, offset + 2, GROUND_FILL)
-            ground_count += 1
+        for y in range(ground_top + 1):  # y=0 to y=4 (5 rows)
+            for x in range(safe_start, safe_end + 1):
+                offset = ground_base + ground_count * 4
+                data[offset + 0] = x
+                data[offset + 1] = y
+                struct.pack_into('<H', data, offset + 2, GROUND_FILL)
+                ground_count += 1
     
     # Set counts in area header
     struct.pack_into('<i', data, area + 0x1C, 0)  # object_count (no objects - goal auto-generated)
