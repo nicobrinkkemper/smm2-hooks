@@ -71,13 +71,20 @@ GROUND_RIGHT = 0x1b
 
 # Connected ground block tile IDs (proper visual connection)
 # Surface row (top of ground)
-GROUND_SURFACE_LEFT = 0x3A   # 58
-GROUND_SURFACE_MID = 0x3B    # 59
-GROUND_SURFACE_RIGHT = 0x3C  # 60
+GROUND_SURFACE_MID = 59      # 0x3B - middle surface
+GROUND_SURFACE_RIGHT = 60    # 0x3C - right edge surface
+GROUND_SURFACE_PRE_GOAL = 9  # special tile before goal area
 # Fill rows (below surface)
-GROUND_FILL_LEFT = 0x3D      # 61
-GROUND_FILL_MID = 0x3E       # 62
-GROUND_FILL_RIGHT = 0x3F     # 63
+GROUND_FILL_MID = 62         # 0x3E - middle fill
+# Right edge fill (varies by row)
+GROUND_FILL_RIGHT_Y3 = 68    # right edge at y=3
+GROUND_FILL_RIGHT_Y2 = 12    # right edge at y=2
+GROUND_FILL_RIGHT_Y0 = 13    # right edge at y=0
+# NOTE: No left edge tiles needed - start area auto-connects!
+
+# Slope object IDs (slopes are objects, not ground tiles)
+OBJ_SLIGHT_SLOPE = 87
+OBJ_STEEP_SLOPE = 88
 ICE_LEFT = 0x4D
 ICE_MID = 0x4E
 ICE_RIGHT = 0x4F
@@ -201,21 +208,21 @@ class LevelBuilder:
     def add_ground_block(self, x_start: int, x_end: int, y_surface: int, height: int = 5):
         """Add a connected ground block with proper tile visuals.
         
-        Creates a 2D rectangle of tiles from y=0 to y=y_surface.
-        Uses different tile IDs for surface vs fill rows, and left/mid/right edges.
+        Creates a 2D rectangle of tiles. NO left edge needed (start area auto-connects).
+        Uses different tile IDs for surface vs fill rows, with special right-edge tiles.
         
         Args:
-            x_start: Left edge X coordinate
-            x_end: Right edge X coordinate  
+            x_start: Left edge X coordinate (no special tile - auto-connects to start)
+            x_end: Right edge X coordinate
             y_surface: Top surface Y coordinate (player walks on this)
             height: How many rows tall (default 5 = surface + 4 fill rows)
         """
         # Surface row (top)
         for x in range(x_start, x_end + 1):
-            if x == x_start:
-                tile_id = GROUND_SURFACE_LEFT
-            elif x == x_end:
+            if x == x_end:
                 tile_id = GROUND_SURFACE_RIGHT
+            elif x == x_end - 2:
+                tile_id = GROUND_SURFACE_PRE_GOAL  # Special connector before goal
             else:
                 tile_id = GROUND_SURFACE_MID
             self.ground_tiles.append((x, y_surface, tile_id))
@@ -225,10 +232,16 @@ class LevelBuilder:
             if y < 0:
                 break
             for x in range(x_start, x_end + 1):
-                if x == x_start:
-                    tile_id = GROUND_FILL_LEFT
-                elif x == x_end:
-                    tile_id = GROUND_FILL_RIGHT
+                if x == x_end:
+                    # Right edge varies by row
+                    if y == y_surface - 1:  # y=3 when surface=4
+                        tile_id = GROUND_FILL_RIGHT_Y3
+                    elif y == y_surface - 2:  # y=2
+                        tile_id = GROUND_FILL_RIGHT_Y2
+                    elif y == 0:
+                        tile_id = GROUND_FILL_RIGHT_Y0
+                    else:
+                        tile_id = GROUND_FILL_MID
                 else:
                     tile_id = GROUND_FILL_MID
                 self.ground_tiles.append((x, y, tile_id))
@@ -254,6 +267,20 @@ class LevelBuilder:
                 'width': 1,
                 'height': 1,
             })
+    
+    def add_slope(self, x: int, y: int, width: int, height: int, steep: bool = False):
+        """Add a slope object.
+        
+        Slopes are objects (not ground tiles) with IDs 87 (slight) or 88 (steep).
+        Coordinates are in tiles, converted to 160-unit sub-pixels internally.
+        """
+        self.objects.append({
+            'id': OBJ_STEEP_SLOPE if steep else OBJ_SLIGHT_SLOPE,
+            'x': x,
+            'y': y,
+            'width': width,
+            'height': height,
+        })
     
     def add_coin(self, x: int, y: int):
         """Add a coin."""
@@ -398,23 +425,19 @@ def level_jump_platforms() -> LevelBuilder:
 
 @test_level(2, "Slope Course")
 def level_slopes() -> LevelBuilder:
-    """Various slopes for slope physics testing."""
+    """Slope physics testing using actual slope objects."""
     b = LevelBuilder("Slope Test", "SMB1", "Ground")
-    # Start flat (safe zone starts at x=5)
-    b.add_ground(5, 8, 4)
-    # Uphill (simulated with stair-step ground)
-    for i in range(4):
-        b.add_ground(9 + i, 9 + i, 4 + i)
-    # Flat top
-    b.add_ground(13, 17, 7)
-    # Downhill
-    for i in range(4):
-        b.add_ground(18 + i, 18 + i, 7 - i)
-    # End flat (stop before goal zone)
-    b.add_ground(22, 23, 4)
+    # Start flat ground
+    b.add_ground_block(7, 10, y_surface=4, height=5)
+    # Steep slope going up (id=88)
+    b.add_slope(8, 4, width=5, height=4, steep=True)
+    # Slight slope going up (id=87) 
+    b.add_slope(13, 7, width=8, height=4, steep=False)
+    # End ground near goal
+    b.add_ground(21, 23, 10)
     b.start_y = 5
     b.goal_x = 27
-    b.goal_y = 5
+    b.goal_y = 10
     return b
 
 
