@@ -94,9 +94,10 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     
     # === Header (0x000 - 0x1FF) ===
     # For flat ground with walkable path to goal
+    # Minimum level width is 24 tiles
     data[0x00] = 5   # start_y (tiles from bottom)
     data[0x01] = 4   # goal_y - ONE TILE DOWN to align ground levels  
-    struct.pack_into('<h', data, 0x02, 20)   # goal_x - gives safe zone x=7 to x=16
+    struct.pack_into('<h', data, 0x02, 24)   # goal_x - minimum level size (24 tiles)
     struct.pack_into('<h', data, 0x04, 300)  # time_limit (seconds)
     struct.pack_into('<h', data, 0x06, 0)    # clear_condition_magnitude
     
@@ -158,9 +159,10 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     # Get goal_x from header (we set it to 11)
     goal_x = struct.unpack_from('<h', data, 0x02)[0]
     
-    # Safe zone: start at x=7 (after 7-tile start area), end at goal_x - 4
+    # Safe zone: start at x=7 (after 7-tile start area), end at goal_x - 7
+    # Using -7 instead of -4 leaves cleaner visual gap before goal
     safe_start = 7
-    safe_end = goal_x - 4  # Leave room for goal area
+    safe_end = goal_x - 7  # Leave extra visual space before goal area
     ground_y = 4  # Same level as start area ground (start_y - 1)
     
     GROUND_FILL = 0x3E  # Solid ground tile
