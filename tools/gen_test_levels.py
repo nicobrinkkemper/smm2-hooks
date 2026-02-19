@@ -291,8 +291,13 @@ class LevelBuilder:
         # Initialize subworld (Area 1) header
         area1 = 0x2E0E0
         data[area1 + 0x00] = self.theme_id  # Same theme as main
+        data[area1 + 0x01] = 0  # Autoscroll
         data[area1 + 0x02] = 1  # Boundary flags (from original)
-        data[area1 + 0x04] = 1  # Unknown flag (from original)
+        data[area1 + 0x03] = 0  # Orientation
+        data[area1 + 0x04] = 1  # liquid_end_height
+        data[area1 + 0x05] = 0  # liquid_mode
+        data[area1 + 0x06] = 0  # liquid_speed
+        data[area1 + 0x07] = 1  # liquid_start_height (CRITICAL!)
         struct.pack_into('<i', data, area1 + 0x08, 84 * 16)  # Width: 1344 (84 tiles)
         struct.pack_into('<i', data, area1 + 0x0C, 27 * 16)  # Height: 432 (27 tiles)
         # Object and ground counts stay 0 for empty subworld
