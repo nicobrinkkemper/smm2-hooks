@@ -272,7 +272,7 @@ class LevelBuilder:
         """Add a slope object.
         
         Slopes are objects (not ground tiles) with IDs 87 (slight) or 88 (steep).
-        Coordinates are in tiles, converted to 160-unit sub-pixels internally.
+        Coordinates are in tiles. Slopes need +0.5 tile offset (placed at tile centers).
         """
         self.objects.append({
             'id': OBJ_STEEP_SLOPE if steep else OBJ_SLIGHT_SLOPE,
@@ -280,6 +280,7 @@ class LevelBuilder:
             'y': y,
             'width': width,
             'height': height,
+            '_half_tile_offset': True,  # Flag for build() to add +80 units
         })
     
     def add_coin(self, x: int, y: int):
@@ -337,8 +338,10 @@ class LevelBuilder:
         obj_base = area + 0x48
         for i, obj in enumerate(self.objects):
             off = obj_base + i * 0x20
-            struct.pack_into('<i', data, off + 0x00, obj['x'] * TILE)
-            struct.pack_into('<i', data, off + 0x04, obj['y'] * TILE)
+            # Slopes need +0.5 tile offset (80 units) to align properly
+            offset = 80 if obj.get('_half_tile_offset') else 0
+            struct.pack_into('<i', data, off + 0x00, obj['x'] * TILE + offset)
+            struct.pack_into('<i', data, off + 0x04, obj['y'] * TILE + offset)
             data[off + 0x0A] = obj.get('width', 1)
             data[off + 0x0B] = obj.get('height', 1)
             struct.pack_into('<i', data, off + 0x0C, 0x06000040)
@@ -396,14 +399,12 @@ def level_flat_ground() -> LevelBuilder:
     """Basic flat ground for walk/run testing.
     
     NOTE: Start area is 7 tiles wide (x=0 to x=6).
-    Goal area is ~4 tiles wide before goal_x.
-    Safe zone: x >= 7 and x <= goal_x - 4
-    Ground must extend to goal area for valid path!
+    Goal area is ~3 tiles before goal_x.
+    Ground must extend to connect with goal area!
     """
     b = LevelBuilder("Flat Ground", "SMB1", "Ground")
-    # Ground from x=7 to x=23 (goal_x=27, so goal area starts ~x=23)
-    # Connected ground block with proper surface + fill tiles
-    b.add_ground_block(7, 23, y_surface=4, height=5)
+    # Ground from x=7 to x=24 (one more tile to connect with goal at x=27)
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -468,7 +469,7 @@ def level_underwater() -> LevelBuilder:
 def level_3dw_flat() -> LevelBuilder:
     """3D World style flat ground."""
     b = LevelBuilder("3DW Flat", "3DW", "Ground")
-    b.add_ground_block(7, 23, y_surface=4, height=5)
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -478,7 +479,7 @@ def level_3dw_flat() -> LevelBuilder:
 def level_smb3_flat() -> LevelBuilder:
     """SMB3 style flat ground."""
     b = LevelBuilder("SMB3 Flat", "SMB3", "Ground")
-    b.add_ground_block(7, 23, y_surface=4, height=5)
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -488,7 +489,7 @@ def level_smb3_flat() -> LevelBuilder:
 def level_smw_flat() -> LevelBuilder:
     """Super Mario World style flat ground."""
     b = LevelBuilder("SMW Flat", "SMW", "Ground")
-    b.add_ground_block(7, 23, y_surface=4, height=5)
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
@@ -498,7 +499,7 @@ def level_smw_flat() -> LevelBuilder:
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
     b = LevelBuilder("NSMBU Flat", "NSMBU", "Ground")
-    b.add_ground_block(7, 23, y_surface=4, height=5)
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_x = 27
     b.goal_y = 5
     return b
