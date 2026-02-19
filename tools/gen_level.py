@@ -173,11 +173,16 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     # and outside spawn exclusion (3 tiles from player spawn at x=0)
     
     # === Subworld (Area 1) at 0x2E0E0 ===
-    # Must be initialized even if empty, or pipes will crash
+    # Must be initialized exactly like original, or causes glitched tiles
     area1 = 0x2E0E0
-    data[area1 + 0x00] = theme_id  # Same theme as main
-    data[area1 + 0x02] = 1         # Boundary flags
-    data[area1 + 0x04] = 1         # Unknown flag
+    data[area1 + 0x00] = theme_id  # Theme (same as main)
+    data[area1 + 0x01] = 0         # Autoscroll
+    data[area1 + 0x02] = 1         # Boundary type
+    data[area1 + 0x03] = 0         # Orientation
+    data[area1 + 0x04] = 1         # liquid_end_height
+    data[area1 + 0x05] = 0         # liquid_mode
+    data[area1 + 0x06] = 0         # liquid_speed
+    data[area1 + 0x07] = 1         # liquid_start_height (CRITICAL - was missing!)
     struct.pack_into('<i', data, area1 + 0x08, 84 * 16)   # Width: 1344 (84 tiles)
     struct.pack_into('<i', data, area1 + 0x0C, 27 * 16)   # Height: 432 (27 tiles)
     
