@@ -7,6 +7,13 @@ Writes encrypted BCD to Eden save slot.
 Usage:
     python3 gen_level.py --style SMB1 --theme Ground --slot 0
     python3 gen_level.py --style 3DW --theme Ghost --slot 1
+
+VALIDATION RULES (from decomp CourseDataValidator):
+- Objects must be on grid (positions in deci-pixels, 160 = 1 tile)
+- Spawn exclusion zone: 3 tiles (48 pixels) from player spawn
+- Player spawns at x=0 by default, y from header start_y field
+- Goal pole is required, must be reachable
+- Object positions must not overlap spawn area
 """
 
 import struct
@@ -166,7 +173,7 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
         ground_count += 1
     
     # Set counts in area header
-    struct.pack_into('<i', data, area + 0x1C, 2)  # object_count (player + goal)
+    struct.pack_into('<i', data, area + 0x1C, 1)  # object_count (just goal pole)
     struct.pack_into('<i', data, area + 0x20, 0)  # sound_effect_count
     struct.pack_into('<i', data, area + 0x24, 0)  # snake_block_count
     struct.pack_into('<i', data, area + 0x28, 0)  # clear_pipe_count
@@ -181,37 +188,36 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     # === Objects at area+0x48 (each = 0x20 bytes) ===
     # Positions are in 0.1 pixel units (deci-pixels)
     # 1 tile = 16 pixels = 160 deci-pixels
+    # CRITICAL: Grid alignment - positions must be exact tile boundaries!
     TILE_SIZE = 160  # deci-pixels per tile
+    
+    # Spawn exclusion zone: 3 tiles (48 pixels) in each direction from spawn
+    # Player spawns at x=0, y=start_y (tile 5 from header)
+    # So keep objects at x >= 4 tiles (outside 3-tile exclusion)
+    SPAWN_EXCLUSION = 4  # tiles - objects must start at this x or greater
     
     obj = area + 0x48
     
-    # Object 0: Mushroom (id=23) - placed above ground
-    struct.pack_into('<i', data, obj + 0x00, 5 * TILE_SIZE)   # x (tile 5)
-    struct.pack_into('<i', data, obj + 0x04, 5 * TILE_SIZE)   # y (tile 5, above ground at y=4)
-    struct.pack_into('<h', data, obj + 0x08, 0)               # unk1
-    data[obj + 0x0A] = 2                                       # width
-    data[obj + 0x0B] = 2                                       # height
-    struct.pack_into('<i', data, obj + 0x0C, 0x06000040)      # flag (from test level)
-    struct.pack_into('<i', data, obj + 0x10, 0x06000040)      # cflag (same as flag)
-    struct.pack_into('<i', data, obj + 0x14, 0)               # ex
-    struct.pack_into('<h', data, obj + 0x18, 23)              # id (23 = SuperMushroom)
-    struct.pack_into('<h', data, obj + 0x1A, -1)              # cid (0xFFFF = none)
-    struct.pack_into('<h', data, obj + 0x1C, -1)              # lid (0xFFFF = none)
-    struct.pack_into('<h', data, obj + 0x1E, -1)              # sid (0xFFFF = none)
-    
-    # Object 1: Goal pole (id=30)
-    obj += 0x20
-    struct.pack_into('<i', data, obj + 0x00, 25 * TILE_SIZE)  # x (tile 25)
-    struct.pack_into('<i', data, obj + 0x04, 5 * TILE_SIZE)   # y (tile 5)
+    # Object 0: Goal pole (id=30) - REQUIRED, place far from spawn
+    # Place at tile 25 to be safe, on ground level + 1
+    goal_x = 25
+    goal_y = ground_y + 1  # 1 tile above ground
+    struct.pack_into('<i', data, obj + 0x00, goal_x * TILE_SIZE)  # x (exact tile boundary)
+    struct.pack_into('<i', data, obj + 0x04, goal_y * TILE_SIZE)  # y (exact tile boundary)
     struct.pack_into('<h', data, obj + 0x08, 0)               # unk1
     data[obj + 0x0A] = 1                                       # width
     data[obj + 0x0B] = 8                                       # height
     struct.pack_into('<i', data, obj + 0x0C, 0x06000040)      # flag
     struct.pack_into('<i', data, obj + 0x10, 0x06000040)      # cflag (same as flag)
+    struct.pack_into('<i', data, obj + 0x14, 0)               # ex
     struct.pack_into('<h', data, obj + 0x18, 30)              # id (30 = GoalPole)
     struct.pack_into('<h', data, obj + 0x1A, -1)              # cid (0xFFFF = none)
     struct.pack_into('<h', data, obj + 0x1C, -1)              # lid (0xFFFF = none)
     struct.pack_into('<h', data, obj + 0x1E, -1)              # sid (0xFFFF = none)
+    
+    # That's all we need - just the goal pole (object_count = 1)
+    # Minimal valid level: ground tiles + goal pole
+    # No extra objects to avoid any overlap issues
     
     return bytes(data)
 
