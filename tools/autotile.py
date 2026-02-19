@@ -35,28 +35,34 @@ class Neighbor(IntFlag):
 
 
 # Observed tile IDs from hand-edited levels
-# These are approximations - actual mapping needs RE
+# VERIFIED 2026-02-19 via live testing with Eden
 
 # 2D Styles (SMB1, SMB3, SMW, NSMBU)
 TILE_2D = {
-    # Surface row (y = max_y, no UP neighbor)
+    # Single-row tiles (1 block tall, no UP or DOWN neighbor)
+    'single_left': 25,       # No LEFT, no UP, no DOWN
+    'single_mid': 26,        # Has LEFT and RIGHT, no UP, no DOWN
+    'single_right': 27,      # No RIGHT, no UP, no DOWN
+    
+    # Surface row (top edge, has DOWN but no UP neighbor)
     'surface_left': 58,      # No LEFT
     'surface_mid': 59,       # Has LEFT and RIGHT
     'surface_right': 60,     # No RIGHT
-    'surface_single': 58,    # No LEFT or RIGHT
+    'surface_single': 58,    # No LEFT or RIGHT (but has DOWN)
     
-    # Fill rows (has UP neighbor)
+    # Fill rows (middle, has both UP and DOWN neighbors)
     'fill_left': 61,         # No LEFT
     'fill_mid': 62,          # Has LEFT and RIGHT  
     'fill_right': 63,        # No RIGHT
     'fill_single': 61,       # No LEFT or RIGHT
     
-    # Bottom row (no DOWN neighbor)
-    'bottom_left': 12,       # No LEFT, no DOWN
-    'bottom_mid': 62,        # Has LEFT and RIGHT, no DOWN
-    'bottom_right': 13,      # No RIGHT, no DOWN
+    # Bottom row (bottom edge, has UP but no DOWN neighbor)
+    'bottom_left': 64,       # No LEFT, no DOWN
+    'bottom_mid': 65,        # Has LEFT and RIGHT, no DOWN
+    'bottom_right': 66,      # No RIGHT, no DOWN
+    'bottom_single': 64,     # No LEFT or RIGHT (but has UP)
     
-    # Special edges
+    # Special edges (may need more RE)
     'right_y3': 68,          # Right edge at y=surface-1
 }
 
@@ -91,14 +97,38 @@ def get_neighbor_mask(tile_map: Set[Tuple[int, int]], x: int, y: int) -> int:
     return mask
 
 
-def select_tile_2d(mask: int, is_surface: bool, is_bottom: bool) -> int:
-    """Select tile ID for 2D styles based on neighbor mask."""
+def select_tile_2d(mask: int) -> int:
+    """Select tile ID for 2D styles based on neighbor mask.
+    
+    Tile selection logic (verified 2026-02-19):
+    - Single-row (no UP, no DOWN): tiles 25-27
+    - Surface (no UP, has DOWN): tiles 58-60
+    - Fill (has UP, has DOWN): tiles 61-63
+    - Bottom (has UP, no DOWN): tiles 64-66
+    """
     has_left = bool(mask & Neighbor.LEFT)
     has_right = bool(mask & Neighbor.RIGHT)
     has_up = bool(mask & Neighbor.UP)
     has_down = bool(mask & Neighbor.DOWN)
     
-    if is_surface:
+    # Determine row type based on vertical neighbors
+    is_single = not has_up and not has_down
+    is_surface = not has_up and has_down
+    is_bottom = has_up and not has_down
+    # is_fill = has_up and has_down (default)
+    
+    if is_single:
+        # Single-row tiles (1 block tall floating)
+        if not has_left and not has_right:
+            return TILE_2D['single_left']  # Single isolated block
+        elif not has_left:
+            return TILE_2D['single_left']
+        elif not has_right:
+            return TILE_2D['single_right']
+        else:
+            return TILE_2D['single_mid']
+    
+    elif is_surface:
         # Top surface row
         if not has_left and not has_right:
             return TILE_2D['surface_single']
@@ -111,7 +141,9 @@ def select_tile_2d(mask: int, is_surface: bool, is_bottom: bool) -> int:
     
     elif is_bottom:
         # Bottom row
-        if not has_left:
+        if not has_left and not has_right:
+            return TILE_2D['bottom_single']
+        elif not has_left:
             return TILE_2D['bottom_left']
         elif not has_right:
             return TILE_2D['bottom_right']
@@ -119,8 +151,10 @@ def select_tile_2d(mask: int, is_surface: bool, is_bottom: bool) -> int:
             return TILE_2D['bottom_mid']
     
     else:
-        # Fill rows
-        if not has_left:
+        # Fill rows (middle)
+        if not has_left and not has_right:
+            return TILE_2D['fill_single']
+        elif not has_left:
             return TILE_2D['fill_left']
         elif not has_right:
             return TILE_2D['fill_right']
@@ -176,13 +210,12 @@ def autotile_ground(positions: Set[Tuple[int, int]], style: str = 'SMB1') -> Dic
     
     for (x, y) in positions:
         mask = get_neighbor_mask(positions, x, y)
-        is_surface = (y == max_y)
-        is_bottom = (y == min_y)
+        is_surface = not bool(mask & Neighbor.UP)  # No ground above
         
         if is_3dw:
             tile_id = select_tile_3dw(mask, is_surface, x, max_x)
         else:
-            tile_id = select_tile_2d(mask, is_surface, is_bottom)
+            tile_id = select_tile_2d(mask)
         
         result[(x, y)] = tile_id
     
