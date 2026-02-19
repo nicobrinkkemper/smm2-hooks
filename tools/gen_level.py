@@ -12,8 +12,13 @@ VALIDATION RULES (from decomp CourseDataValidator):
 - Objects must be on grid (positions in deci-pixels, 160 = 1 tile)
 - Spawn exclusion zone: 3 tiles (48 pixels) from player spawn
 - Player spawns at x=0 by default, y from header start_y field
-- Goal pole is required, must be reachable
+- Goal is required (id=27), must be reachable
 - Object positions must not overlap spawn area
+
+OBJECT IDs (from bcd-format.ksy):
+    0=goomba, 4=block, 5=question_block, 6=hard_block, 7=ground,
+    8=coin, 9=pipe, 10=spring, 15=bob_omb, 20=super_mushroom,
+    23=note_block, 27=goal, 33=one_up, 34=fire_flower, 35=super_star
 """
 
 import struct
@@ -210,7 +215,7 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     struct.pack_into('<i', data, obj + 0x0C, 0x06000040)      # flag
     struct.pack_into('<i', data, obj + 0x10, 0x06000040)      # cflag (same as flag)
     struct.pack_into('<i', data, obj + 0x14, 0)               # ex
-    struct.pack_into('<h', data, obj + 0x18, 30)              # id (30 = GoalPole)
+    struct.pack_into('<h', data, obj + 0x18, 27)              # id (27 = goal, NOT 30!)
     struct.pack_into('<h', data, obj + 0x1A, -1)              # cid (0xFFFF = none)
     struct.pack_into('<h', data, obj + 0x1C, -1)              # lid (0xFFFF = none)
     struct.pack_into('<h', data, obj + 0x1E, -1)              # sid (0xFFFF = none)
