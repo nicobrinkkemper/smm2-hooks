@@ -39,6 +39,23 @@ For a level with `goal_x = 27`:
 - Start area: x = 0 to 6 (auto-generated)
 - Goal area: x = 23 to 27 (auto-generated)
 
+### True Flat Ground (No Custom Tiles)
+For a simple flat ground level with no gaps:
+- `goal_x = 11` (close to start)
+- `goal_y = 4` (one tile DOWN from start_y=5)
+- No custom ground tiles - auto-generated areas connect seamlessly
+- The `goal_y` offset aligns the ground levels
+
+### Subworld Initialization
+Subworld (Area 1) at offset `0x2E0E0` must be initialized:
+- Theme: same as main world
+- Width: 1344 (84 tiles × 16px)  
+- Height: 432 (27 tiles × 16px)
+- Boundary flags at +0x02: 1
+- Flag at +0x04: 1
+
+If subworld is all zeros, pipes to subworld will crash/corrupt.
+
 ## Common Mistakes
 
 ### ❌ Placing Ground Over Start Area
