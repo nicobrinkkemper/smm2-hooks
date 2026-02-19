@@ -272,15 +272,19 @@ class LevelBuilder:
                 self.ground_tiles.append((x, y, tile_id))
     
     def add_ice(self, x_start: int, x_end: int, y: int):
-        """Add ice tiles from x_start to x_end."""
+        """Add ice block objects from x_start to x_end.
+        
+        Ice terrain uses ice_block objects (id=63), NOT ground tiles!
+        """
+        OBJ_ICE_BLOCK = 63
         for x in range(x_start, x_end + 1):
-            if x == x_start:
-                tile_id = ICE_LEFT
-            elif x == x_end:
-                tile_id = ICE_RIGHT
-            else:
-                tile_id = ICE_MID
-            self.ground_tiles.append((x, y, tile_id))
+            self.objects.append({
+                'id': OBJ_ICE_BLOCK,
+                'x': x,
+                'y': y,
+                'width': 1,
+                'height': 1,
+            })
     
     def add_platform(self, x: int, y: int, width: int = 3):
         """Add a platform (hard blocks)."""
@@ -471,9 +475,10 @@ def level_slopes() -> LevelBuilder:
 def level_ice() -> LevelBuilder:
     """Ice surface for friction testing."""
     b = LevelBuilder("Ice Test", "SMB1", "Snow")
-    b.add_ground(5, 10, 4)  # Normal ground start (safe zone)
-    b.add_ice(11, 20, 4)    # Ice section
-    # No end ground - goal area is auto-generated
+    # Normal ground at start
+    b.add_ground_block(7, 12, y_surface=4, height=5)
+    # Ice blocks section (objects, not ground tiles)
+    b.add_ice(13, 22, 4)
     b.goal_x = 27
     b.goal_y = 5
     return b
