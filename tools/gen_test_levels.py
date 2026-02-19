@@ -63,6 +63,8 @@ COURSE_KEY_TABLE = [
 ]
 
 # Tile IDs (from level analysis)
+# 0x003E appears to be generic ground fill
+GROUND_FILL = 0x3E
 GROUND_LEFT = 0x19
 GROUND_MID = 0x1a
 GROUND_RIGHT = 0x1b
@@ -181,6 +183,11 @@ class LevelBuilder:
                 tile_id = GROUND_MID
             self.ground_tiles.append((x, y, tile_id))
     
+    def add_ground_fill(self, x_start: int, x_end: int, y: int):
+        """Add solid ground fill (tile 0x3E) from x_start to x_end at height y."""
+        for x in range(x_start, x_end + 1):
+            self.ground_tiles.append((x, y, GROUND_FILL))
+    
     def add_ice(self, x_start: int, x_end: int, y: int):
         """Add ice tiles from x_start to x_end."""
         for x in range(x_start, x_end + 1):
@@ -280,6 +287,15 @@ class LevelBuilder:
         # Set counts
         struct.pack_into('<i', data, area + 0x1C, len(self.objects))
         struct.pack_into('<i', data, area + 0x3C, len(self.ground_tiles))
+        
+        # Initialize subworld (Area 1) header
+        area1 = 0x2E0E0
+        data[area1 + 0x00] = self.theme_id  # Same theme as main
+        data[area1 + 0x02] = 1  # Boundary flags (from original)
+        data[area1 + 0x04] = 1  # Unknown flag (from original)
+        struct.pack_into('<i', data, area1 + 0x08, 84 * 16)  # Width: 1344 (84 tiles)
+        struct.pack_into('<i', data, area1 + 0x0C, 27 * 16)  # Height: 432 (27 tiles)
+        # Object and ground counts stay 0 for empty subworld
         
         return bytes(data)
 
