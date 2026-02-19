@@ -112,14 +112,18 @@ def replace_bcd_in_sarc(sarc_data: bytes, new_bcd: bytes) -> bytes:
 
 
 def create_flat_test_level() -> bytes:
-    """Create a simple flat ground test level (encrypted BCD format)."""
+    """Create a simple flat ground test level (encrypted BCD format).
+    
+    Start area is 7 tiles wide (x=0 to x=6).
+    Goal area is ~4 tiles wide before goal_x.
+    Safe zone: x >= 7 and x <= goal_x - 4
+    """
     b = LevelBuilder("Test Level", "SMB1", "Ground")
-    b.add_ground(5, 23, 4)  # Safe zone only
+    b.add_ground(7, 22, 4)  # Safe zone: after start area, before goal
     b.goal_x = 27
     b.goal_y = 5
     
     course_data = b.build()
-    # Title demos use encrypted BCD format
     encrypted = encrypt_course(course_data)
     return encrypted
 

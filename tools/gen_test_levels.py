@@ -302,12 +302,13 @@ def test_level(slot: int, name: str):
 def level_flat_ground() -> LevelBuilder:
     """Basic flat ground for walk/run testing.
     
-    NOTE: Start area (x<5) and goal area (x>goal_x-3) are auto-generated.
-    Only place ground/objects in the middle zone.
+    NOTE: Start area is 7 tiles wide (x=0 to x=6).
+    Goal area is ~4 tiles wide before goal_x.
+    Safe zone: x >= 7 and x <= goal_x - 4
     """
     b = LevelBuilder("Flat Ground", "SMB1", "Ground")
-    # Only place ground in safe zone: x=5 to x=23 (goal at 27)
-    b.add_ground(5, 23, 4)
+    # Safe zone: x=7 to x=22 (start area ends at x=6, goal at x=27)
+    b.add_ground(7, 22, 4)
     b.goal_x = 27
     b.goal_y = 5
     return b
