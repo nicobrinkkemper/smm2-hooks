@@ -93,10 +93,10 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     data = bytearray(0x5BFC0)
     
     # === Header (0x000 - 0x1FF) ===
-    # For flat ground: position goal close to start so auto-generated areas connect
+    # For flat ground with walkable path to goal
     data[0x00] = 5   # start_y (tiles from bottom)
-    data[0x01] = 4   # goal_y - ONE TILE DOWN to align ground levels
-    struct.pack_into('<h', data, 0x02, 11)   # goal_x - close to start (start=7 tiles)
+    data[0x01] = 4   # goal_y - ONE TILE DOWN to align ground levels  
+    struct.pack_into('<h', data, 0x02, 20)   # goal_x - gives safe zone x=7 to x=16
     struct.pack_into('<h', data, 0x04, 300)  # time_limit (seconds)
     struct.pack_into('<h', data, 0x06, 0)    # clear_condition_magnitude
     
@@ -150,12 +150,32 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     struct.pack_into('<i', data, area + 0x18, 0)         # unk_flag
     
     # === Ground tiles at area + 0x247A4 ===
-    # DO NOT place custom ground tiles - auto-generated start/goal areas provide ground
-    # If ground is needed in safe zone: x >= 7 AND x <= goal_x - 4
+    # Place ground ONLY in safe zone: x >= 7 AND x <= goal_x - 4
+    # This connects start area to goal area so Mario can walk straight through
+    ground_base = area + 0x247A4
     ground_count = 0
+    
+    # Get goal_x from header (we set it to 11)
+    goal_x = struct.unpack_from('<h', data, 0x02)[0]
+    
+    # Safe zone: start at x=7 (after 7-tile start area), end at goal_x - 4
+    safe_start = 7
+    safe_end = goal_x - 4  # Leave room for goal area
+    ground_y = 4  # Same level as start area ground (start_y - 1)
+    
+    GROUND_FILL = 0x3E  # Solid ground tile
+    
+    if safe_end >= safe_start:
+        for x in range(safe_start, safe_end + 1):
+            offset = ground_base + ground_count * 4
+            data[offset + 0] = x
+            data[offset + 1] = ground_y
+            struct.pack_into('<H', data, offset + 2, GROUND_FILL)
+            ground_count += 1
     
     # Set counts in area header
     struct.pack_into('<i', data, area + 0x1C, 0)  # object_count (no objects - goal auto-generated)
+    struct.pack_into('<i', data, area + 0x3C, ground_count)  # ground_count
     struct.pack_into('<i', data, area + 0x20, 0)  # sound_effect_count
     struct.pack_into('<i', data, area + 0x24, 0)  # snake_block_count
     struct.pack_into('<i', data, area + 0x28, 0)  # clear_pipe_count
@@ -163,7 +183,7 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     struct.pack_into('<i', data, area + 0x30, 0)  # exclamation_mark_block_count
     struct.pack_into('<i', data, area + 0x34, 0)  # track_block_count
     struct.pack_into('<i', data, area + 0x38, 0)  # unk1
-    struct.pack_into('<i', data, area + 0x3C, 0)  # ground_count (no custom ground)
+    # ground_count already set above after placing tiles
     struct.pack_into('<i', data, area + 0x40, 0)  # track_count
     struct.pack_into('<i', data, area + 0x44, 0)  # ice_count
     
