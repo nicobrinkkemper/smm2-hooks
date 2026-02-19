@@ -252,15 +252,7 @@ class LevelBuilder:
         struct.pack_into('<i', data, area + 0x08, 35 * 16)
         struct.pack_into('<i', data, area + 0x0C, 27 * 16)
         
-        # Add goal to objects
-        goal_y = self.goal_y if self.goal_y else self.start_y
-        self.objects.append({
-            'id': OBJ_GOAL,
-            'x': self.goal_x,
-            'y': goal_y,
-            'width': 1,
-            'height': 8,
-        })
+        # NOTE: Do NOT add goal object - game auto-generates from header goal_x/goal_y
         
         # Write objects
         obj_base = area + 0x48
@@ -308,10 +300,15 @@ def test_level(slot: int, name: str):
 
 @test_level(0, "Flat Ground (SMB1)")
 def level_flat_ground() -> LevelBuilder:
-    """Basic flat ground for walk/run testing."""
+    """Basic flat ground for walk/run testing.
+    
+    NOTE: Start area (x<5) and goal area (x>goal_x-3) are auto-generated.
+    Only place ground/objects in the middle zone.
+    """
     b = LevelBuilder("Flat Ground", "SMB1", "Ground")
-    b.add_ground(0, 30, 4)
-    b.goal_x = 28
+    # Only place ground in safe zone: x=5 to x=23 (goal at 27)
+    b.add_ground(5, 23, 4)
+    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -320,12 +317,12 @@ def level_flat_ground() -> LevelBuilder:
 def level_jump_platforms() -> LevelBuilder:
     """Platforms at different heights for jump testing."""
     b = LevelBuilder("Jump Test", "SMB1", "Ground")
-    b.add_ground(0, 10, 4)
+    b.add_ground(5, 10, 4)     # Start ground (safe zone)
     b.add_platform(12, 6, 3)   # Low platform
     b.add_platform(16, 8, 3)   # Medium platform
     b.add_platform(20, 10, 3)  # High platform
-    b.add_ground(24, 30, 4)    # End ground
-    b.goal_x = 28
+    # No end ground - goal area is auto-generated
+    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -334,20 +331,20 @@ def level_jump_platforms() -> LevelBuilder:
 def level_slopes() -> LevelBuilder:
     """Various slopes for slope physics testing."""
     b = LevelBuilder("Slope Test", "SMB1", "Ground")
-    # Start flat
-    b.add_ground(0, 6, 4)
+    # Start flat (safe zone starts at x=5)
+    b.add_ground(5, 8, 4)
     # Uphill (simulated with stair-step ground)
-    for i in range(5):
-        b.add_ground(7 + i, 7 + i, 4 + i)
+    for i in range(4):
+        b.add_ground(9 + i, 9 + i, 4 + i)
     # Flat top
-    b.add_ground(12, 16, 8)
+    b.add_ground(13, 17, 7)
     # Downhill
-    for i in range(5):
-        b.add_ground(17 + i, 17 + i, 8 - i)
-    # End flat
-    b.add_ground(22, 30, 4)
+    for i in range(4):
+        b.add_ground(18 + i, 18 + i, 7 - i)
+    # End flat (stop before goal zone)
+    b.add_ground(22, 23, 4)
     b.start_y = 5
-    b.goal_x = 28
+    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -356,10 +353,10 @@ def level_slopes() -> LevelBuilder:
 def level_ice() -> LevelBuilder:
     """Ice surface for friction testing."""
     b = LevelBuilder("Ice Test", "SMB1", "Snow")
-    b.add_ground(0, 8, 4)   # Normal ground start
-    b.add_ice(9, 20, 4)     # Ice section
-    b.add_ground(21, 30, 4) # Normal ground end
-    b.goal_x = 28
+    b.add_ground(5, 10, 4)  # Normal ground start (safe zone)
+    b.add_ice(11, 20, 4)    # Ice section
+    # No end ground - goal area is auto-generated
+    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -368,9 +365,9 @@ def level_ice() -> LevelBuilder:
 def level_underwater() -> LevelBuilder:
     """Underwater level for water physics."""
     b = LevelBuilder("Water Test", "SMB1", "Underwater")
-    b.add_ground(0, 30, 2)  # Low floor
+    b.add_ground(5, 23, 2)  # Low floor (safe zone only)
     b.start_y = 10
-    b.goal_x = 28
+    b.goal_x = 27
     b.goal_y = 3
     return b
 
@@ -379,8 +376,8 @@ def level_underwater() -> LevelBuilder:
 def level_3dw_flat() -> LevelBuilder:
     """3D World style flat ground."""
     b = LevelBuilder("3DW Flat", "3DW", "Ground")
-    b.add_ground(0, 30, 4)
-    b.goal_x = 28
+    b.add_ground(5, 23, 4)  # Safe zone only
+    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -389,8 +386,8 @@ def level_3dw_flat() -> LevelBuilder:
 def level_smb3_flat() -> LevelBuilder:
     """SMB3 style flat ground."""
     b = LevelBuilder("SMB3 Flat", "SMB3", "Ground")
-    b.add_ground(0, 30, 4)
-    b.goal_x = 28
+    b.add_ground(5, 23, 4)  # Safe zone only
+    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -399,8 +396,8 @@ def level_smb3_flat() -> LevelBuilder:
 def level_smw_flat() -> LevelBuilder:
     """Super Mario World style flat ground."""
     b = LevelBuilder("SMW Flat", "SMW", "Ground")
-    b.add_ground(0, 30, 4)
-    b.goal_x = 28
+    b.add_ground(5, 23, 4)  # Safe zone only
+    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -409,20 +406,19 @@ def level_smw_flat() -> LevelBuilder:
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
     b = LevelBuilder("NSMBU Flat", "NSMBU", "Ground")
-    b.add_ground(0, 30, 4)
-    b.goal_x = 28
+    b.add_ground(5, 23, 4)  # Safe zone only
+    b.goal_x = 27
     b.goal_y = 5
     return b
 
 
 @test_level(9, "Empty")
 def level_empty() -> LevelBuilder:
-    """Minimal empty level for custom tests."""
+    """Minimal empty level for custom tests - NO ground placed."""
     b = LevelBuilder("Empty", "SMB1", "Ground")
-    b.add_ground(0, 5, 4)
-    b.add_ground(25, 30, 4)
+    # Don't place any ground - start/goal areas are auto-generated
     b.start_y = 5
-    b.goal_x = 28
+    b.goal_x = 27
     b.goal_y = 5
     return b
 
