@@ -275,6 +275,7 @@ class LevelBuilder:
         """Add ice block objects from x_start to x_end.
         
         Ice terrain uses ice_block objects (id=63), NOT ground tiles!
+        Ice blocks need +80 unit offset (half-tile) to align with grid.
         """
         OBJ_ICE_BLOCK = 63
         for x in range(x_start, x_end + 1):
@@ -284,10 +285,14 @@ class LevelBuilder:
                 'y': y,
                 'width': 1,
                 'height': 1,
+                '_half_tile_offset': True,  # Ice blocks need half-tile offset like slopes
             })
     
     def add_platform(self, x: int, y: int, width: int = 3):
-        """Add a platform (hard blocks)."""
+        """Add a platform (hard blocks).
+        
+        Hard blocks need +80 unit offset (half-tile) to align with grid.
+        """
         for dx in range(width):
             self.objects.append({
                 'id': OBJ_HARD_BLOCK,
@@ -295,6 +300,7 @@ class LevelBuilder:
                 'y': y,
                 'width': 1,
                 'height': 1,
+                '_half_tile_offset': True,
             })
     
     def add_slope(self, x: int, y: int, width: int, height: int, steep: bool = False):
