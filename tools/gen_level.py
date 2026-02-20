@@ -37,6 +37,38 @@ THEMES = {
 }
 
 # Crypto constants (same as parse_course.py)
+def get_tile_id_simple(x: int, y: int, positions: set) -> int:
+    """Simple tile ID selection based on neighbors (fallback for autotile)."""
+    has_left = (x-1, y) in positions
+    has_right = (x+1, y) in positions
+    has_up = (x, y+1) in positions
+    has_down = (x, y-1) in positions
+    
+    # Determine row type based on vertical neighbors
+    is_single = not has_up and not has_down
+    is_surface = not has_up and has_down
+    is_bottom = has_up and not has_down
+    
+    # Base tile for each row type
+    if is_single:
+        base = 25   # Single-row: 25, 26, 27
+    elif is_surface:
+        base = 58   # Surface: 58, 59, 60
+    elif is_bottom:
+        base = 64   # Bottom: 64, 65, 66
+    else:
+        base = 61   # Fill: 61, 62, 63
+    
+    # Offset based on horizontal neighbors
+    if not has_left:
+        offset = 0  # Left edge
+    elif not has_right:
+        offset = 2  # Right edge
+    else:
+        offset = 1  # Middle
+    
+    return base + offset
+
 COURSE_KEY_TABLE = [
     0x7AB1C9D2, 0xCA750936, 0x3003E59C, 0xF261014B,
     0x2E25160A, 0xED614811, 0xF1AC6240, 0xD59272CD,
@@ -166,17 +198,32 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     safe_end = goal_x - 7  # Leave visual space before goal
     ground_top = 4  # Top of ground (same as goal_y)
     
-    GROUND_FILL = 0x3E  # Solid ground tile
-    
-    # Fill ground as solid block from y=0 to y=ground_top
+    # Build set of ground positions for neighbor checking
+    ground_positions = set()
     if safe_end >= safe_start:
         for y in range(ground_top + 1):  # y=0 to y=4 (5 rows)
             for x in range(safe_start, safe_end + 1):
-                offset = ground_base + ground_count * 4
-                data[offset + 0] = x
-                data[offset + 1] = y
-                struct.pack_into('<H', data, offset + 2, GROUND_FILL)
-                ground_count += 1
+                ground_positions.add((x, y))
+    
+    # Use autotile module if available, else fallback
+    try:
+        from autotile import autotile_ground
+        style_name = ['SMB1', 'SMB3', 'SMW', 'NSMBU', '3DW'][style_id]
+        tile_ids = autotile_ground(ground_positions, style_name)
+    except ImportError:
+        # Fallback: use simple tile IDs based on position
+        tile_ids = {}
+        for (x, y) in ground_positions:
+            tile_ids[(x, y)] = get_tile_id_simple(x, y, ground_positions)
+    
+    # Write ground tiles
+    for (x, y), tile_id in sorted(tile_ids.items()):
+        offset = ground_base + ground_count * 4
+        data[offset + 0] = x
+        data[offset + 1] = y
+        data[offset + 2] = tile_id
+        data[offset + 3] = 0  # bg_id
+        ground_count += 1
     
     # Set counts in area header
     struct.pack_into('<i', data, area + 0x1C, 0)  # object_count (no objects - goal auto-generated)
