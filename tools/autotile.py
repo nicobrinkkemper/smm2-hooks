@@ -98,24 +98,32 @@ def get_neighbor_mask(tile_map: Set[Tuple[int, int]], x: int, y: int) -> int:
 
 
 def select_tile_2d(mask: int) -> int:
-    """Select tile ID for 2D styles based on neighbor mask.
+    """Select tile ID for 2D styles based on 8-neighbor mask.
     
-    Tile selection logic (verified 2026-02-19):
-    - Single-row (no UP, no DOWN): tiles 25-27
+    Tile selection logic (verified 2026-02-20 with complex shapes):
+    - Single-row (no UP, no DOWN): tiles 25-27 (+ texture variations 6,7,8)
     - Surface (no UP, has DOWN): tiles 58-60
-    - Fill (has UP, has DOWN): tiles 61-63
+    - Fill (has UP, has DOWN): tiles 61-63 (+ texture variations 12,13,14)
     - Bottom (has UP, no DOWN): tiles 64-66
+    
+    Diagonal neighbors affect corner tiles and texture variations.
     """
+    import random
+    
     has_left = bool(mask & Neighbor.LEFT)
     has_right = bool(mask & Neighbor.RIGHT)
     has_up = bool(mask & Neighbor.UP)
     has_down = bool(mask & Neighbor.DOWN)
+    has_ul = bool(mask & Neighbor.UP_LEFT)
+    has_ur = bool(mask & Neighbor.UP_RIGHT)
+    has_dl = bool(mask & Neighbor.DOWN_LEFT)
+    has_dr = bool(mask & Neighbor.DOWN_RIGHT)
     
     # Determine row type based on vertical neighbors
     is_single = not has_up and not has_down
     is_surface = not has_up and has_down
     is_bottom = has_up and not has_down
-    # is_fill = has_up and has_down (default)
+    is_fill = has_up and has_down
     
     if is_single:
         # Single-row tiles (1 block tall floating)
@@ -126,6 +134,9 @@ def select_tile_2d(mask: int) -> int:
         elif not has_right:
             return TILE_2D['single_right']
         else:
+            # Middle of single row - add texture variation
+            if random.random() < 0.3:
+                return random.choice([6, 7, 8])
             return TILE_2D['single_mid']
     
     elif is_surface:
@@ -151,14 +162,27 @@ def select_tile_2d(mask: int) -> int:
             return TILE_2D['bottom_mid']
     
     else:
-        # Fill rows (middle)
+        # Fill rows (middle) - check for corner cases
         if not has_left and not has_right:
-            return TILE_2D['fill_single']
+            # Vertical column
+            return 29  # Special vertical column tile
         elif not has_left:
+            # Left edge - check for missing diagonal
+            if not has_ul:
+                return 19  # Inner corner variant
             return TILE_2D['fill_left']
         elif not has_right:
+            # Right edge - check for missing diagonal
+            if not has_ur:
+                return random.choice([21, 22, 23])  # Inner corner variants
             return TILE_2D['fill_right']
         else:
+            # Interior fill - check all diagonals for texture
+            all_diagonals = has_ul and has_ur and has_dl and has_dr
+            if all_diagonals:
+                # Fully surrounded - texture variation
+                if random.random() < 0.3:
+                    return random.choice([12, 13, 14])
             return TILE_2D['fill_mid']
 
 
