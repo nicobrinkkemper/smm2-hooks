@@ -44,14 +44,22 @@ namespace smm2 { namespace xlink2_enum {
     void flush();
 }}
 
+namespace smm2 { namespace sim_trace {
+    void init();
+    void per_frame(uint32_t frame);
+    void flush();
+}}
+
 static void on_frame(uint32_t frame) {
     smm2::game_phase::per_frame(frame);
     smm2::status::update(frame);
+    smm2::sim_trace::per_frame(frame);
 
     // Flush logs periodically
     if (frame % 300 == 0) {
         smm2::func_trace::flush();
         smm2::xlink2_enum::flush();
+        smm2::sim_trace::flush();
     }
 }
 
@@ -69,4 +77,5 @@ extern "C" void hkMain() {
     smm2::course_data::init();      // hooks WriteFile for BCD
     smm2::actor_profile::init();    // logs actor profiles + state names
     smm2::xlink2_enum::init();      // captures xlink2 enum definitions
+    smm2::sim_trace::init();        // per-frame player trace for sim comparison
 }
