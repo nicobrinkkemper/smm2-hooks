@@ -42,6 +42,9 @@ PlayerObject_changeState = 0x15E3FB0
 # actor_move (main physics update)
 actor_move = 0x128ACC0
 
+# GabonIronBallWU::calc (spikeball per-frame update)
+GabonIronBallWU_calc = 0x10F2970
+
 # Transition delegate callbacks (from sub_71015E4130)
 # These are the functions decompiled in PlayerObjectStates.cpp
 # Signature: int callback(PlayerObject* this) — returns 0 or 1

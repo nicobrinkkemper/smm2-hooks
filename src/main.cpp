@@ -31,6 +31,10 @@ namespace smm2 { namespace game_phase {
     void per_frame(uint32_t frame);
 }}
 
+namespace smm2 { namespace camera_debug {
+    void init();
+    void per_frame(uint32_t frame);
+}}
 namespace smm2 { namespace course_data {
     void init();
 }}
@@ -50,10 +54,15 @@ namespace smm2 { namespace sim_trace {
     void flush();
 }}
 
+namespace smm2 { namespace placeholder_debug {
+    void init();
+}}
+
 static void on_frame(uint32_t frame) {
     smm2::game_phase::per_frame(frame);
     smm2::status::update(frame);
     smm2::sim_trace::per_frame(frame);
+    smm2::camera_debug::per_frame(frame);
 
     // Flush logs periodically
     if (frame % 300 == 0) {
@@ -75,7 +84,9 @@ extern "C" void hkMain() {
     smm2::status::init();           // writes status.bin, hooks PlayerObject_changeState
     smm2::game_phase::init();       // reads GamePhaseManager
     smm2::course_data::init();      // hooks WriteFile for BCD
+    smm2::camera_debug::init();
     smm2::actor_profile::init();    // logs actor profiles + state names
     smm2::xlink2_enum::init();      // captures xlink2 enum definitions
     smm2::sim_trace::init();        // per-frame player trace for sim comparison
+    smm2::placeholder_debug::init(); // force spikeballs into placeholder state
 }
