@@ -62,7 +62,7 @@ static void on_frame(uint32_t frame) {
     smm2::game_phase::per_frame(frame);
     smm2::status::update(frame);
     smm2::sim_trace::per_frame(frame);
-    smm2::camera_debug::per_frame(frame);
+    // smm2::camera_debug::per_frame(frame); // disabled — forces viewport dims
 
     // Flush logs periodically
     if (frame % 300 == 0) {

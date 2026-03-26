@@ -45,6 +45,18 @@ actor_move = 0x128ACC0
 # GabonIronBallWU::calc (spikeball per-frame update)
 GabonIronBallWU_calc = 0x10F2970
 
+# GabonIronBallWU state elapse (main movement/physics)
+GabonIronBallWU_elapse = 0x10F8740
+
+# Actor base calc (called every frame for every actor)
+ActorBaseCalc = 0x128A2D0
+
+# EnemyBase shared calc (muncher, etc. — calls ActorBaseCalc)
+EnemyBaseCalc = 0x111FAB0
+
+# Actor apply velocity + state dispatch (posX += velX, posY += velY, then state machine)
+ActorApplyVelocity = 0x8D7C70
+
 # Transition delegate callbacks (from sub_71015E4130)
 # These are the functions decompiled in PlayerObjectStates.cpp
 # Signature: int callback(PlayerObject* this) — returns 0 or 1
