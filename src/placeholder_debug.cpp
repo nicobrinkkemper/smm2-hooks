@@ -1,22 +1,14 @@
 /**
- * placeholder_debug.cpp — Force specific enemies into true placeholder state
+ * placeholder_debug.cpp — Debug: find what's actually moving the spikeball
  *
- * Based on testing feedback:
- *   - Setting flag 0x20000 at +1324 "sort of worked": actor was invisible,
- *     still hit on/off switch (hurt hitbox active), but death animation
- *     still triggered because state machine ran.
- *
- * Strategy: Combine the flag approach with blocking the state elapse.
- *   1. Set 0x20000 at +1324 before calc runs (placeholder rendering + activation)
- *   2. Skip the elapse function entirely (no state machine dispatch, no changeState)
- *   3. Let the base calc still run (collision detection stays active)
- *   4. Zero velocity so position doesn't change
- *
- * This should give: invisible, stationary, can hit on/off, can't die.
+ * Test: Skip the spikeball's ENTIRE calc. If it still moves,
+ * then something outside the calc is responsible.
+ * Also log vtable addresses to verify our matching.
  */
 
 #include <hk/hook/Trampoline.h>
 #include <hk/ro/RoUtil.h>
+#include "smm2/log.h"
 
 namespace smm2 {
 namespace placeholder_debug {
@@ -24,78 +16,70 @@ namespace placeholder_debug {
 static uintptr_t s_base = 0;
 static uintptr_t s_vtable_ironball = 0;
 static uintptr_t s_vtable_muncher = 0;
-
-static inline bool is_target_actor(uintptr_t actor) {
-    if (actor == 0) return false;
-    uintptr_t vtable = *reinterpret_cast<uintptr_t*>(actor);
-    return (vtable == s_vtable_ironball || vtable == s_vtable_muncher);
-}
+static log::Logger s_log;
+static int s_log_count = 0;
 
 // Hook 1: GabonIronBallWU::calc (sub_71010F2970)
-// Set placeholder flag BEFORE calling original, zero velocity AFTER
+// DO NOT call original. Just return 1 and log.
 static HkTrampoline<long, void*> ironball_calc_hook =
     hk::hook::trampoline([](void* actor) -> long {
         uintptr_t a = reinterpret_cast<uintptr_t>(actor);
-        // Set placeholder flag at +1324 (field 331) BEFORE calc
-        uint32_t* flags1324 = reinterpret_cast<uint32_t*>(a + 1324);
-        *flags1324 = (*flags1324 & ~0x40000u) | 0x20000u;
-
-        long result = ironball_calc_hook.orig(actor);
-
-        // Re-set after calc (in case calc overwrites)
-        *flags1324 = (*flags1324 & ~0x40000u) | 0x20000u;
-        // Zero velocity so it doesn't drift
-        *reinterpret_cast<float*>(a + 0x254) = 0.0f;  // velX
-        *reinterpret_cast<float*>(a + 0x258) = 0.0f;  // velY
-        return result;
-    });
-
-// Hook 2: GabonIronBallWU state elapse (sub_71010F8740)
-// Skip entirely — this prevents ALL state changes (death, damage, bounce)
-// The elapse is the function that calls changeState and computes movement.
-// a1 = component/state object, a1+8 = Actor pointer
-static HkTrampoline<void, void*, float> ironball_elapse_hook =
-    hk::hook::trampoline([](void* stateObj, float dt) -> void {
-        // Read actor ptr from component+8
-        uintptr_t actor = *reinterpret_cast<uintptr_t*>(
-            reinterpret_cast<uintptr_t>(stateObj) + 8
-        );
-        // Only skip for target actors
-        if (is_target_actor(actor)) {
-            return;  // Skip elapse entirely — no state changes, no movement
+        uintptr_t vt = *reinterpret_cast<uintptr_t*>(a);
+        
+        // Log vtable and position to verify hook is firing
+        if (s_log_count < 60) {
+            float posX = *reinterpret_cast<float*>(a + 0x230);
+            float posY = *reinterpret_cast<float*>(a + 0x234);
+            float velX_254 = *reinterpret_cast<float*>(a + 0x254);
+            float velX_23C = *reinterpret_cast<float*>(a + 0x23C);
+            s_log.writef("calc,vt=0x%lx,expect=0x%lx,posX=%.2f,posY=%.2f,vel254=%.4f,vel23C=%.4f\n",
+                vt, s_vtable_ironball, posX, posY, velX_254, velX_23C);
+            s_log.flush();
+            s_log_count++;
         }
-        ironball_elapse_hook.orig(stateObj, dt);
+        
+        // Set placeholder flag
+        uint32_t* f = reinterpret_cast<uint32_t*>(a + 1324);
+        *f = (*f & ~0x40000u) | 0x20000u;
+        
+        // Skip collision
+        *reinterpret_cast<uint8_t*>(a + 1326) |= 4;
+        
+        // DO NOT CALL ORIGINAL — skip everything
+        return 1;
     });
 
-// Hook 3: EnemyBase shared calc (sub_710111FAB0) — for muncher
-// Same approach: set flag before, zero vel after
-static HkTrampoline<long, void*> enemy_calc_hook =
+// Hook 2: ActorApplyVelocity (sub_71008D7C70)
+// Log when called for ANY actor with matching vtable
+static HkTrampoline<long, void*> apply_vel_hook =
     hk::hook::trampoline([](void* actor) -> long {
         uintptr_t a = reinterpret_cast<uintptr_t>(actor);
-        uintptr_t vtable = *reinterpret_cast<uintptr_t*>(a);
-
-        if (vtable == s_vtable_muncher) {
-            uint32_t* flags1324 = reinterpret_cast<uint32_t*>(a + 1324);
-            *flags1324 = (*flags1324 & ~0x40000u) | 0x20000u;
-
-            long result = enemy_calc_hook.orig(actor);
-
-            *flags1324 = (*flags1324 & ~0x40000u) | 0x20000u;
-            *reinterpret_cast<float*>(a + 0x254) = 0.0f;
-            *reinterpret_cast<float*>(a + 0x258) = 0.0f;
-            return result;
+        uintptr_t vt = *reinterpret_cast<uintptr_t*>(a);
+        
+        if (vt == s_vtable_ironball && s_log_count < 120) {
+            float posX = *reinterpret_cast<float*>(a + 0x230);
+            float velX = *reinterpret_cast<float*>(a + 0x254);
+            s_log.writef("applyvel,vt_match=YES,posX=%.2f,velX=%.4f\n", posX, velX);
+            s_log.flush();
+            s_log_count++;
+            return 1;  // skip
         }
-        return enemy_calc_hook.orig(actor);
+        
+        return apply_vel_hook.orig(actor);
     });
 
 void init() {
     s_base = hk::ro::getMainModule()->range().start();
     s_vtable_ironball = s_base + 0x28D1428;
     s_vtable_muncher  = s_base + 0x2913E68;
+    
+    s_log.init("placeholder_debug.csv");
+    s_log.writef("base=0x%lx,vt_ironball=0x%lx,vt_muncher=0x%lx\n",
+        s_base, s_vtable_ironball, s_vtable_muncher);
+    s_log.flush();
 
     ironball_calc_hook.installAtSym<"GabonIronBallWU_calc">();
-    ironball_elapse_hook.installAtSym<"GabonIronBallWU_elapse">();
-    enemy_calc_hook.installAtSym<"EnemyBaseCalc">();
+    apply_vel_hook.installAtSym<"ActorApplyVelocity">();
 }
 
 }} // namespace smm2::placeholder_debug
