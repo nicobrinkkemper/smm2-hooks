@@ -1,17 +1,18 @@
 /**
- * placeholder_debug.cpp — Force specific enemies into true dormant/placeholder state
+ * placeholder_debug.cpp — Force specific enemies into true placeholder state
  *
- * Two hooks working together:
+ * Based on testing feedback:
+ *   - Setting flag 0x20000 at +1324 "sort of worked": actor was invisible,
+ *     still hit on/off switch (hurt hitbox active), but death animation
+ *     still triggered because state machine ran.
  *
- * 1. StateMachine::changeState (sub_71008B9320) — BLOCK all state transitions
- *    for target actors. This prevents death, damage, any behavior change.
- *    The actor stays locked in whatever state it was initialized to.
+ * Strategy: Combine the flag approach with blocking the state elapse.
+ *   1. Set 0x20000 at +1324 before calc runs (placeholder rendering + activation)
+ *   2. Skip the elapse function entirely (no state machine dispatch, no changeState)
+ *   3. Let the base calc still run (collision detection stays active)
+ *   4. Zero velocity so position doesn't change
  *
- * 2. ActorApplyVelocity (sub_71008D7C70) — zero velocity so it doesn't move,
- *    but still call original so the actor stays in the system and renders.
- *
- * Result: actor is visible, stationary, invulnerable, can't die or change state.
- * This is the true "placeholder/dormant" behavior.
+ * This should give: invisible, stationary, can hit on/off, can't die.
  */
 
 #include <hk/hook/Trampoline.h>
@@ -24,80 +25,77 @@ static uintptr_t s_base = 0;
 static uintptr_t s_vtable_ironball = 0;
 static uintptr_t s_vtable_muncher = 0;
 
-static inline bool should_freeze(uintptr_t actor) {
+static inline bool is_target_actor(uintptr_t actor) {
+    if (actor == 0) return false;
     uintptr_t vtable = *reinterpret_cast<uintptr_t*>(actor);
     return (vtable == s_vtable_ironball || vtable == s_vtable_muncher);
 }
 
-// Hook 1: StateMachine::changeState (sub_71008B9320)
-// Signature: changeState(StateMachine* sm, int newStateId)
-// StateMachine is at actor+0x3F0 (from PlayerObject analysis) or varies.
-// The SM is inside the actor. We can get the actor from SM - offset.
-// Actually, changeState is called as: sub_71008B9320(a1 + 32, stateId)
-// where a1 is the state/component object, and a1+8 = actor pointer.
-// So sm = component + 32, and actor = component + 8.
-// But since changeState is called from many places, we need the actor.
-//
-// From the elapse: sub_71008B9320(a1 + 32, 1)
-// a1 is the state component, a1+8 = actor ptr.
-// sm = a1 + 32, so actor = sm - 32 + 8 = sm - 24
-//
-// BUT the SM can also be at actor+0x20 (a1+32 where a1=component at actor+X).
-// The safest approach: walk back from SM to find the actor by checking vtables.
-// 
-// Alternative: just check if the SM pointer falls within a frozen actor's memory.
-// Actor is 0xD30 bytes for ironball. SM would be at actor + some_offset.
-//
-// Simpler: the SM is embedded at a fixed offset. From the constructor:
-// *(_QWORD *)(v2 + 1256) = v2 + 3360  — controller at +3360
-// And changeState is called as sub_71008B9320(a1 + 32, id) where a1 is the
-// controller at actor+3360. So SM = actor + 3360 + 32 = actor + 3392.
-// Therefore: actor = SM - 3392.
-//
-// For muncher: same pattern. Constructor has *(_QWORD *)(v2 + 1256) = v2 + 3360.
-// So actor = SM - 3392 for both.
+// Hook 1: GabonIronBallWU::calc (sub_71010F2970)
+// Set placeholder flag BEFORE calling original, zero velocity AFTER
+static HkTrampoline<long, void*> ironball_calc_hook =
+    hk::hook::trampoline([](void* actor) -> long {
+        uintptr_t a = reinterpret_cast<uintptr_t>(actor);
+        // Set placeholder flag at +1324 (field 331) BEFORE calc
+        uint32_t* flags1324 = reinterpret_cast<uint32_t*>(a + 1324);
+        *flags1324 = (*flags1324 & ~0x40000u) | 0x20000u;
 
-static HkTrampoline<void, void*, int> changestate_hook =
-    hk::hook::trampoline([](void* sm, int newState) -> void {
-        // Try to get actor: SM is at actor + 3360 + 32 = actor + 3392
-        uintptr_t sm_addr = reinterpret_cast<uintptr_t>(sm);
-        uintptr_t maybe_actor = sm_addr - 3392;
-        
-        // Validate: check if this looks like an actor with a known vtable
-        // Read the first 8 bytes (vtable pointer) and check
-        uintptr_t vtable = *reinterpret_cast<uintptr_t*>(maybe_actor);
-        if (vtable == s_vtable_ironball || vtable == s_vtable_muncher) {
-            // Block the state change — actor stays in current state
-            return;
-        }
-        
-        changestate_hook.orig(sm, newState);
+        long result = ironball_calc_hook.orig(actor);
+
+        // Re-set after calc (in case calc overwrites)
+        *flags1324 = (*flags1324 & ~0x40000u) | 0x20000u;
+        // Zero velocity so it doesn't drift
+        *reinterpret_cast<float*>(a + 0x254) = 0.0f;  // velX
+        *reinterpret_cast<float*>(a + 0x258) = 0.0f;  // velY
+        return result;
     });
 
-// Hook 2: ActorApplyVelocity (sub_71008D7C70)
-// Zero velocity for frozen actors so they don't move, but let
-// the function run for housekeeping.
-static HkTrampoline<long, void*> apply_vel_hook =
+// Hook 2: GabonIronBallWU state elapse (sub_71010F8740)
+// Skip entirely — this prevents ALL state changes (death, damage, bounce)
+// The elapse is the function that calls changeState and computes movement.
+// a1 = component/state object, a1+8 = Actor pointer
+static HkTrampoline<void, void*, float> ironball_elapse_hook =
+    hk::hook::trampoline([](void* stateObj, float dt) -> void {
+        // Read actor ptr from component+8
+        uintptr_t actor = *reinterpret_cast<uintptr_t*>(
+            reinterpret_cast<uintptr_t>(stateObj) + 8
+        );
+        // Only skip for target actors
+        if (is_target_actor(actor)) {
+            return;  // Skip elapse entirely — no state changes, no movement
+        }
+        ironball_elapse_hook.orig(stateObj, dt);
+    });
+
+// Hook 3: EnemyBase shared calc (sub_710111FAB0) — for muncher
+// Same approach: set flag before, zero vel after
+static HkTrampoline<long, void*> enemy_calc_hook =
     hk::hook::trampoline([](void* actor) -> long {
-        if (should_freeze(reinterpret_cast<uintptr_t>(actor))) {
-            float* a = reinterpret_cast<float*>(actor);
-            a[149] = 0.0f;  // velX at +0x254
-            a[150] = 0.0f;  // velY at +0x258
-            long result = apply_vel_hook.orig(actor);
-            a[149] = 0.0f;
-            a[150] = 0.0f;
+        uintptr_t a = reinterpret_cast<uintptr_t>(actor);
+        uintptr_t vtable = *reinterpret_cast<uintptr_t*>(a);
+
+        if (vtable == s_vtable_muncher) {
+            uint32_t* flags1324 = reinterpret_cast<uint32_t*>(a + 1324);
+            *flags1324 = (*flags1324 & ~0x40000u) | 0x20000u;
+
+            long result = enemy_calc_hook.orig(actor);
+
+            *flags1324 = (*flags1324 & ~0x40000u) | 0x20000u;
+            *reinterpret_cast<float*>(a + 0x254) = 0.0f;
+            *reinterpret_cast<float*>(a + 0x258) = 0.0f;
             return result;
         }
-        return apply_vel_hook.orig(actor);
+        return enemy_calc_hook.orig(actor);
     });
 
 void init() {
     s_base = hk::ro::getMainModule()->range().start();
     s_vtable_ironball = s_base + 0x28D1428;
     s_vtable_muncher  = s_base + 0x2913E68;
-    
-    changestate_hook.installAtSym<"StateMachine_changeState">();
-    apply_vel_hook.installAtSym<"ActorApplyVelocity">();
+
+    ironball_calc_hook.installAtSym<"GabonIronBallWU_calc">();
+    ironball_elapse_hook.installAtSym<"GabonIronBallWU_elapse">();
+    enemy_calc_hook.installAtSym<"EnemyBaseCalc">();
 }
 
 }} // namespace smm2::placeholder_debug

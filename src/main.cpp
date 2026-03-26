@@ -80,7 +80,7 @@ extern "C" void hkMain() {
     smm2::frame::init(on_frame);
 
     // Init plugins - ALL ENABLED
-    smm2::tas::init();              // hooks GetNpadStates (input injection)
+    // smm2::tas::init();           // disabled — may interfere with Pro Controller input
     smm2::status::init();           // writes status.bin, hooks PlayerObject_changeState
     smm2::game_phase::init();       // reads GamePhaseManager
     smm2::course_data::init();      // hooks WriteFile for BCD
