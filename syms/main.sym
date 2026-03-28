@@ -48,6 +48,9 @@ GabonIronBallWU_calc = 0x10F2970
 # GabonIronBallWU state elapse (main movement/physics)
 GabonIronBallWU_elapse = 0x10F8740
 
+# GabonIronBallWU collision handler (death/bounce)
+GabonIronBallWU_collision = 0x10F7D80
+
 # Actor base calc (called every frame for every actor)
 ActorBaseCalc = 0x128A2D0
 
@@ -56,6 +59,9 @@ EnemyBaseCalc = 0x111FAB0
 
 # Actor apply velocity + state dispatch (posX += velX, posY += velY, then state machine)
 ActorApplyVelocity = 0x8D7C70
+
+# Actor::execute — top-level per-frame entry point called by ActorMgr
+ActorExecute = 0x8D79D0
 
 # Transition delegate callbacks (from sub_71015E4130)
 # These are the functions decompiled in PlayerObjectStates.cpp
