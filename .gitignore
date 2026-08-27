@@ -8,3 +8,5 @@ __pycache__/
 tools/.eden_pid
 tools/.ryujinx_pid
 tools/.eden_state.json
+
+mcp/.venv/

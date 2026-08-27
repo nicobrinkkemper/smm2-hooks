@@ -5,15 +5,31 @@ description: Drive a Super Mario Maker 2 debug session in the Eden emulator from
 
 # Eden debug session
 
-Everything runs from WSL; Eden itself is a Windows process (`eden.exe`, started via
-`/mnt/c/...`). The scripts live in `smm2-hooks/tools/` (this repo, or the sibling
-`$GEITJE_CODE_ROOT/smm2-hooks` from mission control). Run them from that `tools/`
-directory; they read `smm2-hooks/.env` (paths only, no secrets).
+Prefer the **smm2-hooks MCP tools** (server: `mcp/server.py`, registered in
+mission control's `.mcp.json`): `eden_state` is the truth about the emulator
+(mode, real config, status, mods, log), `eden_launch/eden_kill`, `game_boot`,
+`game_input`, `eden_screenshot`, `levels_list/level_install`, and the GDB tools
+(`gdb_attach`, `gdb_continue`, `gdb_interrupt`, `gdb_wait_stop`, `gdb_cmd`,
+`gdb_module_base`, `gdb_addr`, `gdb_detach`). The scripts below are what those
+tools wrap; use them directly only when the server is not loaded.
+
+Eden runs "portable" here: config and log are in `Documents/eden/user/`,
+while NAND, SD and mods stay under `AppData/Roaming/eden` as named in that
+config. `emu_session.py` toggles the wrong ini; `eden_state`/`eden_launch`
+read and write the right one.
+
+**Modes** (from `eden_state`): `off`; `launching_or_frozen`;
+`waiting_for_debugger_or_paused` (stub enabled and listening, no fresh
+status: attach and continue); `title`; `editor` (**edit-time**: the Course
+Maker, no actors run, `has_player` 0); `editor_play` and `coursebot_play`
+(**run-time**: actors update, player exists); `loading`. Only run-time is
+worth a breakpoint.
 
 Two things make this fragile, and every step below exists because of them:
 Eden bakes software breakpoints into cached code pages (a `break` you forget
-loops as SIGTRAP forever, across restarts), and the Windows host IP for the GDB
-stub changes per WSL boot. `docs/tooling-gaps.md` lists the failure modes.
+loops as SIGTRAP forever, across restarts), and a client attached during a
+scene load has killed Eden twice. `docs/tooling-gaps.md` lists the failure
+modes.
 
 ## Rules (non-negotiable)
 
@@ -23,6 +39,10 @@ stub changes per WSL boot. `docs/tooling-gaps.md` lists the failure modes.
   only safe when no tmux GDB is attached.
 - After every stop: `delete <n>` when done with it, then `c`. The game is
   frozen while GDB sits at the prompt; the status file stops updating.
+- Never `handle SIGTRAP ... pass`: Eden's initial stop is a SIGTRAP and passing
+  it into the guest on the first continue kills the game (seen 2026-08-27).
+- Attach only when the scene you want is already running (run-time), not
+  before a Coursebot load; the stub dropped the connection mid-load once.
 - No breakpoints while a scene is loading (`scene_mode 0`).
 - Narrate each step to the user and stop at the first surprise (unexpected
   scene, SIGTRAP storm, no status updates) instead of pushing through.

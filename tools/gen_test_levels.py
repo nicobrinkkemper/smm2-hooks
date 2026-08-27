@@ -108,8 +108,9 @@ FLAG_ON_TRACK = 0x400
 FLAG_TRACK_LEFT = 0x100000
 FLAG_TRACK_VERTICAL = 0x200000
 
-# Track record shapes ("Type - Shape" tab). How shape and ends pack into the
-# single type byte is not documented; TrackSpec.type_byte is the knob to verify.
+# Track record shapes ("Type - Shape" tab). Verified against an editor-saved
+# course: the type byte is the shape alone; the trailing u16 pair encodes the
+# two ends (0x0104 = joined to a neighbouring piece; 0x0070/0x0090 etc. = free).
 TRACK_SHAPE_HORIZONTAL = 0
 TRACK_SHAPE_VERTICAL = 1
 TRACK_SHAPE_DESC_DIAGONAL = 2
@@ -118,9 +119,8 @@ TRACK_SHAPE_CURVE_BL = 4
 TRACK_SHAPE_CURVE_TR = 5
 TRACK_SHAPE_CURVE_TL = 6
 TRACK_SHAPE_CURVE_BR = 7
-TRACK_ENDS_CLOSED_OPPOSITE = 0
-TRACK_ENDS_CLOSED_ON_DIRECTION = 1
-TRACK_ENDS_OPEN = 2
+TRACK_END_JOINED = 0x0104
+TRACK_END_FREE_H = (0x0090, 0x0070)   # lone horizontal piece, as the editor writes it
 
 # Unit conversions
 TILE = 160  # deci-pixels per tile
@@ -350,31 +350,32 @@ class LevelBuilder:
             'height': 1,
         })
     
-    def add_track(self, x: int, y: int, type_byte: int, link_id: int,
-                  has_object: bool = False, tail: tuple = (0, 0)):
-        """Add one 12-byte track record (area +0x28624, count at +0x40).
+    def add_track(self, x: int, y: int, shape: int, ends: tuple = TRACK_END_FREE_H,
+                  has_object: bool = False) -> int:
+        """Add one 12-byte track record (area +0x28624, count at +0x40) and
+        return its 0-based index (what an object's link id refers to).
 
-        Layout from the community BCD sheet: unk u16, flags u8 (1 = an object
-        rides this piece), x u8, y u8, type u8, link id u16, then two u16 the
-        sheet only describes as size/connection dependent (0x0104 when
-        connected). `type_byte` is passed through untouched because the
-        packing of shape and ends is undocumented; verify in the editor.
+        Layout as the editor writes it: unk u16 = 0, flags u8 (1 = an object
+        rides this piece), x u8, y u8, shape u8, own id u16 (sequential from
+        1), then the two end words.
         """
         if not hasattr(self, 'tracks'):
             self.tracks = []
-        self.tracks.append({'x': x, 'y': y, 'type': type_byte, 'lid': link_id,
-                            'has_object': has_object, 'tail': tail})
+        self.tracks.append({'x': x, 'y': y, 'type': shape, 'lid': len(self.tracks) + 1,
+                            'has_object': has_object, 'tail': ends})
+        return len(self.tracks) - 1
 
-    def add_note_block_on_track(self, x: int, y: int, link_id: int,
-                                wings: bool = True, travel_left: bool = False,
+    def add_note_block_on_track(self, x: int, y: int, track_index: int,
+                                wings: bool = False, travel_left: bool = False,
                                 vertical: bool = False):
-        """A note block attached to the track with the same link id."""
+        """A note block riding the track record with that 0-based index."""
         flags = 0x06000040 | FLAG_ON_TRACK
         if wings: flags |= FLAG_WINGS
         if travel_left: flags |= FLAG_TRACK_LEFT
         if vertical: flags |= FLAG_TRACK_VERTICAL
         self.objects.append({'id': OBJ_NOTE_BLOCK, 'x': x, 'y': y,
-                             'flags': flags, 'lid': link_id})
+                             'flags': flags, 'lid': track_index})
+        self.tracks[track_index]['has_object'] = True
 
     def add_mushroom(self, x: int, y: int):
         """Add a mushroom in a ? block."""
@@ -596,23 +597,20 @@ def level_smw_flat() -> LevelBuilder:
 
 @test_level(10, "Track Note")
 def level_track_note() -> LevelBuilder:
-    """One horizontal track with a winged note block riding it.
+    """Three joined horizontal track pieces with a note block riding them.
 
     For the rail-music decomp work: boot this slot with GDB attached, watch
     the note block's pos_x, and the writer's PC is the track traversal code.
-    Unverified guesses to check in the editor first: type byte packing (shape
-    0 = horizontal with ends 2 = open here), the trailing u16 pair, and
-    whether a track also needs an id-59 object record.
+    Encoding checked against an editor-saved course (slot "track").
     """
     level = LevelBuilder("Track Note", style='SMB1', theme='Ground')
     level.goal_x = 27
     level.goal_y = 4
     level.add_ground_fill(7, 23, 4)
-    lid = 1
-    for x in (12, 13, 14):
-        level.add_track(x, 10, type_byte=TRACK_SHAPE_HORIZONTAL | (TRACK_ENDS_OPEN << 4),
-                        link_id=lid, has_object=(x == 12))
-    level.add_note_block_on_track(12, 10, link_id=lid, wings=True)
+    first = level.add_track(12, 10, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, TRACK_END_JOINED))
+    level.add_track(13, 10, TRACK_SHAPE_HORIZONTAL, ends=(TRACK_END_JOINED, TRACK_END_JOINED))
+    level.add_track(14, 10, TRACK_SHAPE_HORIZONTAL, ends=(TRACK_END_JOINED, 0x0070))
+    level.add_note_block_on_track(12, 10, first)
     return level
 
 
