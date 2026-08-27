@@ -1,6 +1,7 @@
 #include "smm2/frame.h"
 #include "nn/fs.h"
 
+namespace smm2 { namespace rng_trace { void init(); } }
 // Forward declarations for plugins
 namespace smm2 { namespace state_logger {
     void init();
@@ -84,6 +85,7 @@ extern "C" void hkMain() {
     smm2::status::init();           // writes status.bin, hooks PlayerObject_changeState
     smm2::game_phase::init();       // reads GamePhaseManager
     smm2::course_data::init();      // hooks WriteFile for BCD
+    smm2::rng_trace::init();
     smm2::camera_debug::init();
     smm2::actor_profile::init();    // logs actor profiles + state names
     smm2::xlink2_enum::init();      // captures xlink2 enum definitions

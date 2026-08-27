@@ -6,7 +6,7 @@ description: Drive a Super Mario Maker 2 debug session in the Eden emulator from
 # Eden debug session
 
 Prefer the **smm2-hooks MCP tools** (server: `mcp/server.py`, registered in
-mission control's `.mcp.json`): `eden_state` is the truth about the emulator
+the agent's project `.mcp.json`, see `mcp/README.md`): `eden_state` is the truth about the emulator
 (mode, real config, status, mods, log), `eden_launch/eden_kill`, `game_boot`,
 `game_input`, `eden_screenshot`, `levels_list/level_install`, and the GDB tools
 (`gdb_attach`, `gdb_continue`, `gdb_interrupt`, `gdb_wait_stop`, `gdb_cmd`,
@@ -49,7 +49,7 @@ modes.
 
 ## 1. Preflight
 
-    cd $GEITJE_CODE_ROOT/smm2-hooks/tools
+    cd tools    # of this checkout
     python3 emu_session.py overview       # processes, hooks deployed?, gdb stub on?, tmux, status.bin
     ip route | awk '/default/ {print $3}' # Windows host IP; must equal EDEN_GDB_HOST in ../.env (edit if not)
 
