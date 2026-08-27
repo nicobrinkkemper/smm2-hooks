@@ -99,6 +99,28 @@ OBJ_COIN = 8
 OBJ_MUSHROOM = 20
 OBJ_SLOPE_GENTLE = 44  # Gentle slope
 OBJ_SLOPE_STEEP = 45   # Steep slope
+OBJ_NOTE_BLOCK = 23    # Note block (music block is the same id with a flag)
+
+# Object flags (community BCD sheet, "Flags for Objects"). 0x40 and 0x6000000
+# are set on every object; the generator's default 0x06000040 is exactly that.
+FLAG_WINGS = 0x2
+FLAG_ON_TRACK = 0x400
+FLAG_TRACK_LEFT = 0x100000
+FLAG_TRACK_VERTICAL = 0x200000
+
+# Track record shapes ("Type - Shape" tab). How shape and ends pack into the
+# single type byte is not documented; TrackSpec.type_byte is the knob to verify.
+TRACK_SHAPE_HORIZONTAL = 0
+TRACK_SHAPE_VERTICAL = 1
+TRACK_SHAPE_DESC_DIAGONAL = 2
+TRACK_SHAPE_ASC_DIAGONAL = 3
+TRACK_SHAPE_CURVE_BL = 4
+TRACK_SHAPE_CURVE_TR = 5
+TRACK_SHAPE_CURVE_TL = 6
+TRACK_SHAPE_CURVE_BR = 7
+TRACK_ENDS_CLOSED_OPPOSITE = 0
+TRACK_ENDS_CLOSED_ON_DIRECTION = 1
+TRACK_ENDS_OPEN = 2
 
 # Unit conversions
 TILE = 160  # deci-pixels per tile
@@ -328,6 +350,32 @@ class LevelBuilder:
             'height': 1,
         })
     
+    def add_track(self, x: int, y: int, type_byte: int, link_id: int,
+                  has_object: bool = False, tail: tuple = (0, 0)):
+        """Add one 12-byte track record (area +0x28624, count at +0x40).
+
+        Layout from the community BCD sheet: unk u16, flags u8 (1 = an object
+        rides this piece), x u8, y u8, type u8, link id u16, then two u16 the
+        sheet only describes as size/connection dependent (0x0104 when
+        connected). `type_byte` is passed through untouched because the
+        packing of shape and ends is undocumented; verify in the editor.
+        """
+        if not hasattr(self, 'tracks'):
+            self.tracks = []
+        self.tracks.append({'x': x, 'y': y, 'type': type_byte, 'lid': link_id,
+                            'has_object': has_object, 'tail': tail})
+
+    def add_note_block_on_track(self, x: int, y: int, link_id: int,
+                                wings: bool = True, travel_left: bool = False,
+                                vertical: bool = False):
+        """A note block attached to the track with the same link id."""
+        flags = 0x06000040 | FLAG_ON_TRACK
+        if wings: flags |= FLAG_WINGS
+        if travel_left: flags |= FLAG_TRACK_LEFT
+        if vertical: flags |= FLAG_TRACK_VERTICAL
+        self.objects.append({'id': OBJ_NOTE_BLOCK, 'x': x, 'y': y,
+                             'flags': flags, 'lid': link_id})
+
     def add_mushroom(self, x: int, y: int):
         """Add a mushroom in a ? block."""
         self.objects.append({
@@ -379,11 +427,11 @@ class LevelBuilder:
             struct.pack_into('<i', data, off + 0x04, obj['y'] * TILE + offset)
             data[off + 0x0A] = obj.get('width', 1)
             data[off + 0x0B] = obj.get('height', 1)
-            struct.pack_into('<i', data, off + 0x0C, 0x06000040)
-            struct.pack_into('<i', data, off + 0x10, 0x06000040)
+            struct.pack_into('<I', data, off + 0x0C, obj.get('flags', 0x06000040))
+            struct.pack_into('<I', data, off + 0x10, 0x06000040)
             struct.pack_into('<h', data, off + 0x18, obj['id'])
             struct.pack_into('<h', data, off + 0x1A, obj.get('contents', -1))
-            struct.pack_into('<h', data, off + 0x1C, -1)
+            struct.pack_into('<h', data, off + 0x1C, obj.get('lid', -1))
             struct.pack_into('<h', data, off + 0x1E, -1)
         
         # Write ground tiles
@@ -394,9 +442,23 @@ class LevelBuilder:
             data[off + 1] = y
             struct.pack_into('<H', data, off + 2, tile_id)
         
+        # Write track records (see add_track)
+        tracks = getattr(self, 'tracks', [])
+        track_base = area + 0x28624
+        for i, tr in enumerate(tracks):
+            off = track_base + i * 12
+            struct.pack_into('<H', data, off + 0x0, 0)
+            data[off + 0x2] = 1 if tr['has_object'] else 0
+            data[off + 0x3] = tr['x']
+            data[off + 0x4] = tr['y']
+            data[off + 0x5] = tr['type']
+            struct.pack_into('<H', data, off + 0x6, tr['lid'])
+            struct.pack_into('<HH', data, off + 0x8, *tr['tail'])
+
         # Set counts
         struct.pack_into('<i', data, area + 0x1C, len(self.objects))
         struct.pack_into('<i', data, area + 0x3C, len(self.ground_tiles))
+        struct.pack_into('<i', data, area + 0x40, len(tracks))
         
         # Initialize subworld (Area 1) header
         area1 = 0x2E0E0
@@ -530,6 +592,28 @@ def level_smw_flat() -> LevelBuilder:
     b.goal_x = 27
     b.goal_y = 5
     return b
+
+
+@test_level(10, "Track Note")
+def level_track_note() -> LevelBuilder:
+    """One horizontal track with a winged note block riding it.
+
+    For the rail-music decomp work: boot this slot with GDB attached, watch
+    the note block's pos_x, and the writer's PC is the track traversal code.
+    Unverified guesses to check in the editor first: type byte packing (shape
+    0 = horizontal with ends 2 = open here), the trailing u16 pair, and
+    whether a track also needs an id-59 object record.
+    """
+    level = LevelBuilder("Track Note", style='SMB1', theme='Ground')
+    level.goal_x = 27
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    lid = 1
+    for x in (12, 13, 14):
+        level.add_track(x, 10, type_byte=TRACK_SHAPE_HORIZONTAL | (TRACK_ENDS_OPEN << 4),
+                        link_id=lid, has_object=(x == 12))
+    level.add_note_block_on_track(12, 10, link_id=lid, wings=True)
+    return level
 
 
 @test_level(8, "Flat Ground (NSMBU)")
