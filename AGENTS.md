@@ -9,13 +9,32 @@ smm2-hooks is a LibHakkun-based mod for Super Mario Maker 2 (Switch) that:
 - Reports game state to `status.bin`
 - Hooks player state changes and other game functions
 
-## Quick Start
+## Start here: the MCP server
+
+`mcp/server.py` (register it in the agent's `.mcp.json`; `mcp/README.md`) is the
+supported way to work with the emulator. `eden_state` returns the current
+`mode`; act on that, not on assumptions:
+
+| mode | meaning |
+|------|---------|
+| `off` | Eden not running |
+| `launching_or_frozen` | process up, no fresh `status.bin` yet |
+| `waiting_for_debugger_or_paused` | GDB stub on and listening; attach + continue |
+| `title` | title screen / menus |
+| `editor` | **edit-time**: Course Maker; no actors run, no player |
+| `editor_play`, `coursebot_play` | **run-time**: actors update, player valid |
+| `loading` | scene transition (also Coursebot popups) |
+
+Run-time is the only place breakpoints make sense. The `eden-debug` skill in
+`.claude/skills/` is the procedure.
+
+## Quick Start (scripts, when the server is not loaded)
 
 ```bash
 # Build
 ninja -C build
 
-# Deploy to Eden emulator
+# Deploy to Eden emulator (the load dir named in Eden's real config; eden_state shows it)
 cp build/exefs/subsdk4 /mnt/c/Users/nico/AppData/Roaming/eden/load/01009B90006DC000/smm2-hooks/exefs/
 
 # Boot to play mode with specific level
@@ -28,7 +47,9 @@ cd tools && python3 boot_to_editor.py eden --slot 0
 |------|---------|
 | `tools/smm2.py` | Python API for game control (`Game('eden')`) |
 | `tools/boot_to_editor.py` | Full boot automation with `--play` and `--slot` |
-| `tools/emu_session.py` | Emulator process management |
+| `tools/emu_session.py` | Emulator process management (edits the wrong ini for the GDB stub; use the MCP) |
+| `mcp/eden.py` | Eden state model: real config, paths, mode |
+| `mcp/server.py` | MCP tools over the state model, levels, input, screenshot, GDB |
 | `src/status.cpp` | Status.bin writer (game state) |
 | `src/tas.cpp` | Input injection from input.bin |
 | `include/smm2/status.h` | StatusBlock struct definition |
@@ -73,11 +94,16 @@ python3 boot_to_editor.py eden --slot 75  # Slot 75 (test level)
 3. Add symbol to `syms/main.sym` if not `@sdk`
 4. Call `init()` from `main.cpp`
 
-## SD Card Paths
+## Paths
+
+Eden runs portable: `Documents/eden/user/config/qt-config.ini` and
+`Documents/eden/user/log/` are the live config and log; that config names the
+NAND, SD and `load` directories, which are under `AppData/Roaming/eden`. Never
+edit the AppData `qt-config.ini`; it is not read.
 
 | Emulator | SD Card Path |
 |----------|--------------|
-| Eden | `/mnt/c/Users/nico/AppData/Roaming/eden/sdmc/smm2-hooks/` |
+| Eden | `/mnt/c/Users/nico/AppData/Roaming/eden/sdmc/smm2-hooks/` (from `sdmc_directory`) |
 | Ryujinx | `/mnt/c/Users/nico/AppData/Roaming/Ryujinx/sdcard/smm2-hooks/` |
 
 ## Tips

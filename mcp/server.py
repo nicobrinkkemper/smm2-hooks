@@ -1,0 +1,236 @@
+"""
+smm2-hooks MCP server: drive Eden + the SMM2 hook mod from an agent without guessing.
+
+Tools read the emulator's real configuration (mcp/eden.py), report one
+truthful `mode`, install generated levels, navigate the game through the hook
+mod's input file, take screenshots, and hold a single GDB session.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+TOOLS = REPO / "tools"
+sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(TOOLS))
+
+import eden  # noqa: E402
+from gdbsession import GdbSession  # noqa: E402
+from mcp.server.fastmcp import FastMCP, Image  # noqa: E402
+
+P = eden.paths()
+os.environ["EDEN_SD_PATH"] = P.sd_hooks_dir          # smm2.Game reads this
+os.environ.setdefault("EDEN_EXE", P.exe)
+
+mcp = FastMCP("smm2-hooks", instructions=(
+    "Super Mario Maker 2 in the Eden emulator, with the smm2-hooks mod. Call eden_state first; "
+    "its `mode` is the truth (off, launching_or_frozen, waiting_for_debugger_or_paused, title, "
+    "editor, editor_play, coursebot_play, loading). edit_time = the Course Maker editor; run_time = "
+    "editor_play or coursebot_play, the only modes where actors update and a player exists. "
+    "GDB: hardware breakpoints/watchpoints only; the target must be stopped to send commands."
+))
+GDB = GdbSession()
+
+
+def _game():
+    from smm2 import Game  # noqa: WPS433
+    return Game("eden")
+
+
+@mcp.tool()
+def eden_state() -> dict:
+    """Everything about the emulator right now: mode, process, real GDB config, status.bin, paths, mods, log tail."""
+    s = eden.state(P)
+    s["gdb"]["session"] = {"attached": GDB.alive(), "running": GDB.running, "base": hex(GDB.base) if GDB.base else None}
+    return s
+
+
+@mcp.tool()
+def eden_launch(gdb: bool = False) -> dict:
+    """Start Eden with the game. gdb=True enables the stub in the real ini; the game then stays paused until gdb_attach + gdb_continue."""
+    if eden.process():
+        return {"error": "Eden already running; call eden_kill first", "process": eden.process()}
+    return eden.launch(P, gdb)
+
+
+@mcp.tool()
+def eden_kill() -> dict:
+    """Stop Eden (and drop the GDB session if any)."""
+    if GDB.alive():
+        try:
+            GDB.detach()
+        except Exception:
+            pass
+    return eden.kill()
+
+
+@mcp.tool()
+def eden_set_gdbstub(enabled: bool) -> dict:
+    """Flip use_gdbstub in the real qt-config.ini (takes effect on the next launch)."""
+    return {"changed": eden.set_gdbstub(P, enabled), **eden.gdb_config(P)}
+
+
+@mcp.tool()
+def eden_log(lines: int = 20, grep: str | None = None) -> dict:
+    """Tail of Eden's current log file, optionally filtered by a regex."""
+    return eden.log_tail(P, lines, grep)
+
+
+@mcp.tool()
+def eden_screenshot() -> Image:
+    """Screenshot of the Eden window (PowerShell PrintWindow)."""
+    r = subprocess.run([sys.executable, str(TOOLS / "automate.py"), "--eden", "screenshot"], capture_output=True, text=True, timeout=30, cwd=str(TOOLS))
+    path = "/mnt/c/temp/smm2_debug/capture.png"
+    if r.returncode != 0 or not Path(path).exists():
+        raise RuntimeError(f"screenshot failed: {r.stdout.strip()} {r.stderr.strip()}")
+    return Image(data=Path(path).read_bytes(), format="png")
+
+
+@mcp.tool()
+def game_status() -> dict:
+    """Decoded status.bin only (fast): frame, scene, edit_time/run_time, player."""
+    return eden.read_status(P) or {"status": None, "note": "no fresh status.bin (hooks not running or game not up)"}
+
+
+@mcp.tool()
+def game_input(buttons: str, ms: int = 120) -> dict:
+    """Press buttons through the hook mod, e.g. 'A', 'B', 'MINUS', 'L+R', 'RIGHT', 'B+MINUS'. Works in every scene."""
+    g = _game()
+    g.press(buttons, ms=ms)
+    return {"pressed": buttons, "ms": ms, "status": eden.read_status(P)}
+
+
+@mcp.tool()
+def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int = 120) -> dict:
+    """Navigate from the title screen: target 'editor' (edit-time), 'editor_play' (test-play the editor course), or 'coursebot' with a slot (run-time, play-only)."""
+    g = _game()
+    if target == "coursebot":
+        if slot is None:
+            return {"error": "slot required"}
+        ok = g.to_coursebot_play(slot=slot, timeout=timeout)
+    elif target == "editor":
+        ok = g.to_editor(timeout=timeout)
+    elif target == "editor_play":
+        ok = g.to_play(timeout=timeout)
+    else:
+        return {"error": f"unknown target {target}"}
+    return {"ok": bool(ok), "status": eden.read_status(P)}
+
+
+@mcp.tool()
+def levels_list() -> dict:
+    """Generated test levels (by name) and what the Coursebot save slots currently hold."""
+    sys.argv = ["x"]
+    import gen_test_levels as g  # noqa: WPS433
+    gen = {slot: name for slot, (name, _) in sorted(g.TEST_LEVELS.items())}
+    saves = None
+    if P.save_dir:
+        r = subprocess.run([sys.executable, str(TOOLS / "parse_course.py"), "--list", "--save-dir", P.save_dir], capture_output=True, text=True, timeout=120, cwd=str(TOOLS))
+        saves = [l.strip() for l in r.stdout.splitlines() if l.strip()]
+    return {"generators": gen, "save_dir": P.save_dir, "slots": saves}
+
+
+@mcp.tool()
+def level_install(slot: int, level: str) -> dict:
+    """Write a generated level (name from levels_list) into Coursebot slot N (backs up the previous file once as .orig). Restart the game to see it."""
+    sys.argv = ["x"]
+    import gen_test_levels as g  # noqa: WPS433
+    match = [(s, n, f) for s, (n, f) in g.TEST_LEVELS.items() if n == level]
+    if not match:
+        return {"error": f"unknown level {level!r}", "available": [n for _, (n, _) in g.TEST_LEVELS.items()]}
+    _, name, builder = match[0]
+    if not P.save_dir:
+        return {"error": "no save dir found"}
+    dst = Path(P.save_dir) / f"course_data_{slot:03d}.bcd"
+    bak = dst.with_suffix(".bcd.orig")
+    if dst.exists() and not bak.exists():
+        bak.write_bytes(dst.read_bytes())
+    dst.write_bytes(g.encrypt_course(builder().build()))
+    return {"slot": slot, "level": name, "file": str(dst), "backup": str(bak) if bak.exists() else None,
+            "note": "Coursebot lists slots present in save.dat; overwrite an existing slot rather than adding a new number"}
+
+
+@mcp.tool()
+def level_restore(slot: int) -> dict:
+    """Put back the .orig backup for a Coursebot slot."""
+    dst = Path(P.save_dir) / f"course_data_{slot:03d}.bcd"
+    bak = dst.with_suffix(".bcd.orig")
+    if not bak.exists():
+        return {"error": "no backup"}
+    dst.write_bytes(bak.read_bytes())
+    return {"restored": str(dst)}
+
+
+@mcp.tool()
+def gdb_attach() -> dict:
+    """Attach gdb-multiarch to Eden's stub (real ini port, Windows host IP). Leaves the target stopped; call gdb_continue."""
+    cfg = eden.gdb_config(P)
+    out = GDB.attach(eden.windows_host_ip(), cfg["port"])
+    return {"attached": GDB.alive(), "output": out, "port": cfg["port"]}
+
+
+@mcp.tool()
+def gdb_continue() -> dict:
+    """Resume the game. Use gdb_wait_stop to wait for a hit, gdb_interrupt to stop it."""
+    return {"result": GDB.continue_()}
+
+
+@mcp.tool()
+def gdb_interrupt() -> dict:
+    """Stop the running game (Ctrl-C) so commands can be sent. Do not do this during a scene load."""
+    return {"output": GDB.interrupt()}
+
+
+@mcp.tool()
+def gdb_wait_stop(timeout: int = 30) -> dict:
+    """Wait for a breakpoint/watchpoint hit; returns GDB's stop report."""
+    return {"output": GDB.wait_stop(timeout)}
+
+
+@mcp.tool()
+def gdb_cmd(command: str, timeout: int = 15) -> dict:
+    """Run one GDB command on the stopped target (hbreak/watch/x/p/bt/info/delete/find/mon ...). 'break' is refused."""
+    return {"output": GDB.cmd(command, timeout)}
+
+
+@mcp.tool()
+def gdb_module_base() -> dict:
+    """Find the main module's runtime base (mon get info, else signature). Needed for gdb_addr."""
+    if GDB.running:
+        return {"error": "target running; gdb_interrupt first"}
+    return GDB.module_base()
+
+
+@mcp.tool()
+def gdb_addr(csv_address: str | None = None, runtime_address: str | None = None) -> dict:
+    """Translate between functions.csv addresses (0x71...) and runtime addresses using the known base."""
+    if csv_address:
+        return {"runtime": hex(GDB.to_runtime(int(csv_address, 16)))}
+    if runtime_address:
+        return {"csv": hex(GDB.to_csv(int(runtime_address, 16)))}
+    return {"error": "give csv_address or runtime_address"}
+
+
+@mcp.tool()
+def gdb_detach() -> dict:
+    """Delete all breakpoints, detach and quit GDB. The game keeps running."""
+    return {"result": GDB.detach()}
+
+
+@mcp.tool()
+def gdb_log(last: int = 10) -> dict:
+    """The last GDB command/response pairs of this session."""
+    return {"entries": GDB.log[-last:]}
+
+
+if __name__ == "__main__":
+    if "--selftest" in sys.argv:
+        print(json.dumps(eden_state(), indent=1)[:1500])
+    else:
+        mcp.run()
