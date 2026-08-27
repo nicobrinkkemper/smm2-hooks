@@ -51,12 +51,24 @@ rail-music work. Adding levels: `LevelBuilder` methods in `gen_test_levels.py`
 
 ## 3. Launch and attach
 
-    python3 emu_session.py launch eden --gdb    # sets the stub in qt-config.ini, starts eden.exe, game PAUSED
+    python3 emu_session.py launch eden --gdb    # sets the stub in qt-config.ini, starts eden.exe
+    # With the stub on, Eden waits for a debugger: the guest is PAUSED until a
+    # client connects and continues. Give the process ~15 s to come up, then:
     tmux new-session -d -s eden-gdb
-    tmux send-keys -t eden-gdb "gdb-multiarch -nx -ex 'target remote $(ip route | awk '/default/ {print $3}'):6543' -ex 'set confirm off' -ex 'set pagination off' -ex 'handle SIGTRAP nostop noprint pass'" Enter
-    sleep 3; tmux send-keys -t eden-gdb "c" Enter          # game was paused on connect
+    tmux send-keys -t eden-gdb "gdb-multiarch -nx -ex 'target remote $(ip route | awk '/default/ {print $3}'):6543' -ex 'set confirm off' -ex 'set pagination off'" Enter
+    sleep 5; tmux send-keys -t eden-gdb "c" Enter          # releases the initial pause
+
+Do NOT put `handle SIGTRAP ... pass` in the connect line. The initial stop is a
+SIGTRAP; passing it into the guest on the first `c` killed Eden in the
+2026-08-27 session (connection dropped within seconds, no status.bin). If
+spurious SIGTRAP stops appear later, use `handle SIGTRAP nostop noprint nopass`
+(never `pass`).
 
 Read the pane at any time with `tmux capture-pane -t eden-gdb -p -S -40`.
+Confirm the guest is actually running before touching anything else:
+`python3 emu_session.py game-status` must show a frame counter that advances
+and `scene_mode` 6 (title) within ~30 s of the `c`. If it does not, stop and
+report; do not send more GDB commands.
 Send commands with `tmux send-keys -t eden-gdb "<gdb command>" Enter`.
 To interrupt a running game: `tmux send-keys -t eden-gdb C-c`.
 
@@ -147,6 +159,13 @@ player object via `changeState`.
     tmux kill-session -t eden-gdb
     python3 emu_session.py kill eden
     python3 emu_session.py gdb-off                 # leave the config as you found it
+
+## Iteration log
+
+- 2026-08-27: launch --gdb, attach while paused with `handle SIGTRAP ... pass`
+  on the connect line, `c` -> Eden exited within seconds. Hypothesis: SIGTRAP
+  passed into the guest. Next attempt drops the handle command; level is
+  validated first in a no-GDB launch.
 
 ## Troubleshooting
 
