@@ -371,67 +371,96 @@ class Game:
             timeout=10
         ) is not None
 
-    def to_coursebot_play(self, slot=0, timeout=30):
-        """Navigate: editor → Coursebot → select level → Play (game-only mode).
-        
+    def _coursebot_home(self, max_rows=16, gap=0.5):
+        """Put the Coursebot cursor on slot 0.
+
+        The grid keeps its cursor between visits and nothing exposes it, so
+        clamp instead: LEFT to column 0, UP past row 0 onto the "My Courses"
+        tab (extra UPs stay there; never press LEFT/RIGHT on the tab, that
+        switches tabs), then DOWN back into the grid, which lands on slot 0.
+        """
+        for _ in range(3):
+            self.press('LEFT', 100)
+            time.sleep(gap)
+        for _ in range(max_rows):
+            self.press('UP', 100)
+            time.sleep(gap)
+        self.press('DOWN', 100)
+        time.sleep(gap)
+
+    def to_coursebot_play(self, slot=0, timeout=30, from_start=True):
+        """Navigate: editor -> Coursebot -> select slot -> Play.
+
         Args:
-            slot: course slot to select (0 = first/top, supports 0-based index)
-            
-        Flow: Editor → PLUS (menu) → RIGHT (coursebot) → A (enter) → 
-              navigate to slot → A (select) → DOWN×3 (Play) → A (start)
-              
-        Note: Coursebot play is scene_mode=7 (not 5 like editor test-play)
+            slot: course slot (0-based, grid is 4 wide, slot order)
+            from_start: if the flow lands in the editor instead, hold MINUS
+                (play from the course start) rather than tap it (play in place)
+
+        A registered slot's detail screen defaults to "Play", so A starts
+        Coursebot play (scene_mode 7, game-only). An empty slot only offers
+        "Make New Course", which opens the editor (scene_mode 1) with a default
+        course; MINUS then starts editor test-play (scene_mode 5). Check
+        scene_mode afterwards to know which one you got.
         """
         # First get to editor
         if not self.to_editor():
             return False
-        
+
         # Clear any focus
         self.press('B', 100)
         time.sleep(0.3)
-        
-        # PLUS → Main Menu
+
+        # PLUS -> Main Menu
         self.press('PLUS', 150)
         time.sleep(1.5)  # wait for menu animation
-        
-        # RIGHT → Coursebot icon
+
+        # RIGHT -> Coursebot icon
         self.press('RIGHT', 100)
         time.sleep(0.3)
-        
-        # A → Enter Coursebot
+
+        # A -> Enter Coursebot
         self.press('A', 100)
         time.sleep(3.0)  # wait for coursebot to load courses
-        
-        # Navigate to slot (grid is 4 columns wide)
-        # slot 0 is already selected, navigate for others
+
+        # The grid remembers its cursor across visits, so home it first.
+        self._coursebot_home()
+
+        # Navigate to slot. Presses during the scroll animation are dropped,
+        # hence the generous spacing.
         row = slot // 4
         col = slot % 4
         for _ in range(col):
             self.press('RIGHT', 100)
-            time.sleep(0.2)
+            time.sleep(0.5)
         for _ in range(row):
             self.press('DOWN', 100)
-            time.sleep(0.2)
-        
-        # A → Select course
+            time.sleep(0.5)
+
+        # A -> course details (cursor defaults to Play), A -> go
+        s = self.status()
+        start_count = s['scene_change_count'] if s else 0
         self.press('A', 100)
-        time.sleep(2.0)  # wait for course details
-        
-        # Navigate to "Play" option (4th option: Make, Upload, Play Together, Play)
-        for _ in range(3):
-            self.press('DOWN', 100)
-            time.sleep(0.2)
-        
-        # A → Start playing
+        time.sleep(2.0)
         self.press('A', 100)
-        
-        # Wait for coursebot play mode (scene 7)
-        # Note: has_player may be 0 in coursebot mode, check state + position instead
-        result = self.wait_for(
-            lambda s: s['scene_mode'] == SCENE_COURSEBOT and s['state'] > 0,
+
+        s = self.wait_for(
+            lambda s: (s['scene_mode'] == SCENE_COURSEBOT and (s['has_player'] or s['state'] > 0))
+            or (s['scene_mode'] == SCENE_EDITOR and s['scene_change_count'] > start_count),
             timeout=timeout
         )
-        return result is not None
+        if not s:
+            return False
+        if s['scene_mode'] == SCENE_COURSEBOT:
+            return True
+
+        # Editor: MINUS starts test-play once the editor accepts input, and
+        # how long that takes varies, so retry a few times.
+        for _ in range(4):
+            time.sleep(2.0)
+            self.press('MINUS', 1500 if from_start else 150)
+            if self.wait_for(lambda s: s['scene_mode'] == SCENE_PLAY and s['has_player'], timeout=6):
+                return True
+        return False
 
     def to_editor(self, timeout=30, debug=False):
         """Navigate to editor. Returns True on success."""
