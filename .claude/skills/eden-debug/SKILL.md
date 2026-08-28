@@ -63,11 +63,34 @@ run, kill both first: `python3 emu_session.py kill eden` and
     python3 gen_test_levels.py --list
     python3 gen_test_levels.py --slot N --target eden    # writes course_data_00N.bcd, backs up the old one
 
-Slots are Coursebot saves; the game must be (re)started to reload `save.dat`.
-Slot 10 is "Track Note": one horizontal track with a winged note block, for the
-rail-music work. Adding levels: `LevelBuilder` methods in `gen_test_levels.py`
-(`add_track`, `add_note_block_on_track`, ...). Keep custom content in
-`x >= 7 && x <= goal_x - 4` (start and goal areas are auto-generated).
+Prefer the MCP tool `level_install(slot, level)`: it also registers the slot.
+A Coursebot slot is only kept if three things hold, and the game deletes the
+slot on its next Coursebot visit otherwise: `used_flag` set in `save.dat`
+(`tools/save_dat.py`), a valid `course_thumb_NNN.btl` and `course_replay_NNN.dat`
+beside the `.bcd` (any registered slot's will do, contents need not match),
+and a course the game accepts. Two things the game rejects that looked fine
+on disk: `goal_x` not in tenths of a tile (the pole stands 9.5 tiles from the
+right edge, 255 for a 35-wide course) and an on-track object that is not on
+the rail (record `(x, y)` is the bottom-left of a 3x3 box; the rail runs
+through its centre; the object starts at `(x + 1.5, y + 1.5)`).
+
+Slot 10 is "Track Note": two joined horizontal pieces with a note block
+riding them, for the rail-music work. Adding levels: `LevelBuilder` methods in
+`gen_test_levels.py` (`add_track`, `add_note_block_on_track`, ...). Keep
+custom content in `x >= 7 && x <= 23` (start and goal areas are auto-generated).
+
+### Let the game judge a course (about a minute, four slots at a time)
+
+    python3 validate_slots.py 5=a.bcd 6=b.bcd 7=c.bcd 8=d.bcd
+    # installs each (borrowing thumb+replay from a registered slot), marks them used,
+    # restarts Eden, walks title -> editor -> Coursebot, confirms any delete dialogs,
+    # then reads save.dat: ACCEPTED / DELETED per slot.
+
+This is the fastest theory-to-game loop there is for course-format questions:
+one binary answer per slot per visit, no GDB, no screenshots. Bisect by
+building variants of a file the game accepts (e.g. its own re-saved copy of a
+slot) and of the one it rejects. Reading the same course in Coursebot play
+afterwards (`game_boot`, then a screenshot) confirms geometry.
 
 ## 3. Launch and attach
 
@@ -96,8 +119,9 @@ Without GDB (input/status automation only): `python3 emu_session.py launch eden`
 
 ## 4. Navigate
 
-    python3 boot_to_editor.py eden --slot N   # title -> Coursebot -> play slot N (scene_mode 7)
-    python3 boot_to_editor.py eden            # title -> editor demo (scene_mode 1); add --play for test play (5)
+    python3 -c "from smm2 import Game; Game('eden').to_coursebot_play(slot=N)"   # title -> editor -> Coursebot -> play slot N
+    # (boot_to_editor.py still presses a title-screen menu path that does not exist; L+R at the
+    #  title opens the title-demo course in the editor. Use Game.to_coursebot_play / game_boot.)
     python3 emu_session.py game-status        # decoded status.bin: frame, scene, player pos/vel/state
 
 Or from Python: `from smm2 import Game; g = Game('eden'); g.scene(); g.status(); g.press(...)`.
@@ -180,7 +204,29 @@ player object via `changeState`.
     python3 emu_session.py kill eden
     python3 emu_session.py gdb-off                 # leave the config as you found it
 
+## Timings (this machine, 2026-08-28)
+
+- `eden_launch` to title (`scene_mode` 6): 10-30 s. Wait ~5 s after the title
+  appears before the first input; earlier presses are dropped.
+- title to editor 4-5 s; editor to the Coursebot grid ~8 s; grid to playing a
+  slot ~10 s. Launch to a running course: 31 s best, ~55 s typical.
+- A Coursebot validation verdict (`validate_slots.py`): 55-75 s for up to four
+  slots.
+- Eden hung at its own "Launching..." screen once in ~10 launches (0 FPS,
+  `status.bin` frame 0): no title within 60 s means kill, wait 3 s, relaunch.
+- Eden exited once at the very first injected input, ~30 s after launch; not
+  reproduced in nine later launches. Every trace should carry
+  `eden.process()`: a frozen `status.bin` means the game is gone, not the hooks.
+
 ## Iteration log
+
+- 2026-08-28: "corrupt Track Note" was two unrelated things, found in ~2 h with
+  four-slot validation runs: slots need a valid thumb+replay, and `goal_x` is
+  tenths of a tile. The rail geometry came from one screenshot of an
+  editor-saved course measured against its records (74 px per tile at this
+  window size, ground line as the y reference). Screenshots served from disk
+  after a failed capture cost the first 20 minutes; `eden_screenshot` now
+  deletes the file first.
 
 - 2026-08-27: launch --gdb, attach while paused with `handle SIGTRAP ... pass`
   on the connect line, `c` -> Eden exited within seconds. Hypothesis: SIGTRAP

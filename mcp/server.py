@@ -223,9 +223,32 @@ def levels_list() -> dict:
             "registered": sorted(registered) if registered is not None else None, "slots": slots}
 
 
+def _register_slot(slot: int, companions_from: int | None) -> dict:
+    """Give a slot what Coursebot checks on its next visit: a valid course_thumb + course_replay
+    beside the .bcd (any registered slot's will do; the contents need not match) and used_flag set."""
+    import save_dat  # noqa: WPS433
+    save = Path(P.save_dir) / "save.dat"
+    body = bytearray(save_dat.decrypt(save.read_bytes()))
+    registered = {s for s, f in save_dat.records(body) if f}
+    src = companions_from if companions_from is not None else next((s for s in sorted(registered) if s != slot), None)
+    if src is None:
+        return {"error": "no registered slot to borrow course_thumb/course_replay from; pass companions_from"}
+    for pattern in ("course_thumb_{:03d}.btl", "course_replay_{:03d}.dat"):
+        s_path = Path(P.save_dir) / pattern.format(src)
+        if not s_path.exists():
+            return {"error": f"{s_path.name} missing"}
+        (Path(P.save_dir) / pattern.format(slot)).write_bytes(s_path.read_bytes())
+    body[save_dat.RECORDS + 8 * slot + 1] = 1
+    bak = save.with_suffix(".dat.orig")
+    if not bak.exists():
+        bak.write_bytes(save.read_bytes())
+    save.write_bytes(save_dat.encrypt(bytes(body)))
+    return {"companions_from": src, "registered": sorted(registered | {slot})}
+
+
 @tool(exclusive=True)
-def level_install(slot: int, level: str) -> dict:
-    """Write a generated level (name from levels_list) into Coursebot slot N (backs up the previous file once as .orig). Restart the game to see it."""
+def level_install(slot: int, level: str, companions_from: int | None = None) -> dict:
+    """Write a generated level (name from levels_list) into Coursebot slot N and register it: copies a valid course_thumb + course_replay from another registered slot (or companions_from) and sets the slot's used flag in save.dat. Backs up the previous .bcd once as .orig. Restart the game to see it; Coursebot deletes the slot on its next visit if the course itself is invalid."""
     sys.argv = ["x"]
     import gen_test_levels as g  # noqa: WPS433
     match = [(s, n, f) for s, (n, f) in g.TEST_LEVELS.items() if n == level]
@@ -239,12 +262,10 @@ def level_install(slot: int, level: str) -> dict:
     if dst.exists() and not bak.exists():
         bak.write_bytes(dst.read_bytes())
     dst.write_bytes(g.encrypt_course(builder().build()))
-    registered = _registered_slots()
-    out = {"slot": slot, "level": name, "file": str(dst), "backup": str(bak) if bak.exists() else None,
-           "registered": (slot in registered) if registered is not None else None}
-    if registered is not None and slot not in registered:
-        out["note"] = "Coursebot will not list this slot: tools/save_dat.py mark-used N registers it, and the course must pass the game's validation or it gets deleted on the next Coursebot visit"
-    return out
+    reg = _register_slot(slot, companions_from)
+    if "error" in reg:
+        return {"slot": slot, "level": name, "file": str(dst), **reg}
+    return {"slot": slot, "level": name, "file": str(dst), "backup": str(bak) if bak.exists() else None, **reg}
 
 
 @tool(exclusive=True)
