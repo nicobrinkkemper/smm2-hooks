@@ -113,7 +113,14 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
     if target == "coursebot":
         if slot is None:
             return {"error": "slot required"}
+        registered = _registered_slots()
         ok = g.to_coursebot_play(slot=slot, timeout=timeout)
+        out = {"ok": bool(ok), "status": eden.read_status(P)}
+        if registered is not None:
+            out["registered"] = slot in registered
+            if slot not in registered:
+                out["note"] = "slot is not in save.dat, so this is editor test-play of a default course, not the installed level; tools/save_dat.py mark-used N registers it (the course must pass validation)"
+        return out
     elif target == "editor":
         ok = g.to_editor(timeout=timeout)
     elif target == "editor_play":
@@ -123,17 +130,44 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
     return {"ok": bool(ok), "status": eden.read_status(P)}
 
 
+def _registered_slots() -> set[int] | None:
+    """Slots Coursebot lists: the used_flag per record in save.dat. The .bcd files on disk are not consulted by the game."""
+    if not P.save_dir:
+        return None
+    path = Path(P.save_dir) / "save.dat"
+    if not path.exists():
+        return None
+    import save_dat  # noqa: WPS433
+    body = save_dat.decrypt(path.read_bytes())
+    return {slot for slot, used in save_dat.records(body) if used}
+
+
 @mcp.tool()
 def levels_list() -> dict:
-    """Generated test levels (by name) and what the Coursebot save slots currently hold."""
+    """Generated test levels (by name) and the Coursebot save slots. `registered` is what the game lists (save.dat); a .bcd on disk without it only offers 'Make New Course', so game_boot lands in editor test-play, not Coursebot play."""
     sys.argv = ["x"]
     import gen_test_levels as g  # noqa: WPS433
+    import parse_course as pc  # noqa: WPS433
     gen = {slot: name for slot, (name, _) in sorted(g.TEST_LEVELS.items())}
-    saves = None
-    if P.save_dir:
-        r = subprocess.run([sys.executable, str(TOOLS / "parse_course.py"), "--list", "--save-dir", P.save_dir], capture_output=True, text=True, timeout=120, cwd=str(TOOLS))
-        saves = [l.strip() for l in r.stdout.splitlines() if l.strip()]
-    return {"generators": gen, "save_dir": P.save_dir, "slots": saves}
+    if not P.save_dir:
+        return {"generators": gen, "save_dir": None, "registered": None, "slots": None}
+    registered = _registered_slots()
+    slots = []
+    for i in range(180):
+        path = Path(P.save_dir) / f"course_data_{i:03d}.bcd"
+        if not path.exists():
+            break
+        entry = {"slot": i, "registered": (i in registered) if registered is not None else None}
+        dec = pc.decrypt_course(str(path))
+        if dec is None:
+            entry["error"] = "cannot decrypt"
+        else:
+            h = pc.parse_header(dec)
+            area = pc.parse_area(dec[0x200:0x200 + 0x2DEE0])
+            entry.update(name=h["name"], style=h["style_name"], theme=area["theme_name"], actors=area["actor_count"])
+        slots.append(entry)
+    return {"generators": gen, "save_dir": P.save_dir,
+            "registered": sorted(registered) if registered is not None else None, "slots": slots}
 
 
 @mcp.tool()
@@ -152,8 +186,12 @@ def level_install(slot: int, level: str) -> dict:
     if dst.exists() and not bak.exists():
         bak.write_bytes(dst.read_bytes())
     dst.write_bytes(g.encrypt_course(builder().build()))
-    return {"slot": slot, "level": name, "file": str(dst), "backup": str(bak) if bak.exists() else None,
-            "note": "Coursebot lists slots present in save.dat; overwrite an existing slot rather than adding a new number"}
+    registered = _registered_slots()
+    out = {"slot": slot, "level": name, "file": str(dst), "backup": str(bak) if bak.exists() else None,
+           "registered": (slot in registered) if registered is not None else None}
+    if registered is not None and slot not in registered:
+        out["note"] = "Coursebot will not list this slot: tools/save_dat.py mark-used N registers it, and the course must pass the game's validation or it gets deleted on the next Coursebot visit"
+    return out
 
 
 @mcp.tool()
