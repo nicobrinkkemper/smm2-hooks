@@ -1,7 +1,7 @@
 #include "smm2/frame.h"
 #include "nn/fs.h"
 
-namespace smm2 { namespace rng_trace { void init(); } }
+namespace smm2 { namespace rng_trace { void init(); void flush(); } }
 // Forward declarations for plugins
 namespace smm2 { namespace state_logger {
     void init();
@@ -70,6 +70,7 @@ static void on_frame(uint32_t frame) {
         smm2::func_trace::flush();
         smm2::xlink2_enum::flush();
         smm2::sim_trace::flush();
+        smm2::rng_trace::flush();
     }
 }
 
