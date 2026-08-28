@@ -139,6 +139,18 @@ ACTOR_NAMES = {  # object ids from smm2-decomp docs/re-notes/bcd-format.ksy (obj
     132: 'OnOffTrampoline',
 }
 
+# ASCII map markers by actor name (see ACTOR_NAMES); anything else gets the caller's default
+MAP_MARKERS = {
+    'Goal': 'G', 'Player': 'M', 'Pipe': 'P', 'HardBlock': 'H',
+    'Coin': 'c', 'BigCoin': 'c', 'RedCoin': 'c',
+    'SemisolidPlatform': '-', 'HalfCollisionPlatform': '-',
+    'Goomba': 'E', 'Koopa': 'E', 'PiranhaFlower': 'E', 'HammerBro': 'E',
+}
+
+
+def map_marker(actor, default):
+    return MAP_MARKERS.get(actor['name'], default)
+
 
 # ============================================================================
 # Course parsing
@@ -262,14 +274,7 @@ def render_map(area, width=120, height=30):
             gx = int(a['x'] / 16) // scale_x
             gy = int(a['y'] / 16)
             if 0 <= gx < cols and 0 <= gy < rows:
-                char = '*'
-                t = a['type']
-                if t in (0, 1, 2, 3): char = 'E'
-                elif t in (9,): char = 'P'
-                elif t in (30,): char = 'G'
-                elif t in (34,): char = 'M'
-                elif t in (8, 18, 91): char = 'c'
-                grid[gy][gx] = char
+                grid[gy][gx] = map_marker(a, '*')
 
         # Print Y-inverted (y=0 at bottom)
         for y in range(rows - 1, -1, -1):
@@ -295,15 +300,7 @@ def render_map(area, width=120, height=30):
             cx = max(0, min(width - 1, cx))
             cy = max(0, min(height - 1, cy))
 
-            char = '#'
-            t = a['type']
-            if t in (6,): char = 'H'
-            elif t in (25, 88): char = '-'
-            elif t in (9,): char = 'P'
-            elif t in (30,): char = 'G'
-            elif t in (34,): char = 'M'
-            elif t in (0, 1, 2, 3): char = 'E'
-            grid[cy][cx] = char
+            grid[cy][cx] = map_marker(a, '#')
 
         for y in range(height - 1, -1, -1):
             print(''.join(grid[y]))
