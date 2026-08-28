@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import threading
+import uuid
 from pathlib import Path
 
 import anyio
@@ -112,12 +113,15 @@ def eden_log(lines: int = 20, grep: str | None = None) -> dict:
 @tool()
 def eden_screenshot() -> Image:
     """Screenshot of the Eden window (PowerShell PrintWindow)."""
-    path = Path("/mnt/c/temp/smm2_debug/capture.png")
-    path.unlink(missing_ok=True)  # a failed capture must not hand back the previous picture
-    r = subprocess.run([sys.executable, str(TOOLS / "automate.py"), "--eden", "screenshot"], capture_output=True, text=True, timeout=30, cwd=str(TOOLS))
-    if r.returncode != 0 or not path.exists():
-        raise RuntimeError(f"screenshot failed: {r.stdout.strip()} {r.stderr.strip()}")
-    return Image(data=path.read_bytes(), format="png")
+    path = Path(f"/mnt/c/temp/smm2_debug/capture-{uuid.uuid4().hex}.png")  # one file per call: concurrent calls never see each other's picture
+    try:
+        r = subprocess.run([sys.executable, str(TOOLS / "automate.py"), "--eden", "screenshot"], capture_output=True, text=True, timeout=30,
+                           cwd=str(TOOLS), env={**os.environ, "SCREENSHOT_OUT": str(path)})
+        if r.returncode != 0 or not path.exists():
+            raise RuntimeError(f"screenshot failed: {r.stdout.strip()} {r.stderr.strip()}")
+        return Image(data=path.read_bytes(), format="png")
+    finally:
+        path.unlink(missing_ok=True)
 
 
 @tool()
