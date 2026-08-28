@@ -35,6 +35,7 @@ SCENE_EDITOR = 1
 SCENE_PLAY = 5      # Editor test-play
 SCENE_TITLE = 6
 SCENE_COURSEBOT = 7 # Coursebot play (game-only, no editing)
+COURSEBOT_SLOTS = 180   # save slots the game knows; save.dat has one record per slot
 
 # Game style IDs (from GamePhaseManager inner+0x1C)
 STYLE_SMB1  = 0
@@ -402,6 +403,8 @@ class Game:
         course; MINUS then starts editor test-play (scene_mode 5). Check
         scene_mode afterwards to know which one you got.
         """
+        if not isinstance(slot, int) or not 0 <= slot < COURSEBOT_SLOTS:
+            raise ValueError(f"slot {slot!r} is not a Coursebot slot (0..{COURSEBOT_SLOTS - 1})")
         # First get to editor
         if not self.to_editor():
             return False
