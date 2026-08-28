@@ -119,8 +119,7 @@ TRACK_SHAPE_CURVE_BL = 4
 TRACK_SHAPE_CURVE_TR = 5
 TRACK_SHAPE_CURVE_TL = 6
 TRACK_SHAPE_CURVE_BR = 7
-TRACK_END_JOINED = 0x0104
-TRACK_END_FREE_H = (0x0090, 0x0070)   # lone horizontal piece, as the editor writes it
+TRACK_END_FREE_H = (0x0090, 0x0070)   # lone horizontal piece, as the editor writes it; a chain is (0x90,0x70) then (0x71,0x104)
 
 # Unit conversions
 TILE = 160  # deci-pixels per tile
@@ -365,17 +364,23 @@ class LevelBuilder:
                             'has_object': has_object, 'tail': ends})
         return len(self.tracks) - 1
 
-    def add_note_block_on_track(self, x: int, y: int, track_index: int,
-                                wings: bool = False, travel_left: bool = False,
-                                vertical: bool = False):
-        """A note block riding the track record with that 0-based index."""
+    def add_note_block_on_track(self, track_index: int, wings: bool = False,
+                                travel_left: bool = True, vertical: bool = False):
+        """A note block riding the track record with that 0-based index.
+
+        A track record's (x, y) is the bottom-left of a 3x3 tile box and the
+        rail runs through the box centre, so the block starts at
+        (x + 1.5, y + 1.5); the editor writes exactly that for a block placed
+        on a rail (course 'track': record (11, 6), block at (12.5, 7.5)).
+        """
+        tr = self.tracks[track_index]
         flags = 0x06000040 | FLAG_ON_TRACK
         if wings: flags |= FLAG_WINGS
         if travel_left: flags |= FLAG_TRACK_LEFT
         if vertical: flags |= FLAG_TRACK_VERTICAL
-        self.objects.append({'id': OBJ_NOTE_BLOCK, 'x': x, 'y': y,
-                             'flags': flags, 'lid': track_index})
-        self.tracks[track_index]['has_object'] = True
+        self.objects.append({'id': OBJ_NOTE_BLOCK, 'x': tr['x'] + 1, 'y': tr['y'] + 1,
+                             'flags': flags, 'lid': track_index, '_half_tile_offset': True})
+        tr['has_object'] = True
 
     def add_mushroom(self, x: int, y: int):
         """Add a mushroom in a ? block."""
@@ -597,20 +602,21 @@ def level_smw_flat() -> LevelBuilder:
 
 @test_level(10, "Track Note")
 def level_track_note() -> LevelBuilder:
-    """Three joined horizontal track pieces with a note block riding them.
+    """Two joined horizontal track pieces with a note block riding them.
 
     For the rail-music decomp work: boot this slot with GDB attached, watch
     the note block's pos_x, and the writer's PC is the track traversal code.
-    Encoding checked against an editor-saved course (slot "track").
+    Mirrors the editor-saved course 'track' record for record: piece A ends
+    (0x90, 0x70), piece B ends (0x71, 0x104) with the block; the rail runs
+    from x 12.5 to 16.5 at y 11.5.
     """
     level = LevelBuilder("Track Note", style='SMB1', theme='Ground')
     level.goal_x = 27
     level.goal_y = 4
     level.add_ground_fill(7, 23, 4)
-    first = level.add_track(12, 10, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, TRACK_END_JOINED))
-    level.add_track(13, 10, TRACK_SHAPE_HORIZONTAL, ends=(TRACK_END_JOINED, TRACK_END_JOINED))
-    level.add_track(14, 10, TRACK_SHAPE_HORIZONTAL, ends=(TRACK_END_JOINED, 0x0070))
-    level.add_note_block_on_track(12, 10, first)
+    level.add_track(12, 10, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, 0x0070))
+    with_block = level.add_track(14, 10, TRACK_SHAPE_HORIZONTAL, ends=(0x0071, 0x0104))
+    level.add_note_block_on_track(with_block)
     return level
 
 
