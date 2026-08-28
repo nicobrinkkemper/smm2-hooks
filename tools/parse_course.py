@@ -110,32 +110,46 @@ THEMES = ['Ground', 'Underground', 'Castle', 'Airship', 'Underwater',
           'Ghost', 'Snow', 'Desert', 'Sky', 'Forest']
 
 # Actor type IDs (from community research)
-ACTOR_NAMES = {
-    0: 'Goomba', 1: 'Koopa', 2: 'PiranhaPlant', 3: 'HammerBro',
-    4: 'Block', 5: 'QuestionBlock', 6: 'HardBlock', 7: 'Ground',
-    8: 'Coin', 9: 'Pipe', 10: 'Spring', 11: 'Lift',
-    12: 'Thwomp', 13: 'BulletBillBlaster', 14: 'Mushroom', 15: 'Bob-omb',
-    16: 'Cloud', 17: 'Vine', 18: 'OneCoin', 19: 'Donut',
-    20: 'Bridge', 21: 'P-Switch', 22: 'POWBlock', 23: 'SuperMushroom',
-    24: 'Note', 25: 'SemisolidPlatform', 26: 'BeanstalkHouse', 27: 'Door',
-    28: 'Spike', 29: 'GroundGoal', 30: 'GoalPole', 31: 'Arrow',
-    32: 'OneWay', 33: 'Saw', 34: 'Player', 35: 'BigMushroom',
-    36: 'Shoe/Yoshi', 37: 'DryBones', 38: 'Cannon', 39: 'Blooper',
-    40: 'CastleBridge', 41: 'JumpDai', 42: 'Skewer', 43: 'SnakeBlock',
-    44: 'IceBlock', 45: 'Claw', 46: 'Bumper', 47: 'Lakitu',
-    48: 'LakituCloud', 49: 'Boo', 50: 'Toad/ToadHouse', 51: 'ChainChomp',
-    52: 'Sledge/SumoWrestle', 53: 'Thwimp', 54: 'Monty', 55: 'FishBone',
-    56: 'Muncher', 57: 'Wiggler', 58: 'Spiny', 59: 'FireBar',
-    60: 'Checkpoint', 61: 'BeltConveyor', 62: 'Burner', 63: 'WarpDoor',
-    64: 'Jelectro', 65: 'Kamek', 66: 'HP', 67: 'FastLava',
-    68: 'Mechakoopa', 69: 'Crate', 70: 'MushroomTrampoline', 71: 'Key',
-    72: 'AntTrooper', 73: 'Spike(enemy)', 74: 'SpikeTop', 75: 'SlopeL45',
-    76: 'SlopeR45', 77: 'SlopeL30', 78: 'SlopeR30', 79: 'Star',
-    80: 'Icicle', 81: 'ClimateChange', 82: 'SwitchBlock', 83: 'OnOffBlock',
-    84: 'DashBlock', 85: 'Porcupuffer', 86: 'Track', 87: 'TreePlatform',
-    88: 'SemisolidMushroom', 89: 'Tornado', 90: 'ClearPipe', 91: 'TenCoin',
-    92: '30Coin', 93: '50Coin', 94: 'P-Balloon',
+ACTOR_NAMES = {  # object ids from smm2-decomp docs/re-notes/bcd-format.ksy (obj_id)
+    0: 'Goomba', 1: 'Koopa', 2: 'PiranhaFlower', 3: 'HammerBro', 4: 'Block', 5: 'QuestionBlock',
+    6: 'HardBlock', 7: 'Ground', 8: 'Coin', 9: 'Pipe', 10: 'Spring', 11: 'Lift', 12: 'Thwomp',
+    13: 'BulletBillBlaster', 14: 'MushroomPlatform', 15: 'BobOmb', 16: 'SemisolidPlatform',
+    17: 'Bridge', 18: 'PSwitch', 19: 'Pow', 20: 'SuperMushroom', 21: 'DonutBlock', 22: 'Cloud',
+    23: 'NoteBlock', 24: 'FireBar', 25: 'Spiny', 26: 'GoalGround', 27: 'Goal', 28: 'BuzzyBeetle',
+    29: 'HiddenBlock', 30: 'Lakitu', 31: 'LakituCloud', 32: 'BanzaiBill', 33: 'OneUp',
+    34: 'FireFlower', 35: 'SuperStar', 36: 'LavaLift', 37: 'StartingBrick', 38: 'StartingArrow',
+    39: 'Magikoopa', 40: 'SpikeTop', 41: 'Boo', 42: 'ClownCar', 43: 'Spikes', 44: 'BigMushroom',
+    45: 'ShoeGoomba', 46: 'DryBones', 47: 'Cannon', 48: 'Blooper', 49: 'CastleBridge',
+    50: 'JumpingMachine', 51: 'Skipsqueak', 52: 'Wiggler', 53: 'FastConveyorBelt', 54: 'Burner',
+    55: 'Door', 56: 'CheepCheep', 57: 'Muncher', 58: 'RockyWrench', 59: 'Track', 60: 'LavaBubble',
+    61: 'ChainChomp', 62: 'Bowser', 63: 'IceBlock', 64: 'Vine', 65: 'Stingby', 66: 'Arrow',
+    67: 'OneWay', 68: 'Saw', 69: 'Player', 70: 'BigCoin', 71: 'HalfCollisionPlatform',
+    72: 'KoopaCar', 73: 'Cinobio', 74: 'SpikeBall', 75: 'Stone', 76: 'Twister', 77: 'BoomBoom',
+    78: 'Pokey', 79: 'PBlock', 80: 'SprintPlatform', 81: 'Smb2Mushroom', 82: 'Donut', 83: 'Skewer',
+    84: 'SnakeBlock', 85: 'TrackBlock', 86: 'Charvaargh', 87: 'SlightSlope', 88: 'SteepSlope',
+    89: 'ReelCamera', 90: 'CheckpointFlag', 91: 'Seesaw', 92: 'RedCoin', 93: 'ClearPipe',
+    94: 'ConveyorBelt', 95: 'Key', 96: 'AntTrooper', 97: 'WarpBox', 98: 'BowserJr',
+    99: 'OnOffBlock', 100: 'DottedLineBlock', 101: 'WaterMarker', 102: 'MontyMole',
+    103: 'FishBone', 104: 'AngrySun', 105: 'SwingingClaw', 106: 'Tree', 107: 'PiranhaCreeper',
+    108: 'BlinkingBlock', 109: 'SoundEffect', 110: 'SpikeBlock', 111: 'Mechakoopa', 112: 'Crate',
+    113: 'MushroomTrampoline', 114: 'Porkupuffer', 115: 'Cinobic', 116: 'SuperHammer',
+    117: 'Bully', 118: 'Icicle', 119: 'ExclamationBlock', 120: 'Lemmy', 121: 'Morton',
+    122: 'Larry', 123: 'Wendy', 124: 'Iggy', 125: 'Roy', 126: 'Ludwig', 127: 'CannonBox',
+    128: 'PropellerBox', 129: 'GoombaMask', 130: 'BulletBillMask', 131: 'RedPowBox',
+    132: 'OnOffTrampoline',
 }
+
+# ASCII map markers by actor name (see ACTOR_NAMES); anything else gets the caller's default
+MAP_MARKERS = {
+    'Goal': 'G', 'Player': 'M', 'Pipe': 'P', 'HardBlock': 'H',
+    'Coin': 'c', 'BigCoin': 'c', 'RedCoin': 'c',
+    'SemisolidPlatform': '-', 'HalfCollisionPlatform': '-',
+    'Goomba': 'E', 'Koopa': 'E', 'PiranhaFlower': 'E', 'HammerBro': 'E',
+}
+
+
+def map_marker(actor, default):
+    return MAP_MARKERS.get(actor['name'], default)
 
 
 # ============================================================================
@@ -187,8 +201,8 @@ def parse_area(area_data):
             break
         x = struct.unpack_from('<i', raw, 0)[0] / 10.0
         y = struct.unpack_from('<i', raw, 4)[0] / 10.0
-        w = raw[0x0A] + 1  # stored as 0-indexed
-        h = raw[0x0B] + 1
+        w = raw[0x0A]  # in tiles; an editor-placed note block stores 1
+        h = raw[0x0B]
         flags = struct.unpack_from('<I', raw, 0x0C)[0]
         obj_type = struct.unpack_from('<H', raw, 0x18)[0]
         name = ACTOR_NAMES.get(obj_type, f'unk_{obj_type}')
@@ -260,14 +274,7 @@ def render_map(area, width=120, height=30):
             gx = int(a['x'] / 16) // scale_x
             gy = int(a['y'] / 16)
             if 0 <= gx < cols and 0 <= gy < rows:
-                char = '*'
-                t = a['type']
-                if t in (0, 1, 2, 3): char = 'E'
-                elif t in (9,): char = 'P'
-                elif t in (30,): char = 'G'
-                elif t in (34,): char = 'M'
-                elif t in (8, 18, 91): char = 'c'
-                grid[gy][gx] = char
+                grid[gy][gx] = map_marker(a, '*')
 
         # Print Y-inverted (y=0 at bottom)
         for y in range(rows - 1, -1, -1):
@@ -293,15 +300,7 @@ def render_map(area, width=120, height=30):
             cx = max(0, min(width - 1, cx))
             cy = max(0, min(height - 1, cy))
 
-            char = '#'
-            t = a['type']
-            if t in (6,): char = 'H'
-            elif t in (25, 88): char = '-'
-            elif t in (9,): char = 'P'
-            elif t in (30,): char = 'G'
-            elif t in (34,): char = 'M'
-            elif t in (0, 1, 2, 3): char = 'E'
-            grid[cy][cx] = char
+            grid[cy][cx] = map_marker(a, '#')
 
         for y in range(height - 1, -1, -1):
             print(''.join(grid[y]))
