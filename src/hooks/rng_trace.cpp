@@ -52,12 +52,15 @@ static HkTrampoline<uint32_t, void*> rand_get32_hook =
             uint32_t f = frame::current();
             // Only log after frame 120 to skip boot noise
             if (f > 120) {
-                s_log.writef("%u,ctx%d,0x%lx\n", f, idx, lr_offset);
-                s_log.flush();
+                s_log.writef("%u,ctx%d,0x%lx\n", f, idx, lr_offset);  // buffered; main's frame hook flushes
             }
         }
         return rand_get32_hook.orig(ctx);
     });
+
+void flush() {
+    s_log.flush();
+}
 
 void init() {
     s_log.init("rng_trace.csv");

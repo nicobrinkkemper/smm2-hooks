@@ -51,7 +51,9 @@ def tool(exclusive: bool = False):
     A plain function called on the server's event loop blocks the whole server
     for its duration: no pings, no cancellation, no other tool, and the host
     gives up on the channel. Eden navigation takes tens of seconds, so tools
-    run off the loop. exclusive=True serialises the ones that drive the game.
+    run off the loop. exclusive=True serialises the ones that drive the game,
+    and refuses them while a game_boot navigation thread is still running
+    after its pending reply (the thread outlives the lock).
     """
     def wrap(fn):
         @functools.wraps(fn)
@@ -60,6 +62,8 @@ def tool(exclusive: bool = False):
                 if not exclusive:
                     return fn(*args, **kwargs)
                 with _GAME_LOCK:
+                    if _nav_running():
+                        return {"error": f"{fn.__name__} refused: game_boot is still navigating; poll game_status", "boot": _NAV.get("result")}
                     return fn(*args, **kwargs)
             return await anyio.to_thread.run_sync(call)
         return mcp.tool()(run)
@@ -136,8 +140,6 @@ def game_status() -> dict:
 @tool(exclusive=True)
 def game_input(buttons: str, ms: int = 120) -> dict:
     """Press buttons through the hook mod, e.g. 'A', 'B', 'MINUS', 'L+R', 'RIGHT', 'B+MINUS'. Works in every scene."""
-    if _nav_running():
-        return {"error": "game_boot is still navigating; poll game_status"}
     g = _game()
     g.press(buttons, ms=ms)
     return {"pressed": buttons, "ms": ms, "status": eden.read_status(P)}
@@ -153,15 +155,20 @@ def _nav_running() -> bool:
 
 @tool(exclusive=True)
 def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int = 45, budget: int = 100) -> dict:
-    """Navigate from the title screen: target 'editor' (edit-time), 'editor_play' (test-play the editor course), or 'coursebot' with a slot. A slot the game lists starts Coursebot play (scene_mode 7); an empty slot only offers 'Make New Course', so it opens the editor with a default course and MINUS starts test-play (scene_mode 5) instead. Read scene_mode in the returned status. The call returns within `budget` seconds; if navigation is still going it returns pending=true and keeps going, game_status then carries the outcome under 'boot'."""
-    if _nav_running():
-        return {"error": "a previous game_boot is still navigating; poll game_status", "boot": _NAV.get("result")}
-    g = _game()
-    registered = _registered_slots() if target == "coursebot" else None
+    """Navigate from the title screen: target 'editor' (edit-time), 'editor_play' (test-play the editor course), or 'coursebot' with a slot. A slot the game lists starts Coursebot play (scene_mode 7); an empty slot only offers 'Make New Course', so it opens the editor with a default course and MINUS starts test-play (scene_mode 5) instead. Read scene_mode in the returned status. The call returns within `budget` seconds; if navigation is still going it returns pending=true and keeps going, game_status then carries the outcome under 'boot', and every tool that drives the game refuses until it is done. The final result reports 'registered' as save.dat stands after the visit (Coursebot may delete the slot on the way in)."""
     if target == "coursebot" and slot is None:
         return {"error": "slot required"}
     if target not in ("coursebot", "editor", "editor_play"):
         return {"error": f"unknown target {target}"}
+    g = _game()
+
+    def with_registration(result: dict) -> dict:
+        registered = _registered_slots() if target == "coursebot" else None
+        if registered is not None:
+            result["registered"] = slot in registered
+            if slot not in registered:
+                result["note"] = "slot is not in save.dat, so this is editor test-play of a default course, not the installed level; level_install registers a slot (the course must pass validation)"
+        return result
 
     def navigate():
         try:
@@ -171,7 +178,7 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
                 ok = g.to_editor(timeout=timeout)
             else:
                 ok = g.to_play(timeout=timeout)
-            _NAV["result"] = {"ok": bool(ok), "pending": False, "status": eden.read_status(P)}
+            _NAV["result"] = with_registration({"ok": bool(ok), "pending": False, "status": eden.read_status(P)})
         except Exception as e:  # noqa: BLE001
             _NAV["result"] = {"ok": False, "pending": False, "error": repr(e)}
 
@@ -179,12 +186,7 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
     _NAV.update(thread=t, result={"ok": False, "pending": True, "target": target, "slot": slot})
     t.start()
     t.join(budget)
-    out = dict(_NAV["result"])
-    if registered is not None:
-        out["registered"] = slot in registered
-        if slot not in registered:
-            out["note"] = "slot is not in save.dat, so this is editor test-play of a default course, not the installed level; tools/save_dat.py mark-used N registers it (the course must pass validation)"
-    return out
+    return dict(_NAV["result"])
 
 
 def _registered_slots() -> set[int] | None:
