@@ -1024,6 +1024,8 @@ def main():
         print(f"Held {sys.argv[2]} for {sys.argv[3]}ms")
     elif cmd == "screenshot":
         path = screenshot()
+        if not path:
+            sys.exit(1)
         print(f"Screenshot saved: {path}")
     elif cmd == "goto":
         if len(sys.argv) < 3:

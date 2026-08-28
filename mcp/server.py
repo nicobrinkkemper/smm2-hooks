@@ -112,11 +112,12 @@ def eden_log(lines: int = 20, grep: str | None = None) -> dict:
 @tool()
 def eden_screenshot() -> Image:
     """Screenshot of the Eden window (PowerShell PrintWindow)."""
+    path = Path("/mnt/c/temp/smm2_debug/capture.png")
+    path.unlink(missing_ok=True)  # a failed capture must not hand back the previous picture
     r = subprocess.run([sys.executable, str(TOOLS / "automate.py"), "--eden", "screenshot"], capture_output=True, text=True, timeout=30, cwd=str(TOOLS))
-    path = "/mnt/c/temp/smm2_debug/capture.png"
-    if r.returncode != 0 or not Path(path).exists():
+    if r.returncode != 0 or not path.exists():
         raise RuntimeError(f"screenshot failed: {r.stdout.strip()} {r.stderr.strip()}")
-    return Image(data=Path(path).read_bytes(), format="png")
+    return Image(data=path.read_bytes(), format="png")
 
 
 @tool()
