@@ -113,8 +113,8 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
     if target == "coursebot":
         if slot is None:
             return {"error": "slot required"}
-        registered = _registered_slots()
         ok = g.to_coursebot_play(slot=slot, timeout=timeout)
+        registered = _registered_slots()  # read after the visit: Coursebot may have deleted the slot on the way in
         out = {"ok": bool(ok), "status": eden.read_status(P)}
         if registered is not None:
             out["registered"] = slot in registered
