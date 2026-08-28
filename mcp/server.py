@@ -229,32 +229,67 @@ def levels_list() -> dict:
             "registered": sorted(registered) if registered is not None else None, "slots": slots}
 
 
-def _register_slot(slot: int, companions_from: int | None) -> dict:
-    """Give a slot what Coursebot checks on its next visit: a valid course_thumb + course_replay
-    beside the .bcd (any registered slot's will do; the contents need not match) and used_flag set."""
+SLOT_FILES = ("course_data_{:03d}.bcd", "course_thumb_{:03d}.btl", "course_replay_{:03d}.dat")
+
+
+def _slot_error(slot) -> dict | None:
     import save_dat  # noqa: WPS433
-    save = Path(P.save_dir) / "save.dat"
+    if not isinstance(slot, int) or isinstance(slot, bool) or not 0 <= slot < save_dat.RECORD_COUNT:
+        return {"error": f"slot {slot!r} is not a Coursebot slot (0..{save_dat.RECORD_COUNT - 1})"}
+    return None
+
+
+def _install_slot(slot: int, course: bytes, companions_from: int | None) -> dict:
+    """Write a course into a slot and give it what Coursebot checks on its next visit: a valid
+    course_thumb + course_replay beside the .bcd (borrowed from a registered slot; the contents
+    need not match) and used_flag set in save.dat. Nothing is written until every input exists;
+    each of the three files is backed up once as .orig; a failure mid-way puts the files back."""
+    import save_dat  # noqa: WPS433
+    sd = Path(P.save_dir)
+    save = sd / "save.dat"
     body = bytearray(save_dat.decrypt(save.read_bytes()))
     registered = {s for s, f in save_dat.records(body) if f}
-    src = companions_from if companions_from is not None else next((s for s in sorted(registered) if s != slot), None)
-    if src is None:
+    donor = companions_from if companions_from is not None else next((s for s in sorted(registered) if s != slot), None)
+    if donor is None:
         return {"error": "no registered slot to borrow course_thumb/course_replay from; pass companions_from"}
-    for pattern in ("course_thumb_{:03d}.btl", "course_replay_{:03d}.dat"):
-        s_path = Path(P.save_dir) / pattern.format(src)
-        if not s_path.exists():
-            return {"error": f"{s_path.name} missing"}
-        (Path(P.save_dir) / pattern.format(slot)).write_bytes(s_path.read_bytes())
-    body[save_dat.RECORDS + 8 * slot + 1] = 1
-    bak = save.with_suffix(".dat.orig")
-    if not bak.exists():
-        bak.write_bytes(save.read_bytes())
-    save.write_bytes(save_dat.encrypt(bytes(body)))
-    return {"companions_from": src, "registered": sorted(registered | {slot})}
+    if (err := _slot_error(donor)):
+        return err
+    sources = [course] + [sd / pattern.format(donor) for pattern in SLOT_FILES[1:]]
+    missing = [str(src) for src in sources[1:] if not src.exists()]
+    if missing:
+        return {"error": f"donor slot {donor} is missing {', '.join(missing)}"}
+    targets = [sd / pattern.format(slot) for pattern in SLOT_FILES]
+    previous = {t: t.read_bytes() if t.exists() else None for t in targets}
+    written = []
+    try:
+        for t, src in zip(targets, sources):
+            bak = t.with_name(t.name + ".orig")
+            if previous[t] is not None and not bak.exists():
+                bak.write_bytes(previous[t])
+            t.write_bytes(src if isinstance(src, bytes) else src.read_bytes())
+            written.append(t)
+        body[save_dat.RECORDS + 8 * slot + 1] = 1
+        save_bak = save.with_name("save.dat.orig")
+        if not save_bak.exists():
+            save_bak.write_bytes(save.read_bytes())
+        save.write_bytes(save_dat.encrypt(bytes(body)))
+    except Exception as e:  # noqa: BLE001
+        for t in written:
+            if previous[t] is None:
+                t.unlink(missing_ok=True)
+            else:
+                t.write_bytes(previous[t])
+        return {"error": f"install failed and was rolled back: {e!r}"}
+    return {"slot": slot, "files": [str(t) for t in targets], "companions_from": donor,
+            "backups": [str(t.with_name(t.name + ".orig")) for t in targets if previous[t] is not None],
+            "registered": sorted(registered | {slot})}
 
 
 @tool(exclusive=True)
 def level_install(slot: int, level: str, companions_from: int | None = None) -> dict:
-    """Write a generated level (name from levels_list) into Coursebot slot N and register it: copies a valid course_thumb + course_replay from another registered slot (or companions_from) and sets the slot's used flag in save.dat. Backs up the previous .bcd once as .orig. Restart the game to see it; Coursebot deletes the slot on its next visit if the course itself is invalid."""
+    """Write a generated level (name from levels_list) into Coursebot slot N and register it: copies a valid course_thumb + course_replay from another registered slot (or companions_from) and sets the slot's used flag in save.dat. Each replaced file is backed up once as .orig (level_restore puts all three back). Restart the game to see it; Coursebot deletes the slot on its next visit if the course itself is invalid."""
+    if (err := _slot_error(slot)):
+        return err
     sys.argv = ["x"]
     import gen_test_levels as g  # noqa: WPS433
     match = [(s, n, f) for s, (n, f) in g.TEST_LEVELS.items() if n == level]
@@ -263,26 +298,25 @@ def level_install(slot: int, level: str, companions_from: int | None = None) -> 
     _, name, builder = match[0]
     if not P.save_dir:
         return {"error": "no save dir found"}
-    dst = Path(P.save_dir) / f"course_data_{slot:03d}.bcd"
-    bak = dst.with_suffix(".bcd.orig")
-    if dst.exists() and not bak.exists():
-        bak.write_bytes(dst.read_bytes())
-    dst.write_bytes(g.encrypt_course(builder().build()))
-    reg = _register_slot(slot, companions_from)
-    if "error" in reg:
-        return {"slot": slot, "level": name, "file": str(dst), **reg}
-    return {"slot": slot, "level": name, "file": str(dst), "backup": str(bak) if bak.exists() else None, **reg}
+    out = _install_slot(slot, g.encrypt_course(builder().build()), companions_from)
+    return {"level": name, **out}
 
 
 @tool(exclusive=True)
 def level_restore(slot: int) -> dict:
-    """Put back the .orig backup for a Coursebot slot."""
-    dst = Path(P.save_dir) / f"course_data_{slot:03d}.bcd"
-    bak = dst.with_suffix(".bcd.orig")
-    if not bak.exists():
-        return {"error": "no backup"}
-    dst.write_bytes(bak.read_bytes())
-    return {"restored": str(dst)}
+    """Put back the .orig backups of a Coursebot slot's course, thumbnail and replay (whichever exist). The slot's used flag in save.dat is left as it is."""
+    if (err := _slot_error(slot)):
+        return err
+    restored = []
+    for pattern in SLOT_FILES:
+        dst = Path(P.save_dir) / pattern.format(slot)
+        bak = dst.with_name(dst.name + ".orig")
+        if bak.exists():
+            dst.write_bytes(bak.read_bytes())
+            restored.append(str(dst))
+    if not restored:
+        return {"error": "no backups for this slot"}
+    return {"restored": restored}
 
 
 @tool(exclusive=True)

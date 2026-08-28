@@ -71,6 +71,9 @@ def main():
     plan = {int(a.split('=')[0]): a.split('=', 1)[1].split(',') for a in argv}
     if not plan:
         sys.exit(__doc__)
+    bad = [s for s in plan if not 0 <= s < save_dat.RECORD_COUNT]
+    if bad:
+        sys.exit(f'not Coursebot slots (0..{save_dat.RECORD_COUNT - 1}): {bad}')
     P = eden.paths(); sd = P.save_dir
     install(sd, plan)
     print('installed', sorted(plan), 'used before:', used_slots(sd), flush=True)
