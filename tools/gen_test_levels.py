@@ -119,6 +119,7 @@ TRACK_SHAPE_CURVE_BL = 4
 TRACK_SHAPE_CURVE_TR = 5
 TRACK_SHAPE_CURVE_TL = 6
 TRACK_SHAPE_CURVE_BR = 7
+AREA_WIDTH = 35   # tiles; goal_x in the header is derived from it (Coursebot deletes a course whose goal sits inside the start area)
 TRACK_END_FREE_H = (0x0090, 0x0070)   # lone horizontal piece, as the editor writes it; a chain is (0x90,0x70) then (0x71,0x104)
 
 # Unit conversions
@@ -207,7 +208,6 @@ class LevelBuilder:
         self.objects: List[dict] = []
         self.ground_tiles: List[Tuple[int, int, int]] = []
         self.start_y = 5  # tiles
-        self.goal_x = 25  # tiles
         self.goal_y = None  # auto-calculated if None
         
     def add_ground(self, x_start: int, x_end: int, y: int):
@@ -400,7 +400,7 @@ class LevelBuilder:
         # Header
         data[0x00] = self.start_y
         data[0x01] = self.goal_y if self.goal_y else self.start_y
-        struct.pack_into('<h', data, 0x02, self.goal_x)
+        struct.pack_into('<h', data, 0x02, int((AREA_WIDTH - 9.5) * 10))  # tenths of a tile; the pole stands 9.5 tiles from the right edge
         struct.pack_into('<h', data, 0x04, 300)  # time
         struct.pack_into('<h', data, 0x08, 2026)
         data[0x0A] = 2
@@ -418,7 +418,7 @@ class LevelBuilder:
         # Area header
         area = 0x200
         data[area + 0x00] = self.theme_id
-        struct.pack_into('<i', data, area + 0x08, 35 * 16)
+        struct.pack_into('<i', data, area + 0x08, AREA_WIDTH * 16)
         struct.pack_into('<i', data, area + 0x0C, 27 * 16)
         
         # NOTE: Do NOT add goal object - game auto-generates from header goal_x/goal_y
@@ -502,13 +502,12 @@ def level_flat_ground() -> LevelBuilder:
     """Basic flat ground for walk/run testing.
     
     NOTE: Start area is 7 tiles wide (x=0 to x=6).
-    Goal area is ~3 tiles before goal_x.
-    Ground must extend to connect with goal area!
+    The goal pole stands 9.5 tiles before the right edge (x 25.5 here); keep
+    content at x <= 23 so the ground connects to the goal area.
     """
     b = LevelBuilder("Flat Ground", "SMB1", "Ground")
     # Ground from x=7 to x=24 (one more tile to connect with goal at x=27)
     b.add_ground_block(7, 24, y_surface=4, height=5)
-    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -521,7 +520,6 @@ def level_jump_platforms() -> LevelBuilder:
     b.add_platform(12, 6, 3)   # Low platform
     b.add_platform(16, 8, 3)   # Medium platform
     b.add_platform(20, 10, 3)  # High platform
-    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -539,7 +537,6 @@ def level_slopes() -> LevelBuilder:
     # End ground near goal
     b.add_ground(21, 23, 10)
     b.start_y = 5
-    b.goal_x = 27
     b.goal_y = 10
     return b
 
@@ -552,7 +549,6 @@ def level_ice() -> LevelBuilder:
     b.add_ground_block(7, 12, y_surface=4, height=5)
     # Ice blocks section (objects, not ground tiles)
     b.add_ice(13, 22, 4)
-    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -564,7 +560,6 @@ def level_underwater() -> LevelBuilder:
     # Ground must start at x=7 (outside start area) and extend to x=24
     b.add_ground_block(7, 24, y_surface=4, height=5)
     b.start_y = 10
-    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -575,7 +570,6 @@ def level_3dw_flat() -> LevelBuilder:
     b = LevelBuilder("3DW Flat", "3DW", "Ground")
     # 3DW: smaller level like Nico's example (x=7-13)
     b.add_ground_block(7, 13, y_surface=4, height=5)
-    b.goal_x = 17  # Closer goal for smaller level
     b.goal_y = 5
     return b
 
@@ -585,7 +579,6 @@ def level_smb3_flat() -> LevelBuilder:
     """SMB3 style flat ground."""
     b = LevelBuilder("SMB3 Flat", "SMB3", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
-    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -595,7 +588,6 @@ def level_smw_flat() -> LevelBuilder:
     """Super Mario World style flat ground."""
     b = LevelBuilder("SMW Flat", "SMW", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
-    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -611,7 +603,6 @@ def level_track_note() -> LevelBuilder:
     from x 12.5 to 16.5 at y 11.5.
     """
     level = LevelBuilder("Track Note", style='SMB1', theme='Ground')
-    level.goal_x = 27
     level.goal_y = 4
     level.add_ground_fill(7, 23, 4)
     level.add_track(12, 10, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, 0x0070))
@@ -625,7 +616,6 @@ def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
     b = LevelBuilder("NSMBU Flat", "NSMBU", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
-    b.goal_x = 27
     b.goal_y = 5
     return b
 
@@ -636,7 +626,6 @@ def level_empty() -> LevelBuilder:
     b = LevelBuilder("Empty", "SMB1", "Ground")
     # Don't place any ground - start/goal areas are auto-generated
     b.start_y = 5
-    b.goal_x = 27
     b.goal_y = 5
     return b
 
