@@ -256,7 +256,8 @@ and tail its log. The registration lives in `/tmp`, so re-run it after a reboot:
     bash "$GABR_ROOT/mcp/scripts/devserver.sh" watch-process eden "Eden (SMM2)" \
       /mnt/c/Users/nico/Documents/eden/user/log/eden_log.txt \
       "python3 $GEITJE_CODE_ROOT/smm2-hooks/mcp/eden.py --brief" \
-      "python3 $GEITJE_CODE_ROOT/smm2-hooks/mcp/eden.py --kill"
+      "python3 $GEITJE_CODE_ROOT/smm2-hooks/mcp/eden.py --kill" \
+      "python3 $GEITJE_CODE_ROOT/smm2-hooks/mcp/eden.py --launch"
 
 The tab appears on the next inventory refresh; the mission-control MCP polls
 the probe every 5 s.

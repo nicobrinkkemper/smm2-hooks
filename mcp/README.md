@@ -29,6 +29,7 @@ SD and `load` directories and the GDB stub setting, and derives everything else
     python3 mcp/eden.py            # full state as JSON
     python3 mcp/eden.py --brief    # one line: pid, memory, start time, scene, frame; exit 1 when off
     python3 mcp/eden.py --kill     # Stop-Process eden
+    python3 mcp/eden.py --launch   # start Eden with the game (no GDB stub), exit 1 if already running
 
 `--brief` reads only the process list and `status.bin` (no GDB port probe), so
 it is cheap enough to poll every few seconds.
