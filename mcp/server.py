@@ -108,7 +108,7 @@ def game_input(buttons: str, ms: int = 120) -> dict:
 
 @mcp.tool()
 def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int = 120) -> dict:
-    """Navigate from the title screen: target 'editor' (edit-time), 'editor_play' (test-play the editor course), or 'coursebot' with a slot (run-time, play-only)."""
+    """Navigate from the title screen: target 'editor' (edit-time), 'editor_play' (test-play the editor course), or 'coursebot' with a slot. A slot the game lists starts Coursebot play (scene_mode 7); an empty slot only offers 'Make New Course', so it opens the editor with a default course and MINUS starts test-play (scene_mode 5) instead. Read scene_mode in the returned status."""
     g = _game()
     if target == "coursebot":
         if slot is None:
