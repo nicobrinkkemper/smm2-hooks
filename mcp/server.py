@@ -247,7 +247,8 @@ def _install_slot(slot: int, course: bytes, companions_from: int | None) -> dict
     import save_dat  # noqa: WPS433
     sd = Path(P.save_dir)
     save = sd / "save.dat"
-    body = bytearray(save_dat.decrypt(save.read_bytes()))
+    save_raw = save.read_bytes()
+    body = bytearray(save_dat.decrypt(save_raw))
     registered = {s for s, f in save_dat.records(body) if f}
     donor = companions_from if companions_from is not None else next((s for s in sorted(registered) if s != slot), None)
     if donor is None:
@@ -260,25 +261,33 @@ def _install_slot(slot: int, course: bytes, companions_from: int | None) -> dict
         return {"error": f"donor slot {donor} is missing {', '.join(missing)}"}
     targets = [sd / pattern.format(slot) for pattern in SLOT_FILES]
     previous = {t: t.read_bytes() if t.exists() else None for t in targets}
-    written = []
+    touched = []  # every file a write was attempted on, including the one that may have failed half-way
     try:
         for t, src in zip(targets, sources):
             bak = t.with_name(t.name + ".orig")
             if previous[t] is not None and not bak.exists():
                 bak.write_bytes(previous[t])
+            touched.append(t)
             t.write_bytes(src if isinstance(src, bytes) else src.read_bytes())
-            written.append(t)
         body[save_dat.RECORDS + 8 * slot + 1] = 1
         save_bak = save.with_name("save.dat.orig")
         if not save_bak.exists():
-            save_bak.write_bytes(save.read_bytes())
+            save_bak.write_bytes(save_raw)
+        touched.append(save)
         save.write_bytes(save_dat.encrypt(bytes(body)))
     except Exception as e:  # noqa: BLE001
-        for t in written:
-            if previous[t] is None:
-                t.unlink(missing_ok=True)
-            else:
-                t.write_bytes(previous[t])
+        previous[save] = save_raw
+        unrestored = []
+        for t in touched:
+            try:
+                if previous[t] is None:
+                    t.unlink(missing_ok=True)
+                else:
+                    t.write_bytes(previous[t])
+            except Exception:  # noqa: BLE001
+                unrestored.append(str(t))
+        if unrestored:
+            return {"error": f"install failed: {e!r}; rollback could not restore {', '.join(unrestored)} (.orig backups are beside them; level_restore)"}
         return {"error": f"install failed and was rolled back: {e!r}"}
     return {"slot": slot, "files": [str(t) for t in targets], "companions_from": donor,
             "backups": [str(t.with_name(t.name + ".orig")) for t in targets if previous[t] is not None],
