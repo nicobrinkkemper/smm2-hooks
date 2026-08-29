@@ -110,7 +110,9 @@ FLAG_TRACK_VERTICAL = 0x200000
 
 # Track record shapes ("Type - Shape" tab). Verified against an editor-saved
 # course: the type byte is the shape alone; the trailing u16 pair encodes the
-# two ends (0x0104 = joined to a neighbouring piece; 0x0070/0x0090 etc. = free).
+# two end words whose meaning is not decoded: the editor writes (0x90, 0x70) for a
+# lone horizontal piece and (0x90, 0x70) then (0x71, 0x104) for a two-piece chain,
+# and lone pieces carry 0x0104 as well. Copy the editor's values for the shape you need.
 TRACK_SHAPE_HORIZONTAL = 0
 TRACK_SHAPE_VERTICAL = 1
 TRACK_SHAPE_DESC_DIAGONAL = 2
