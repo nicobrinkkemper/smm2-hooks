@@ -247,3 +247,16 @@ player object via `changeState`.
   range is wrong; verify with `x/8xw <candidate>` against the ELF bytes.
 - Watchpoint never hits: the object is not the one you think (check `getClassName`
   via the vtable slot 2), or the field is written by DMA-like memcpy; try `awatch`.
+
+## Eden in the dashboard shell pane
+
+The Shells rail can show the running Eden process (pid, memory, scene, frame)
+and tail its log. The registration lives in `/tmp`, so re-run it after a reboot:
+
+    bash "$GABR_ROOT/mcp/scripts/devserver.sh" watch-process eden "Eden (SMM2)" \
+      /mnt/c/Users/nico/Documents/eden/user/log/eden_log.txt \
+      "python3 $GEITJE_CODE_ROOT/smm2-hooks/mcp/eden.py --brief" \
+      "python3 $GEITJE_CODE_ROOT/smm2-hooks/mcp/eden.py --kill"
+
+The tab appears on the next inventory refresh; the mission-control MCP polls
+the probe every 5 s.
