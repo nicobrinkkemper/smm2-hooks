@@ -315,12 +315,14 @@ if __name__ == "__main__":
         print(line)
         sys.exit(0 if up else 1)
     if "--kill" in sys.argv[1:]:
-        print(json.dumps(kill()))
-        sys.exit(0)
+        r = kill()
+        print(json.dumps(r))
+        sys.exit(0 if r["process"] is None else 1)
     if "--launch" in sys.argv[1:]:
         if process():
             print("Eden already running")
             sys.exit(1)
-        print(json.dumps(launch(paths(), gdb=False)))
-        sys.exit(0)
+        r = launch(paths(), gdb=False)
+        print(json.dumps(r))
+        sys.exit(0 if r["process"] else 1)
     print(json.dumps(state(), indent=1))
