@@ -5,7 +5,7 @@ import re
 import pexpect
 
 PROMPT = r"\(gdb\) $"
-FORBIDDEN = re.compile(r"^\s*(b|br|bre|brea|break|tb|tbreak|handle\s+SIGTRAP.*\bpass\b)", re.I)
+FORBIDDEN = re.compile(r"^\s*((b|br|bre|brea|break|tb|tbreak)(\s|$)|handle\s+SIGTRAP.*\bpass\b)", re.I)
 CSV_BASE = 0x7100000000
 
 
