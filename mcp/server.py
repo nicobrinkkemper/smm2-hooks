@@ -239,6 +239,21 @@ def _slot_error(slot) -> dict | None:
     return None
 
 
+def _backup_once(path: Path, data: bytes) -> None:
+    """Keep the first pre-install copy of a file as <name>.orig. Written through a temp file and
+    renamed, so an interrupted write cannot leave a truncated .orig that later installs trust."""
+    bak = path.with_name(path.name + ".orig")
+    if bak.exists():
+        return
+    tmp = bak.with_name(bak.name + ".tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, bak)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _install_slot(slot: int, course: bytes, companions_from: int | None) -> dict:
     """Write a course into a slot and give it what Coursebot checks on its next visit: a valid
     course_thumb + course_replay beside the .bcd (borrowed from a registered slot; the contents
@@ -264,15 +279,12 @@ def _install_slot(slot: int, course: bytes, companions_from: int | None) -> dict
     touched = []  # every file a write was attempted on, including the one that may have failed half-way
     try:
         for t, src in zip(targets, sources):
-            bak = t.with_name(t.name + ".orig")
-            if previous[t] is not None and not bak.exists():
-                bak.write_bytes(previous[t])
+            if previous[t] is not None:
+                _backup_once(t, previous[t])
             touched.append(t)
             t.write_bytes(src if isinstance(src, bytes) else src.read_bytes())
         body[save_dat.RECORDS + 8 * slot + 1] = 1
-        save_bak = save.with_name("save.dat.orig")
-        if not save_bak.exists():
-            save_bak.write_bytes(save_raw)
+        _backup_once(save, save_raw)
         touched.append(save)
         save.write_bytes(save_dat.encrypt(bytes(body)))
     except Exception as e:  # noqa: BLE001
