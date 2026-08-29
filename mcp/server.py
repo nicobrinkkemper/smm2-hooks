@@ -323,6 +323,6 @@ def gdb_log(last: int = 10) -> dict:
 
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
-        print(json.dumps(eden_state(), indent=1)[:1500])
+        print(json.dumps(anyio.run(eden_state), indent=1)[:1500])
     else:
         mcp.run()
