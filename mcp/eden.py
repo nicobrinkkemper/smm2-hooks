@@ -142,7 +142,8 @@ def set_gdbstub(p: EdenPaths, enabled: bool) -> bool:
 
 def process() -> dict | None:
     ps = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
-    cmd = "Get-Process eden -ErrorAction SilentlyContinue | Select-Object Id,WorkingSet64,StartTime | ConvertTo-Json -Compress"
+    cmd = ("Get-Process eden -ErrorAction SilentlyContinue | Select-Object Id,WorkingSet64,"
+           "@{n='Start';e={$_.StartTime.ToString('yyyy-MM-ddTHH:mm:ss')}} | ConvertTo-Json -Compress")
     try:
         out = subprocess.run([ps, "-NoProfile", "-Command", cmd], capture_output=True, text=True, timeout=20).stdout.strip()
     except Exception:
@@ -153,7 +154,8 @@ def process() -> dict | None:
     data = json.loads(out)
     if isinstance(data, list):
         data = max(data, key=lambda d: d.get("WorkingSet64", 0))
-    return {"pid": data.get("Id"), "mem_mb": int(data.get("WorkingSet64", 0) // (1024 * 1024))}
+    return {"pid": data.get("Id"), "mem_mb": int(data.get("WorkingSet64", 0) // (1024 * 1024)),
+            "started": data.get("Start")}
 
 
 def stub_listening(port: int) -> bool | None:
@@ -282,6 +284,37 @@ def state(p: EdenPaths | None = None) -> dict:
     }
 
 
+def brief(p: EdenPaths | None = None) -> tuple[str, bool]:
+    """One line for an external monitor, and whether Eden is up.
+
+    'pid 1234 · 1.8 GB · since 16:20:01 · title · frame 1805'. Reads the process
+    and status.bin only (no GDB port probe), so it is cheap enough to poll.
+    """
+    p = p or paths()
+    proc = process()
+    if not proc:
+        return "off", False
+    mem = f"{proc['mem_mb'] / 1024:.1f} GB" if proc["mem_mb"] >= 1024 else f"{proc['mem_mb']} MB"
+    parts = [f"pid {proc['pid']}", mem]
+    if proc.get("started"):
+        parts.append(f"since {proc['started'][11:19]}")
+    st = read_status(p)
+    if st and st["fresh"]:
+        parts += [st["scene"], f"frame {st['frame']}"]
+    elif st:
+        parts.append(f"status stale {st['age_s']:.0f}s (last {st['scene']})")
+    else:
+        parts.append("no status.bin")
+    return " · ".join(parts), True
+
+
 if __name__ == "__main__":
     import json
+    if "--brief" in sys.argv[1:]:
+        line, up = brief()
+        print(line)
+        sys.exit(0 if up else 1)
+    if "--kill" in sys.argv[1:]:
+        print(json.dumps(kill()))
+        sys.exit(0)
     print(json.dumps(state(), indent=1))
