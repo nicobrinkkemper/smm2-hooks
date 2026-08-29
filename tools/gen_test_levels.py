@@ -613,6 +613,42 @@ def level_track_note() -> LevelBuilder:
     return level
 
 
+@test_level(11, "Rail Trace")
+def level_rail_trace() -> LevelBuilder:
+    """A closed track loop with every piece kind, for the RailMover probe.
+
+    UNVALIDATED: the game has not judged this file yet. The curve shapes and
+    the end words of a chain longer than two pieces are copied from the
+    community sheet and the two-piece editor course, not from an editor-saved
+    loop. Run `validate_slots.py N=<this file>` first; if Coursebot deletes
+    it, bisect the end words against an editor-saved loop before trusting any
+    trace from it.
+
+    Loop, 3x3 boxes on a 2-tile grid, one note block on the bottom run
+    (probe preset `rail` in tools/probe.py):
+
+        TL (9,12)  H (11,12)  H (13,12)  TR (15,12)
+        V  (9,10)                        V  (15,10)
+        BL (9,8)   H (11,8)   H (13,8)   BR (15,8)
+    """
+    level = LevelBuilder("Rail Trace", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    chain_first, chain_next = (0x0090, 0x0070), (0x0071, 0x0104)
+    level.add_track(9, 8, TRACK_SHAPE_CURVE_BL, ends=chain_first)
+    with_block = level.add_track(11, 8, TRACK_SHAPE_HORIZONTAL, ends=chain_next)
+    level.add_track(13, 8, TRACK_SHAPE_HORIZONTAL, ends=chain_next)
+    level.add_track(15, 8, TRACK_SHAPE_CURVE_BR, ends=chain_next)
+    level.add_track(15, 10, TRACK_SHAPE_VERTICAL, ends=chain_next)
+    level.add_track(15, 12, TRACK_SHAPE_CURVE_TR, ends=chain_next)
+    level.add_track(13, 12, TRACK_SHAPE_HORIZONTAL, ends=chain_next)
+    level.add_track(11, 12, TRACK_SHAPE_HORIZONTAL, ends=chain_next)
+    level.add_track(9, 12, TRACK_SHAPE_CURVE_TL, ends=chain_next)
+    level.add_track(9, 10, TRACK_SHAPE_VERTICAL, ends=chain_next)
+    level.add_note_block_on_track(with_block, travel_left=False)
+    return level
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""

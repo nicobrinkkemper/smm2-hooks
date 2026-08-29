@@ -77,6 +77,7 @@ and is wrong about the GDB stub until it is switched to `mcp/eden.py`.
 | Doc | What |
 |-----|------|
 | `docs/status-system-spec.md` | `status.bin` fields, scene modes, requirements |
+| `docs/probe.md` | function probes: `probe.txt` hooks + field paths → `probe.log` (Eden has no hardware breakpoints) |
 | `docs/automation-workflow.md` | Boot sequences and timings |
 | `docs/eden-gdb-workflow.md` | GDB against Eden's stub |
 | `docs/level-generation.md` / `docs/level-modification.md` | Test levels, BCD layout |
