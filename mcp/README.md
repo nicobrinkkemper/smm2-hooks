@@ -24,6 +24,16 @@ SD and `load` directories and the GDB stub setting, and derives everything else
 `edit_time` is the Course Maker editor (no actors run, no player); `run_time` is
 `editor_play` or `coursebot_play` (actors update, `has_player` is meaningful).
 
+`eden.py` also runs standalone, for shells and external monitors:
+
+    python3 mcp/eden.py            # full state as JSON
+    python3 mcp/eden.py --brief    # one line: pid, memory, start time, scene, frame; exit 1 when off
+    python3 mcp/eden.py --kill     # Stop-Process eden; exit 1 if it is still there afterwards
+    python3 mcp/eden.py --launch   # start Eden with the game (no GDB stub); exit 1 if already running or it never came up
+
+`--brief` reads only the process list and `status.bin` (no GDB port probe), so
+it is cheap enough to poll every few seconds.
+
 GDB rules enforced by the server: no software breakpoints (`break` is refused),
 no `handle SIGTRAP ... pass`, one session, commands only while stopped.
 
