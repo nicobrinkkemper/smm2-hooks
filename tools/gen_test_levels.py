@@ -617,12 +617,12 @@ def level_track_note() -> LevelBuilder:
 def level_rail_trace() -> LevelBuilder:
     """A closed track loop with every piece kind, for the RailMover probe.
 
-    UNVALIDATED: the game has not judged this file yet. The curve shapes and
-    the end words of a chain longer than two pieces are copied from the
-    community sheet and the two-piece editor course, not from an editor-saved
-    loop. Run `validate_slots.py N=<this file>` first; if Coursebot deletes
-    it, bisect the end words against an editor-saved loop before trusting any
-    trace from it.
+    Coursebot ACCEPTED this file on 2026-08-30 (validate_slots, alongside a
+    4-piece straight chain and the loop without its block), so the curve
+    shapes and the (0x71, 0x104) words on every non-first piece pass the
+    game's check. Whether the block rides the whole loop is what the probe
+    recording will show; the words are the editor's per-end state and are
+    stored verbatim in the Track object's extended field by the loader.
 
     Loop, 3x3 boxes on a 2-tile grid, one note block on the bottom run
     (probe preset `rail` in tools/probe.py):
