@@ -89,6 +89,16 @@ def main() -> int:
     boot.unlink(missing_ok=True)   # read once at boot; a leftover would hijack the menu-driven scripts
     g = Game(args.target)
     if args.menu:
+        # The Coursebot grid only holds registered slots; navigating to an
+        # unused position lands in an arbitrary course (learned the hard way
+        # on "slot 11" with ten used slots).
+        import save_dat  # noqa: WPS433
+        body = save_dat.decrypt((Path(eden.paths().save_dir) / "save.dat").read_bytes())
+        used = [s for s, f in save_dat.records(body) if f]
+        if args.coursebot not in used:
+            print(f"slot {args.coursebot} is not registered in save.dat (used: {used}); refusing to navigate blind")
+            eden.kill()
+            return 1
         st = g.wait_for(lambda s: s["scene_mode"] == 6, timeout=120)
         if not st:
             print("no title within 120 s")
@@ -123,8 +133,9 @@ def main() -> int:
     for step in filter(None, args.walk.split(",")):
         button, _, secs = step.partition(":")
         # No release between steps: the held set just changes, so combos like a
-        # timed hop mid-run (RIGHT+Y then RIGHT+Y+B) stay unbroken.
-        g._write_input(g._parse_buttons(button), 0, 0)
+        # timed hop mid-run (RIGHT+Y then RIGHT+Y+B) stay unbroken. NONE holds
+        # nothing for the step's duration.
+        g._write_input(0 if button.upper() == "NONE" else g._parse_buttons(button), 0, 0)
         sample(float(secs or 1))
     g.release()
     if args.wait:
