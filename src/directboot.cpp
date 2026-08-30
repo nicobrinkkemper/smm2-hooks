@@ -126,7 +126,9 @@ void per_frame(uint32_t frame) {
         return;
     }
     if (s_phase == 0) {
-        // Phase 0 (coursebot2): from the title (scene mode 6) into the Coursebot scene, kind 1
+        // Phase 0 (coursebot2): from the title (scene mode 6) into the maker scene,
+        // kind 2 (the value the watchpoint recorded at the real title change); the
+        // Coursebot cache loads every used slot there
         // (cTitleToRobo). Its list load opens every used slot into the cache the
         // play transition points at.
         if (mode != 6) {
@@ -142,7 +144,7 @@ void per_frame(uint32_t frame) {
         if (frame - s_title_since < TITLE_SETTLE) return;
         if (s_tries && frame - s_last_try < RETRY_EVERY) return;
         if (s_tries >= MAX_TRIES) { s_done = true; s_log.writef("%u,gave up in phase 0\n", frame); s_log.flush(); return; }
-        request(frame, base, 1);
+        request(frame, base, 2);
         return;
     }
     // Phase 1: give the Coursebot scene time to load its list, then play the entry.
@@ -154,7 +156,7 @@ void per_frame(uint32_t frame) {
     }
     if (frame - s_left_title < ROBO_SETTLE) return;
     if (s_tries && frame - s_last_try < RETRY_EVERY) return;
-    if (s_tries >= MAX_TRIES) { s_done = true; s_log.writef("%u,gave up in phase 1 (scene mode %u)\n", frame, mode); s_log.flush(); return; }
+    if (s_tries >= 2) { s_done = true; s_log.writef("%u,stopped after 2 phase-1 tries (scene mode %u)\n", frame, mode); s_log.flush(); return; }
     request(frame, base, s_kind);
 }
 

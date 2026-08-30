@@ -49,6 +49,8 @@ def main() -> int:
     src.add_argument("--preset", help="probe preset name (probe.py preset)")
     ap.add_argument("--coursebot", type=int, required=True, help="Coursebot entry to boot into")
     ap.add_argument("--kind", type=int, default=4, help="transition kind (4 play, 3 editor)")
+    ap.add_argument("--via-robo", action="store_true", help="two-phase boot through the Coursebot scene (experimental)")
+    ap.add_argument("--menu", action="store_true", help="navigate the Coursebot menus to the slot (slower, but plays the chosen course)")
     ap.add_argument("--walk", default="", help="BUTTON:seconds[,BUTTON:seconds...] after a 2 s settle")
     ap.add_argument("--wait", type=float, default=0.0, help="seconds to watch with no input (after --walk)")
     ap.add_argument("--target", default="eden")
@@ -64,7 +66,11 @@ def main() -> int:
         subprocess.run([sys.executable, str(HERE / "probe.py"), "check", args.probe], check=True)
         subprocess.run([sys.executable, str(HERE / "probe.py"), "install", args.probe, "--target", args.target], check=True)
     boot = sd / "boot.txt"
-    boot.write_text(f"coursebot {args.coursebot} {args.kind}\n")
+    if args.menu:
+        boot.unlink(missing_ok=True)
+    else:
+        keyword = "coursebot2" if args.via_robo else "coursebot"
+        boot.write_text(f"{keyword} {args.coursebot} {args.kind}\n")
     log = sd / "probe.log"
     if log.exists():
         log.unlink()
@@ -82,7 +88,20 @@ def main() -> int:
     time.sleep(3)
     boot.unlink(missing_ok=True)   # read once at boot; a leftover would hijack the menu-driven scripts
     g = Game(args.target)
-    st = g.wait_for(lambda s: s["scene_mode"] == COURSEBOT_PLAY, timeout=120)
+    if args.menu:
+        st = g.wait_for(lambda s: s["scene_mode"] == 6, timeout=120)
+        if not st:
+            print("no title within 120 s")
+            eden.kill()
+            return 1
+        time.sleep(6)
+        if not g.to_coursebot_play(slot=args.coursebot, timeout=90):
+            print("menu navigation failed")
+            eden.kill()
+            return 1
+        st = g.status()
+    else:
+        st = g.wait_for(lambda s: s["scene_mode"] == COURSEBOT_PLAY, timeout=120)
     if not st:
         print("no Coursebot play within 120 s; directboot.log:")
         print((sd / "directboot.log").read_text() if (sd / "directboot.log").exists() else "(none)")
@@ -103,10 +122,11 @@ def main() -> int:
     sample(2.0)
     for step in filter(None, args.walk.split(",")):
         button, _, secs = step.partition(":")
+        # No release between steps: the held set just changes, so combos like a
+        # timed hop mid-run (RIGHT+Y then RIGHT+Y+B) stay unbroken.
         g._write_input(g._parse_buttons(button), 0, 0)
         sample(float(secs or 1))
-        g.release()
-        time.sleep(0.3)
+    g.release()
     if args.wait:
         sample(args.wait)
     time.sleep(5.5)  # the mod flushes every 300 frames
