@@ -1,0 +1,11 @@
+@nsobid-C2DC405AC414C37C8B1C50219C7A0F0C
+#Super Mario Maker 2 3.0.3 - Corruption Bypass
+
+@flag print_values
+@flag offset_shift 0x100
+
+# Bypass level corruption validator (sub_7100FCAB10)
+# Returns 0 (valid) for all levels
+@enabled
+00FCAB10 E0031F2A  // MOV W0, WZR
+00FCAB14 C0035FD6  // RET

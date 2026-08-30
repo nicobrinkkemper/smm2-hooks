@@ -103,6 +103,18 @@ def eden_kill() -> dict:
 
 
 @tool(exclusive=True)
+def eden_patches(enable: str | None = None, disable: str | None = None) -> dict:
+    """List the versioned pchtxt patches (repo patches/) and their deployed state; enable/disable one by name (next launch)."""
+    result: dict = {}
+    if enable:
+        result["enable"] = eden.set_patch(P, enable, True)
+    if disable:
+        result["disable"] = eden.set_patch(P, disable, False)
+    result["patches"] = eden.patches(P)
+    return result
+
+
+@tool(exclusive=True)
 def eden_set_gdbstub(enabled: bool) -> dict:
     """Flip use_gdbstub in the real qt-config.ini (takes effect on the next launch)."""
     return {"changed": eden.set_gdbstub(P, enabled), **eden.gdb_config(P)}

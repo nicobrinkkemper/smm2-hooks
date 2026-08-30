@@ -1,0 +1,10 @@
+@nsobid-C2DC405AC414C37C8B1C50219C7A0F0C
+#Super Mario Maker 2 3.0.3 USA
+# Botting optimizations - skip delays, faster loading
+
+@flag print_values
+@flag offset_shift 0x100
+
+# Skip intro cutscene (phase 2 -> 4)
+@enabled
+017E432C 81008052 // orr w1, wzr, #4
