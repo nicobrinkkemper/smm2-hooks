@@ -2,6 +2,8 @@
 #include "smm2/log.h"
 #include "nn/fs.h"
 #include "hk/hook/Trampoline.h"
+#include "hk/ro/RoUtil.h"
+#include "smm2/frame.h"
 
 namespace smm2 {
 namespace course_data {
@@ -49,6 +51,55 @@ void dump_open_log() {
     s_log_ready = true;
 }
 
+// Reads of a whole course file (376768 bytes) with the caller chain: which
+// game function loads a course, and when (Coursebot selection vs play).
+static uintptr_t module_rel(uintptr_t a) {
+    uintptr_t base = hk::ro::getMainModule()->range().start();
+    return (a >= base && a < base + 0x2000000ull) ? a - base + 0x7100000000ull : 0;
+}
+static HkTrampoline<uint32_t, size_t*, nn::fs::FileHandle, int64_t, void*, size_t> read_hook =
+    hk::hook::trampoline([](size_t* out, nn::fs::FileHandle fh, int64_t offset, void* data, size_t size) -> uint32_t {
+        uintptr_t lr = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+        uintptr_t fp = reinterpret_cast<uintptr_t>(__builtin_frame_address(0));
+        uint32_t r = read_hook.orig(out, fh, offset, data, size);
+        if (size >= 0x40000) {
+            if (!s_inited) { s_log.init("course_data.csv"); s_inited = true; }
+            s_log.writef("%u,read,%lld,%zu", frame::current(), (long long)offset, size);
+            for (int i = 0; i < 8; i++) {
+                uintptr_t rel = module_rel(lr);
+                if (rel) s_log.writef(",%llx", (unsigned long long)rel); else s_log.write(",-", 2);
+                if (fp < 0x1000000ull || fp >= 0x3000000000ull) break;
+                lr = *reinterpret_cast<uintptr_t*>(fp + 8);
+                fp = *reinterpret_cast<uintptr_t*>(fp);
+            }
+            s_log.write("\n", 1);
+            s_log.flush();
+        }
+        return r;
+    });
+
+// The 4-arg ReadFile overload (no bytes-read out-pointer).
+static HkTrampoline<uint32_t, nn::fs::FileHandle, int64_t, void*, size_t> read4_hook =
+    hk::hook::trampoline([](nn::fs::FileHandle fh, int64_t offset, void* data, size_t size) -> uint32_t {
+        uintptr_t lr = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+        uintptr_t fp = reinterpret_cast<uintptr_t>(__builtin_frame_address(0));
+        uint32_t r = read4_hook.orig(fh, offset, data, size);
+        if (size >= 0x40000) {
+            if (!s_inited) { s_log.init("course_data.csv"); s_inited = true; }
+            s_log.writef("%u,read4,%lld,%zu", frame::current(), (long long)offset, size);
+            for (int i = 0; i < 8; i++) {
+                uintptr_t rel = module_rel(lr);
+                if (rel) s_log.writef(",%llx", (unsigned long long)rel); else s_log.write(",-", 2);
+                if (fp < 0x1000000ull || fp >= 0x3000000000ull) break;
+                lr = *reinterpret_cast<uintptr_t*>(fp + 8);
+                fp = *reinterpret_cast<uintptr_t*>(fp);
+            }
+            s_log.write("\n", 1);
+            s_log.flush();
+        }
+        return r;
+    });
+
 static HkTrampoline<uint32_t, nn::fs::FileHandle, int64_t, const void*, size_t, const nn::fs::WriteOption&> write_hook =
     hk::hook::trampoline([](nn::fs::FileHandle fh, int64_t offset, const void* data, size_t size, const nn::fs::WriteOption& opt) -> uint32_t {
         if (s_count < 50) {
@@ -83,6 +134,8 @@ static HkTrampoline<uint32_t, nn::fs::FileHandle, int64_t, const void*, size_t, 
 void init() {
     open_hook.installAtSym<"_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci">();
     write_hook.installAtSym<"_ZN2nn2fs9WriteFileENS0_10FileHandleElPKvmRKNS0_11WriteOptionE">();
+    read_hook.installAtSym<"_ZN2nn2fs8ReadFileEPmNS0_10FileHandleElPvm">();
+    read4_hook.installAtSym<"_ZN2nn2fs8ReadFileENS0_10FileHandleElPvm">();
 }
 
 } // namespace course_data

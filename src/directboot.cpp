@@ -30,6 +30,7 @@ constexpr uintptr_t OFF_SOURCE    = 0x1792890;
 constexpr uintptr_t OFF_GO        = 0x1791020;
 constexpr uintptr_t OFF_GPM       = 0x2C57D58;   // GamePhaseManager*; [[gpm]+0x30]+0x14 = scene mode (6 = title)
 constexpr uint32_t TITLE_SETTLE   = 150;         // frames of title before the first request
+constexpr uint32_t ROBO_SETTLE    = 300;         // frames in the Coursebot scene: its list load opens every used slot
 constexpr uint32_t RETRY_EVERY    = 90;
 constexpr int MAX_TRIES           = 8;
 
@@ -39,6 +40,8 @@ int s_kind = 4;                 // cMyCourseToNormalPlay
 uint32_t s_title_since = 0;
 uint32_t s_last_try = 0;
 int s_tries = 0;
+int s_phase = 0;                // 0 title -> Coursebot (kind 1), 1 Coursebot -> play (kind s_kind)
+uint32_t s_left_title = 0;
 bool s_done = false;
 
 uint32_t scene_mode(uintptr_t base) {
@@ -77,37 +80,57 @@ void init() {
     s_log.flush();
 }
 
-void per_frame(uint32_t frame) {
-    if (s_course < 0 || s_done) return;
-    uintptr_t base = hk::ro::getMainModule()->range().start();
-    uint32_t mode = scene_mode(base);
-    if (mode != 6) {
-        if (s_tries && s_title_since) {   // a request took: the title is gone
-            s_log.writef("%u,left title after %d tries (scene mode %u)\n", frame, s_tries, mode);
-            s_log.flush();
-            s_done = true;
-        }
-        s_title_since = 0;
-        return;
-    }
-    if (!s_title_since) s_title_since = frame;
-    if (frame - s_title_since < TITLE_SETTLE) return;
-    if (s_tries && frame - s_last_try < RETRY_EVERY) return;
-    if (s_tries >= MAX_TRIES) { s_done = true; s_log.writef("%u,gave up\n", frame); s_log.flush(); return; }
-
+static void request(uint32_t frame, uintptr_t base, int kind) {
     auto prepare = reinterpret_cast<void (*)(int, int64_t*)>(base + OFF_PREPARE);
     auto mode_fn = reinterpret_cast<void (*)(int)>(base + OFF_MODE);
     auto source  = reinterpret_cast<void (*)(int, int, int64_t*)>(base + OFF_SOURCE);
     auto go      = reinterpret_cast<uint64_t (*)(void*)>(base + OFF_GO);
     int64_t params[2] = {-1, -1};
-    prepare(s_kind, params);
-    mode_fn(s_kind);
-    source(s_kind, s_course, params);
+    prepare(kind, params);
+    mode_fn(kind);
+    source(kind, s_course, params);
     uint64_t r = go(nullptr);
     s_tries++;
     s_last_try = frame;
-    s_log.writef("%u,requested coursebot %d kind %d (try %d, go -> %llx)\n", frame, s_course, s_kind, s_tries, (unsigned long long)r);
+    s_log.writef("%u,phase %d requested coursebot %d kind %d (try %d, go -> %llx)\n", frame, s_phase, s_course, kind, s_tries, (unsigned long long)r);
     s_log.flush();
+}
+
+void per_frame(uint32_t frame) {
+    if (s_course < 0 || s_done) return;
+    uintptr_t base = hk::ro::getMainModule()->range().start();
+    uint32_t mode = scene_mode(base);
+    if (s_phase == 0) {
+        // Phase 0: from the title (scene mode 6) into the Coursebot scene, kind 1
+        // (cTitleToRobo). Its list load opens every used slot into the cache the
+        // play transition points at.
+        if (mode != 6) {
+            if (s_tries && s_title_since) {
+                s_log.writef("%u,phase 0 done after %d tries (scene mode %u)\n", frame, s_tries, mode);
+                s_log.flush();
+                s_phase = 1; s_tries = 0; s_left_title = frame;
+            }
+            s_title_since = 0;
+            return;
+        }
+        if (!s_title_since) s_title_since = frame;
+        if (frame - s_title_since < TITLE_SETTLE) return;
+        if (s_tries && frame - s_last_try < RETRY_EVERY) return;
+        if (s_tries >= MAX_TRIES) { s_done = true; s_log.writef("%u,gave up in phase 0\n", frame); s_log.flush(); return; }
+        request(frame, base, 1);
+        return;
+    }
+    // Phase 1: give the Coursebot scene time to load its list, then play the entry.
+    if (mode == 7) {
+        s_log.writef("%u,in coursebot play\n", frame);
+        s_log.flush();
+        s_done = true;
+        return;
+    }
+    if (frame - s_left_title < ROBO_SETTLE) return;
+    if (s_tries && frame - s_last_try < RETRY_EVERY) return;
+    if (s_tries >= MAX_TRIES) { s_done = true; s_log.writef("%u,gave up in phase 1 (scene mode %u)\n", frame, mode); s_log.flush(); return; }
+    request(frame, base, s_kind);
 }
 
 }}  // namespace smm2::directboot
