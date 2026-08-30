@@ -50,9 +50,9 @@ field rail speed   f32 0x530>0xc8
 field rail state   u32 0x530>0xe0
 field rail counter u32 0x530>0xe4
 field rail attached u8 0x530>0x120
-# main-area camera bounds (docs/re-notes/camera.md), read from the global each call
-field rail cam_l   f32 @0x7102A692C8>0x28>0x04
-field rail cam_r   f32 @0x7102A692C8>0x28>0x0c
+# the camera's view slot 0 (global 0x7102C55080, views at +0x88): left x and the activation box's right edge
+field rail view_l  f32 @0x7102C55080>0x88>0x0c
+field rail act_r   f32 @0x7102C55080>0x88>0x5c
 """,
 }
 
