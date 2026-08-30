@@ -26,6 +26,8 @@ DECOMP = Path(os.environ.get("SMM2_DECOMP", HERE.parent.parent / "smm2-decomp"))
 ELF = DECOMP / "data/v3.0.3/main.elf"
 FUNCS = DECOMP / "data/v3.0.3/functions.csv"
 
+MAX_FIELDS = 24  # keep in step with src/probe.cpp
+
 PRESETS = {
     # The note block's per-frame rail applier; x0 = the block. Field paths are
     # from docs/re-notes/rail-follower.md in smm2-decomp (rider at +0x530,
@@ -48,6 +50,9 @@ field rail speed   f32 0x530>0xc8
 field rail state   u32 0x530>0xe0
 field rail counter u32 0x530>0xe4
 field rail attached u8 0x530>0x120
+# main-area camera bounds (docs/re-notes/camera.md), read from the global each call
+field rail cam_l   f32 @0x7102A692C8>0x28>0x04
+field rail cam_r   f32 @0x7102A692C8>0x28>0x0c
 """,
 }
 
@@ -154,14 +159,14 @@ def cmd_check(args) -> int:
             print(f"line {f['line']}: field {f['label']}: path deeper than 4")
             rc = 1
         try:
-            [int(s, 16) for s in steps]
+            [int(s[1:] if i == 0 and s.startswith("@") else s, 16) for i, s in enumerate(steps)]
         except ValueError:
             print(f"line {f['line']}: field {f['label']}: bad path {f['path']}")
             rc = 1
         per_hook[f["hook"]] = per_hook.get(f["hook"], 0) + 1
     for name, n in per_hook.items():
-        if n > 16:
-            print(f"hook {name}: {n} fields (max 16)")
+        if n > MAX_FIELDS:
+            print(f"hook {name}: {n} fields (max {MAX_FIELDS})")
             rc = 1
     return rc
 

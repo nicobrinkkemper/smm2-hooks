@@ -19,7 +19,7 @@ namespace smm2 {
 namespace probe {
 
 constexpr int MAX_HOOKS = 8;
-constexpr int MAX_FIELDS = 16;
+constexpr int MAX_FIELDS = 24;
 constexpr int MAX_DEPTH = 4;
 constexpr uintptr_t MAIN_BASE = 0x7100000000ull;
 static const char* CONFIG_PATH = "sd:/smm2-hooks/probe.txt";
@@ -30,6 +30,7 @@ struct Field {
     char name[24];
     Type type;
     uint8_t depth;              // number of path steps; all but the last dereference
+    uint8_t fromModule;         // path starts at the main module (@0x71... in probe.txt) instead of x0
     uint32_t path[MAX_DEPTH];
 };
 
@@ -53,7 +54,8 @@ static bool plausible(uintptr_t p, unsigned align) {
 }
 
 static bool read_field(uintptr_t x0, const Field& f, uint64_t& out) {
-    uintptr_t p = x0;
+    // a module path starts at the main module's base, so its first step is the global's offset
+    uintptr_t p = f.fromModule ? hk::ro::getMainModule()->range().start() : x0;
     for (int i = 0; i + 1 < f.depth; i++) {
         p += f.path[i];
         if (!plausible(p, 8)) return false;
@@ -202,6 +204,16 @@ static void parse_field(char* rest) {
     copy_name(f.name, sizeof f.name, label);
     if (!parse_type(type, f.type)) { s_log.writef("E,field %s: bad type %s\n", label, type); return; }
     char* p = path;
+    if (*p == '@') {            // @0x71...: a main-module address (functions.csv space), then the usual chain
+        f.fromModule = 1;
+        p++;
+        char* sep = std::strchr(p, '>');
+        if (sep) *sep = '\0';
+        unsigned long long va = std::strtoull(p, nullptr, 16);
+        if (va < MAIN_BASE) { s_log.writef("E,field %s: @address below main\n", label); return; }
+        f.path[f.depth++] = (uint32_t)(va - MAIN_BASE);
+        p = sep ? sep + 1 : nullptr;
+    }
     while (p && *p) {
         if (f.depth >= MAX_DEPTH) { s_log.writef("E,field %s: path deeper than %d\n", label, MAX_DEPTH); return; }
         char* sep = std::strchr(p, '>');
