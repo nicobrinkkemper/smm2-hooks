@@ -41,6 +41,7 @@ uint32_t s_title_since = 0;
 uint32_t s_last_try = 0;
 int s_tries = 0;
 int s_phase = 0;                // 0 title -> Coursebot (kind 1), 1 Coursebot -> play (kind s_kind)
+bool s_two_phase = false;       // coursebot2: go through the Coursebot scene first (course selection, experimental)
 uint32_t s_left_title = 0;
 bool s_done = false;
 
@@ -62,7 +63,13 @@ void load_config() {
     buf[n] = '\0';
     char* p = buf;
     while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    if (!std::strncmp(p, "coursebot", 9)) {
+    if (!std::strncmp(p, "coursebot2", 10)) {        // two-phase experiment: via the Coursebot scene
+        s_two_phase = true;
+        char* end = nullptr;
+        s_course = (int)std::strtol(p + 10, &end, 10);
+        if (end && *end) { long k = std::strtol(end, nullptr, 10); if (k > 0) s_kind = (int)k; }
+        s_log.writef("config coursebot2 %d kind %d\n", s_course, s_kind);
+    } else if (!std::strncmp(p, "coursebot", 9)) {   // single-phase: play the resident course
         char* end = nullptr;
         s_course = (int)std::strtol(p + 9, &end, 10);
         if (end && *end) { long k = std::strtol(end, nullptr, 10); if (k > 0) s_kind = (int)k; }
@@ -100,8 +107,26 @@ void per_frame(uint32_t frame) {
     if (s_course < 0 || s_done) return;
     uintptr_t base = hk::ro::getMainModule()->range().start();
     uint32_t mode = scene_mode(base);
+    if (s_phase == 0 && !s_two_phase) {
+        // Single phase: play the resident course directly (kind s_kind) from the title.
+        if (mode != 6) {
+            if (s_tries && s_title_since) {
+                s_log.writef("%u,left title after %d tries (scene mode %u)\n", frame, s_tries, mode);
+                s_log.flush();
+                s_done = true;
+            }
+            s_title_since = 0;
+            return;
+        }
+        if (!s_title_since) s_title_since = frame;
+        if (frame - s_title_since < TITLE_SETTLE) return;
+        if (s_tries && frame - s_last_try < RETRY_EVERY) return;
+        if (s_tries >= MAX_TRIES) { s_done = true; s_log.writef("%u,gave up\n", frame); s_log.flush(); return; }
+        request(frame, base, s_kind);
+        return;
+    }
     if (s_phase == 0) {
-        // Phase 0: from the title (scene mode 6) into the Coursebot scene, kind 1
+        // Phase 0 (coursebot2): from the title (scene mode 6) into the Coursebot scene, kind 1
         // (cTitleToRobo). Its list load opens every used slot into the cache the
         // play transition points at.
         if (mode != 6) {
