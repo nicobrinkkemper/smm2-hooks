@@ -134,8 +134,8 @@ static HkTrampoline<uint32_t, nn::fs::FileHandle, int64_t, const void*, size_t, 
 void init() {
     open_hook.installAtSym<"_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci">();
     write_hook.installAtSym<"_ZN2nn2fs9WriteFileENS0_10FileHandleElPKvmRKNS0_11WriteOptionE">();
-    read_hook.installAtSym<"_ZN2nn2fs8ReadFileEPmNS0_10FileHandleElPvm">();
-    read4_hook.installAtSym<"_ZN2nn2fs8ReadFileENS0_10FileHandleElPvm">();
+    // read_hook.installAtSym<"_ZN2nn2fs8ReadFileEPmNS0_10FileHandleElPvm">();   // suspect: hangs stub boots
+    // read4_hook.installAtSym<"_ZN2nn2fs8ReadFileENS0_10FileHandleElPvm">();   // suspect: hangs stub boots
 }
 
 } // namespace course_data
