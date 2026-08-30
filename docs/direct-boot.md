@@ -21,8 +21,29 @@ config coursebot 5 kind 4
 404,left title after 1 tries (scene mode 0)
 ```
 
-Remove or empty `boot.txt` for a normal title boot. The scene ids and the
+**Known limit:** the entry index does not reach a loader yet. The
+Coursebot's Play button acts on a course that was loaded into memory when
+the entry was selected in its UI; the replayed transition switches scene 4
+into play mode on whatever course is resident at the title (all entries
+0–13 played the same course in a sweep). The missing call is the
+Coursebot's course load for an entry; until it is replayed, the direct
+boot is a fast way into *a* playable course, not into a chosen one.
+
+Remove or empty `boot.txt` for a normal title boot (`tools/trace.py`
+deletes it right after launch). The scene ids and the
 transition-kind enum (`cNetworkError, cTitleToRobo, cTitleToNetwork,
 cRoboToEdit, cMyCourseToNormalPlay, ...`, a string at `0x71022E03FB`) are
 in the smm2-decomp notes; the entry index is the Coursebot entry (the slot
 files are `course_data_NNN.bcd`).
+
+## One-shot recordings
+
+`tools/trace.py` puts it together: it writes `boot.txt`, installs a probe
+config (or a preset), launches Eden, waits for Coursebot play, holds the
+buttons of `--walk` while sampling `status.bin`, stops Eden and decodes the
+log.
+
+```
+python3 tools/trace.py --preset rail --coursebot 5 --walk RIGHT:9 -o rail.csv
+python3 tools/trace.py --probe spawn.txt --coursebot 5 --walk RIGHT:9,LEFT:22 -o persist.csv
+```

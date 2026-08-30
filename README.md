@@ -83,7 +83,7 @@ and is wrong about the GDB stub until it is switched to `mcp/eden.py`.
 | `docs/level-generation.md` / `docs/level-modification.md` | Test levels, BCD layout |
 | `docs/tooling-gaps.md` | What keeps breaking, and what is fixed |
 | `docs/botting-patches.md` | Patches used by the automation |
-| `docs/direct-boot.md` | `boot.txt`: boot straight into a Coursebot course (play at 16 s) |
+| `docs/direct-boot.md` | `boot.txt`: boot straight into a Coursebot course (play at 16 s); `tools/trace.py` records a probe run in one command |
 
 ## Adding Hooks
 
