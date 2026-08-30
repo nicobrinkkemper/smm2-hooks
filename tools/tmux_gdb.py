@@ -115,3 +115,76 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
+
+# ── stub boot with hang detection ─────────────────────────────────────────
+# With the gdb stub on, Eden sometimes hangs at the launch screen: the stub
+# accepts the attach and the continue, but the guest never starts (the frame
+# counter in status.bin stays absent/frozen; on screen the launch logo just
+# sits there). A blind wait for the title cannot tell that apart from a slow
+# boot, so this helper verifies frames ADVANCE after the continue, re-sends
+# the continue once, and kills/relaunches once before failing loudly.
+
+def _frames() -> int | None:
+    try:
+        with open(STATUS_BIN, "rb") as f:
+            return struct.unpack("<I", f.read(4))[0]
+    except Exception:
+        return None
+
+
+def _frames_advancing(seconds: float = 20.0) -> bool:
+    start = _frames()
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        time.sleep(1.0)
+        now = _frames()
+        if now is not None and start is not None and now > start:
+            return True
+        if now is not None and start is None:
+            start = now
+    return False
+
+
+def _gateway() -> str:
+    out = subprocess.run(["sh", "-c", "ip route | awk '/default/ {print $3}'"],
+                         capture_output=True, text=True).stdout.strip()
+    return out or "127.0.0.1"
+
+
+def boot_stub(max_relaunches: int = 1) -> bool:
+    """Launch Eden with the stub, attach, continue, and verify the guest runs.
+
+    Returns True once frames advance. On a launch hang: re-sends the
+    continue, then kills and relaunches (up to max_relaunches). Prints what
+    it saw either way — a hang is a loud failure, not a long wait.
+    """
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "mcp"))
+    import eden  # noqa: WPS433
+
+    for attempt in range(max_relaunches + 1):
+        eden.kill()
+        subprocess.run(["tmux", "kill-session", "-t", SESSION], capture_output=True)
+        time.sleep(2)
+        r = eden.launch(eden.paths(), gdb=True)
+        if not r.get("process"):
+            print(f"boot_stub: launch failed: {r}")
+            return False
+        time.sleep(15)
+        subprocess.run(["tmux", "new-session", "-d", "-s", SESSION], check=True)
+        subprocess.run(["tmux", "send-keys", "-t", SESSION,
+                        f"gdb-multiarch -nx -ex 'target remote {_gateway()}:6543' "
+                        "-ex 'set confirm off' -ex 'set pagination off'", "Enter"], check=True)
+        time.sleep(8)
+        cont()
+        if _frames_advancing(20):
+            print(f"boot_stub: guest running (attempt {attempt + 1})")
+            return True
+        print(f"boot_stub: frames frozen after continue (attempt {attempt + 1}); re-sending c")
+        cont()
+        if _frames_advancing(15):
+            print("boot_stub: guest running after the second continue")
+            return True
+        print("boot_stub: LAUNCH HANG — the stub accepted the attach but the guest never started")
+    eden.kill()
+    subprocess.run(["tmux", "kill-session", "-t", SESSION], capture_output=True)
+    return False
