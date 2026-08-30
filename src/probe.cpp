@@ -20,6 +20,7 @@ namespace probe {
 
 constexpr int MAX_HOOKS = 8;
 constexpr int MAX_FIELDS = 24;
+constexpr int MAX_CALLERS = 8;
 constexpr int MAX_DEPTH = 4;
 constexpr uintptr_t MAIN_BASE = 0x7100000000ull;
 static const char* CONFIG_PATH = "sd:/smm2-hooks/probe.txt";
@@ -38,6 +39,7 @@ struct Hook {
     char name[24];
     uintptr_t vaddr;            // 0x71... address from functions.csv
     uint32_t every;             // log one call in `every`
+    uint8_t callers;            // return addresses to log after the fields (callers=N, max MAX_CALLERS)
     uint32_t calls;
     int nfields;
     Field fields[MAX_FIELDS];
@@ -72,8 +74,19 @@ static bool read_field(uintptr_t x0, const Field& f, uint64_t& out) {
     return false;
 }
 
+// The hook is entered by a branch, so the caller's x30 and x29 are intact at
+// entry: lr0 is the call site, and the frame records ([fp] = previous fp,
+// [fp+8] = its lr) walk the game's stack from there.
+static uintptr_t module_relative(uintptr_t a) {
+    const hk::ro::RoModule* mod = hk::ro::getMainModule();
+    uintptr_t base = mod->range().start();
+    if (a < base || a >= base + 0x2000000ull) return 0;
+    return a - base + MAIN_BASE;
+}
+
 static void on_call(int idx, uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3,
-                    uint64_t x4, uint64_t x5, uint64_t x6, uint64_t x7) {
+                    uint64_t x4, uint64_t x5, uint64_t x6, uint64_t x7,
+                    uintptr_t lr0, uintptr_t fp) {
     Hook& h = s_hooks[idx];
     h.calls++;
     if (h.every > 1 && (h.calls % h.every) != 0) return;
@@ -86,6 +99,15 @@ static void on_call(int idx, uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3,
             s_log.writef(",%llx", (unsigned long long)v);
         else
             s_log.write(",-", 2);
+    }
+    uintptr_t lr = lr0;
+    for (int i = 0; i < h.callers; i++) {
+        uintptr_t rel = module_relative(lr);
+        if (rel) s_log.writef(",%llx", (unsigned long long)rel); else s_log.write(",-", 2);
+        // next frame: our own record sits at fp; each record links to the previous
+        if (!plausible(fp, 8) || !plausible(fp + 8, 8)) { lr = 0; fp = 0; continue; }
+        lr = *reinterpret_cast<uintptr_t*>(fp + 8);
+        fp = *reinterpret_cast<uintptr_t*>(fp);
     }
     s_log.write("\n", 1);
 }
@@ -104,8 +126,10 @@ template <int I>
 HkTrampoline<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t> Slot<I>::hook =
     hk::hook::trampoline([](uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3,
                             uint64_t x4, uint64_t x5, uint64_t x6, uint64_t x7) -> uint64_t {
+        uintptr_t lr0 = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+        uintptr_t fp = reinterpret_cast<uintptr_t>(__builtin_frame_address(0));
         uint64_t r = Slot<I>::hook.orig(x0, x1, x2, x3, x4, x5, x6, x7);
-        on_call(I, x0, x1, x2, x3, x4, x5, x6, x7);
+        on_call(I, x0, x1, x2, x3, x4, x5, x6, x7, lr0, fp);
         return r;
     });
 
@@ -182,6 +206,10 @@ static void parse_hook(char* rest) {
     h.every = 1;
     for (char* opt = next_token(rest); opt; opt = next_token(rest))
         if (!std::strncmp(opt, "every=", 6)) h.every = (uint32_t)std::strtoul(opt + 6, nullptr, 10);
+        else if (!std::strncmp(opt, "callers=", 8)) {
+            unsigned long n = std::strtoul(opt + 8, nullptr, 10);
+            h.callers = (uint8_t)(n > MAX_CALLERS ? MAX_CALLERS : n);
+        }
     if (h.vaddr < MAIN_BASE || h.vaddr >= MAIN_BASE + 0x2000000ull) {
         s_log.writef("E,%s: address %s outside main\n", h.name, addr);
         return;
@@ -261,6 +289,8 @@ void init() {
         s_log.writef("H,%d,%s,%llx,%s", i, h.name, (unsigned long long)h.vaddr, ok ? "ok" : "failed");
         for (int j = 0; j < h.nfields; j++)
             s_log.writef(",%s:%s", h.fields[j].name, type_name(h.fields[j].type));
+        for (int j = 0; j < h.callers; j++)
+            s_log.writef(",lr%d:u64", j);
         s_log.write("\n", 1);
     }
     s_log.flush();

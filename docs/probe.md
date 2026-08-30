@@ -20,12 +20,15 @@ Host side: `tools/probe.py` (`preset`, `check`, `install --target eden`,
 
 ```
 # comment
-hook  <name> <0x71 address> [every=N]
+hook  <name> <0x71 address> [every=N] [callers=N]
 field <hook-name> <label> <type> <path>
 ```
 
 - `hook`: a function start from `functions.csv`. Up to 8. `every=N` logs one
-  call in N.
+  call in N. `callers=N` (max 8) appends N return addresses as `lr0..` columns
+  (`0x71...` in functions.csv space, `-` outside main): `lr0` is the call
+  site, the rest walk the frame records, so a row names who called the hooked
+  function and from where.
 - `field`: read after the call, relative to the hook's `x0`. Up to 24 per
   hook. `type` is `u8 u16 u32 u64 f32`. `path` is hex offsets joined by `>`;
   every step but the last dereferences a pointer: `0x230` is `*(x0+0x230)`,
