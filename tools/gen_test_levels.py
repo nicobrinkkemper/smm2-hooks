@@ -615,36 +615,36 @@ def level_track_note() -> LevelBuilder:
 
 @test_level(11, "Rail Trace")
 def level_rail_trace() -> LevelBuilder:
-    """A closed track loop with every piece kind, for the RailMover probe.
+    """A closed rectangular track loop, one note block riding it clockwise.
 
-    Coursebot ACCEPTED this file on 2026-08-30 (validate_slots, alongside a
-    4-piece straight chain and the loop without its block), so the curve
-    shapes and the (0x71, 0x104) words on every non-first piece pass the
-    game's check. Whether the block rides the whole loop is what the probe
-    recording will show; the words are the editor's per-end state and are
-    stored verbatim in the Track object's extended field by the loader.
+    Coursebot accepted it and the block rides every corner (probe trace
+    2026-08-30: 544 frames per lap = 106 + 51 + 64 + 51, twice). Geometry:
+    end points are cell centres of the 3x3 box, curves are quarter circles
+    of radius 1.5 tiles: BL centre (x+2, y+2), BR (x+1, y+2), TR (x+1, y+1),
+    TL (x+2, y+1). Words are (w1, w2) = (ends[1], ends[0]) per the EditRail
+    tables: 0x104 = no tile (the other piece owns the joint), 0x90 = joint
+    with the rail horizontal there, 0x91 = joint with the rail vertical
+    opening up, 0x7x = closed cap (the mover reverses). Every joint has
+    exactly one owner; 0x9f is the H-to-diagonal joint, not an H left join.
 
-    Loop, 3x3 boxes on a 2-tile grid, one note block on the bottom run
-    (probe preset `rail` in tools/probe.py):
-
-        TL (9,12)  H (11,12)  H (13,12)  TR (15,12)
-        V  (9,10)                        V  (15,10)
-        BL (9,8)   H (11,8)   H (13,8)   BR (15,8)
+        TL (9,13)   H (11,14)  H (13,14)  TR (15,13)      rail y = 15.5
+        V  (8,11)                         V  (16,11)      rail x = 9.5 / 17.5
+        BL (9,9)    H (11,8)   H (13,8)   BR (15,9)       rail y = 9.5
     """
+    N = 0x0104
     level = LevelBuilder("Rail Trace", style='SMB1', theme='Ground')
     level.goal_y = 4
     level.add_ground_fill(7, 23, 4)
-    chain_first, chain_next = (0x0090, 0x0070), (0x0071, 0x0104)
-    level.add_track(9, 8, TRACK_SHAPE_CURVE_BL, ends=chain_first)
-    with_block = level.add_track(11, 8, TRACK_SHAPE_HORIZONTAL, ends=chain_next)
-    level.add_track(13, 8, TRACK_SHAPE_HORIZONTAL, ends=chain_next)
-    level.add_track(15, 8, TRACK_SHAPE_CURVE_BR, ends=chain_next)
-    level.add_track(15, 10, TRACK_SHAPE_VERTICAL, ends=chain_next)
-    level.add_track(15, 12, TRACK_SHAPE_CURVE_TR, ends=chain_next)
-    level.add_track(13, 12, TRACK_SHAPE_HORIZONTAL, ends=chain_next)
-    level.add_track(11, 12, TRACK_SHAPE_HORIZONTAL, ends=chain_next)
-    level.add_track(9, 12, TRACK_SHAPE_CURVE_TL, ends=chain_next)
-    level.add_track(9, 10, TRACK_SHAPE_VERTICAL, ends=chain_next)
+    level.add_track(9, 9, TRACK_SHAPE_CURVE_BL, ends=(0x0090, 0x0091))
+    with_block = level.add_track(11, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, N))
+    level.add_track(13, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, N))
+    level.add_track(15, 9, TRACK_SHAPE_CURVE_BR, ends=(0x0091, N))
+    level.add_track(16, 11, TRACK_SHAPE_VERTICAL, ends=(0x0091, N))
+    level.add_track(15, 13, TRACK_SHAPE_CURVE_TR, ends=(N, N))
+    level.add_track(13, 14, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, N))
+    level.add_track(11, 14, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, N))
+    level.add_track(9, 13, TRACK_SHAPE_CURVE_TL, ends=(0x0090, N))
+    level.add_track(8, 11, TRACK_SHAPE_VERTICAL, ends=(0x0091, N))
     level.add_note_block_on_track(with_block, travel_left=False)
     return level
 
