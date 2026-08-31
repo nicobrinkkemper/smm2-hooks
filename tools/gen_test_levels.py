@@ -649,6 +649,25 @@ def level_rail_trace() -> LevelBuilder:
     return level
 
 
+@test_level(12, "Rail Diag")
+def level_rail_diag() -> LevelBuilder:
+    """A bent capped track: cap - H - 0x27 joint - ascending diagonal - cap,
+    one note block riding it. Certifies the diagonal speed (0.5303 per
+    axis), the junction transition and the diagonal cap reversal that the
+    sim rider currently models analytically (smm2-decomp PR #135).
+
+    Grid cells: cap (9,9), H body (10,9), joint 0x27 (11,9), asc body
+    (12,10), cap (13,11) — the zoo2 first-track geometry with a rider.
+    """
+    level = LevelBuilder("Rail Diag", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    with_block = level.add_track(9, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x009F, 0x0070))
+    level.add_track(11, 9, TRACK_SHAPE_ASC_DIAGONAL, ends=(0x0077, 0x0104))
+    level.add_note_block_on_track(with_block, travel_left=False)
+    return level
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
