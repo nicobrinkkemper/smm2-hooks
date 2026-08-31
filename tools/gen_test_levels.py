@@ -668,6 +668,23 @@ def level_rail_diag() -> LevelBuilder:
     return level
 
 
+@test_level(13, "Rail Diag2")
+def level_rail_diag2() -> LevelBuilder:
+    """Rail Diag with the correct west-side joint: editor 0xA5 -> cell 0x2D,
+    pair (northeast, west) per the dumped connection-pair table
+    (smm2-decomp data/v3.0.3/rail_tables.json pair_2d). The mover should
+    BEND at the joint onto the ascending diagonal and shuttle cap to cap;
+    Rail Diag (slot 12, 0x9F) is the falling counterpart.
+    """
+    level = LevelBuilder("Rail Diag2", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    with_block = level.add_track(9, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x00A5, 0x0070))
+    level.add_track(11, 9, TRACK_SHAPE_ASC_DIAGONAL, ends=(0x0077, 0x0104))
+    level.add_note_block_on_track(with_block, travel_left=False)
+    return level
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
