@@ -192,6 +192,25 @@ def parse_area(area_data):
     a['actor_count'] = struct.unpack_from('<I', area_data, 0x1C)[0]
     a['tile_count'] = struct.unpack_from('<I', area_data, 0x3C)[0]
 
+    # Track records (id-59 pieces): 12 bytes each at +0x28624, count at +0x40.
+    # Layout per the editor: unk u16, flags u8 (1 = an object rides), x u8,
+    # y u8, shape u8, own id u16, two end words (0x70..0x77 caps, 0x9x owned
+    # joints, 0x104 = the piece across the joint owns it).
+    a['track_count'] = struct.unpack_from('<I', area_data, 0x40)[0]
+    tracks = []
+    for i in range(min(a['track_count'], 1500)):
+        off = 0x28624 + i * 12
+        raw = area_data[off:off + 12]
+        if len(raw) < 12:
+            break
+        tracks.append({
+            'has_object': raw[2] & 1,
+            'x': raw[3], 'y': raw[4], 'shape': raw[5],
+            'lid': struct.unpack_from('<H', raw, 6)[0],
+            'ends': list(struct.unpack_from('<HH', raw, 8)),
+        })
+    a['tracks'] = tracks
+
     # Parse actors
     actors = []
     for i in range(min(a['actor_count'], 2600)):
