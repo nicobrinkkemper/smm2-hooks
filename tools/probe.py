@@ -66,6 +66,11 @@ field player pos_y f32 0x234
 field player vel_x f32 0x23C
 field player vel_y f32 0x240
 field player grav  f32 0x640
+# The state machine at PlayerObject+0x3F8 (confirmed-states.md): both the
+# embedded and the pointer interpretation; the sane one wins.
+field player st_e   u32 0x400
+field player stfr_e u32 0x404
+field player st_p   u32 0x3F8>0x8
 """,
 }
 
