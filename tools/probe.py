@@ -54,6 +54,19 @@ field rail attached u8 0x530>0x120
 field rail view_l  f32 @0x7102C55080>0x88>0x0c
 field rail act_r   f32 @0x7102C55080>0x88>0x5c
 """,
+    # The player's per-frame horizontal movement (sub_71015D3CC0, x0 = the
+    # player actor). Per-frame and tear-free, unlike the polled status.bin
+    # samples. vel_y offset confirmed by the gravity selector
+    # (sub_71015D25F0 reads player+0x240).
+    "player": """\
+# Player trace: hook the horizontal movement step, x0 = player
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player grav  f32 0x640
+""",
 }
 
 
