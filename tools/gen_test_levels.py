@@ -608,6 +608,23 @@ def level_camera_walk() -> LevelBuilder:
     return b
 
 
+@test_level(15, "Track Spawn")
+def level_track_spawn() -> LevelBuilder:
+    """Track Note moved out of the initial view: the same two-piece rail with
+    a note block, but at x 40..44 on an 80-tile course, so the block spawns
+    while the player walks right (view right edge + 55 units reaches it at
+    view left ~201). Rail at y 11.5, block starts at (43.5, 11.5) tiles.
+    """
+    level = LevelBuilder("Track Spawn", style='SMB1', theme='Ground')
+    level.width = 80
+    level.goal_y = 4
+    level.add_ground_fill(7, level.width - 11, 4)
+    level.add_track(40, 10, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, 0x0070))
+    with_block = level.add_track(42, 10, TRACK_SHAPE_HORIZONTAL, ends=(0x0071, 0x0104))
+    level.add_note_block_on_track(with_block)
+    return level
+
+
 @test_level(10, "Track Note")
 def level_track_note() -> LevelBuilder:
     """Two joined horizontal track pieces with a note block riding them.
