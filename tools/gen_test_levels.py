@@ -656,7 +656,7 @@ def level_camera_drop() -> LevelBuilder:
     b = LevelBuilder("Camera Drop", "SMB1", "Ground")
     b.width = 80
     b.start_y = 16
-    b.add_ground_block(0, 20, y_surface=16, height=17)
+    b.add_ground_block(7, 20, y_surface=15, height=16)   # x 0..6 is the generated start area; feet at row 16
     b.add_ground_block(21, b.width - 11, y_surface=4, height=5)
     b.goal_y = 5
     return b
