@@ -1,6 +1,6 @@
 ---
 name: eden-debug
-description: Drive a Super Mario Maker 2 debug session in the Eden emulator from WSL — launch Eden on the Windows side with the smm2-hooks mod, boot a test level, attach GDB in a persistent tmux session, find functions under ASLR by byte signature, set hardware breakpoints/watchpoints, read hits, and tear down cleanly. Use for any runtime question about the game (who writes a field, what a function is called with, actor pointers), for verifying generated test levels in the editor, and whenever the user mentions Eden, GDB, hooks, watchpoints, or "run it in the emulator".
+description: Drive a Super Mario Maker 2 debug session in the Eden emulator from WSL — launch Eden on the Windows side with the smm2-hooks mod, boot a test level, attach GDB in a persistent tmux session, find functions under ASLR by byte signature, find actors by vtable scan, set watchpoints, read hits, and tear down cleanly. Use for any runtime question about the game (who writes a field, what a function is called with, actor pointers), for verifying generated test levels in the editor, and whenever the user mentions Eden, GDB, hooks, watchpoints, or "run it in the emulator".
 ---
 
 # Eden debug session
@@ -33,7 +33,11 @@ modes.
 
 ## Rules (non-negotiable)
 
-- `hbreak`, `watch`, `rwatch`, `awatch` only. **Never `break`.**
+- `watch`, `rwatch`, `awatch` only. **Never `break`.** Eden v0.2.0-rc1's stub
+  answers EMPTY to `Z1`, so `hbreak` is accepted by GDB and then fails at the
+  next continue ("Cannot insert hardware breakpoint ... too many"); to get an
+  actor pointer without a breakpoint, scan the actor heap for its vtable
+  (recipe in section 6).
 - One persistent GDB inside tmux session `eden-gdb`. Never connect with
   `gdb -batch` or a second client; `tools/eden_gdb.py` opens its own socket and is
   only safe when no tmux GDB is attached.
@@ -166,15 +170,16 @@ a session; if both agree, the base is right.
 
 ## 6. Recipes
 
-**Actor pointer from a function it runs on** (e.g. the note block's `execute`,
-`sub_71013951C0`, offset `0x13951c0`):
+**Actor pointer by vtable scan** (no breakpoints on this Eden build). The
+vtable is a static address from the decomp (e.g. `OnpuBlock` `0x7102938410`);
+actors sit in the same heap region as the player, below it:
 
-    hbreak *<runtime address>
-    c
-    # on hit (only while scene_mode is 5/7):
-    p/x $x0            # this
-    delete <n>
-    c
+    # player_ptr = u64 at status.bin+0x68; runtime vtable = base + (vtable - 0x7100000000)
+    find /g <player_ptr - 0x8000000>, <player_ptr + 0x10000>, <runtime vtable>
+    # one hit per live instance; confirm with x/2fw <hit + 0x230> (pos_x, pos_y)
+
+128 MB takes about a minute over the stub. `mon get mappings` lists what is
+mapped if `find` errors on an unmapped page.
 
 **Who writes a field**: with the actor pointer `A` and the field offset
 (`docs/OFFSETS.md`, e.g. `pos_x` = `+0x230`):
@@ -193,6 +198,9 @@ tmux GDB session is at the prompt. `eden_gdb_auto.py get-player` finds the
 player object via `changeState`.
 
 **Read fields**: `x/1fw (A + 0x230)` (float), `x/1wx (A + 0x3F8)` (state id).
+
+**Conditional watchpoints** (`watch ... if ...`) are not honoured by the stub;
+loop `c` / read instead.
 
 ## 7. Teardown
 
@@ -237,7 +245,7 @@ player object via `changeState`.
 
 - SIGTRAP storm right after connecting, no breakpoints of yours: stale software
   breakpoints from an old session (`docs/tooling-gaps.md` #1). `handle SIGTRAP
-  nostop noprint pass` hides it; if the game still stalls, Eden's code cache
+  nostop noprint nopass` hides it (never `pass`, see Problem 7); if the game still stalls, Eden's code cache
   must be cleared (reinstall the game). Report; do not keep retrying.
 - `target remote` refuses: wrong host IP (recheck `ip route`), stub disabled
   (`emu_session.py gdb-on`, needs a relaunch), or Eden not up yet (wait ~15 s).
@@ -245,5 +253,15 @@ player object via `changeState`.
   (`emu_session.py overview` shows both).
 - `find` returns nothing: the pattern includes a position-dependent word, or the
   range is wrong; verify with `x/8xw <candidate>` against the ELF bytes.
+- Never SIGTERM `gdb-multiarch` while it is attached: its quit path sends `k`
+  to the stub and Eden shuts the game down (seen 2026-08-29). `kill -9` only
+  drops the connection and the game keeps running.
+- A tool call the host moved to the background (>120 s) wedges that MCP
+  server's channel for every later call, even though the server is idle;
+  the fix is a `/mcp` reconnect. Long waits go through tmux (section 3) or a
+  background `tools/smm2.py` script, never through a blocking MCP call.
+- `eden_launch(gdb=True)` needs `use_gdbstub\default=false` as well as
+  `use_gdbstub=true` in the ini; with the `\default` flag set Eden ignores the
+  value (fixed in `eden.set_gdbstub`).
 - Watchpoint never hits: the object is not the one you think (check `getClassName`
   via the vtable slot 2), or the field is written by DMA-like memcpy; try `awatch`.
