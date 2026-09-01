@@ -132,6 +132,10 @@ def set_gdbstub(p: EdenPaths, enabled: bool) -> bool:
     b = Path(p.config_ini).read_bytes()
     want = f"use_gdbstub={'true' if enabled else 'false'}".encode()
     new = re.sub(rb"use_gdbstub=(true|false)", want, b, count=1)
+    # Qt writes `key\default=true` next to a value at its default; Eden then
+    # reads the default, not the value. Enabling must clear that marker.
+    marker = b"use_gdbstub\\default=false" if enabled else b"use_gdbstub\\default=true"
+    new = re.sub(rb"use_gdbstub\\default=(true|false)", lambda _m: marker, new, count=1)
     if new != b:
         Path(p.config_ini).write_bytes(new)
         return True
