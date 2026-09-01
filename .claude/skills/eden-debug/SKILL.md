@@ -245,7 +245,7 @@ loop `c` / read instead.
 
 - SIGTRAP storm right after connecting, no breakpoints of yours: stale software
   breakpoints from an old session (`docs/tooling-gaps.md` #1). `handle SIGTRAP
-  nostop noprint pass` hides it; if the game still stalls, Eden's code cache
+  nostop noprint nopass` hides it (never `pass`, see Problem 7); if the game still stalls, Eden's code cache
   must be cleared (reinstall the game). Report; do not keep retrying.
 - `target remote` refuses: wrong host IP (recheck `ip route`), stub disabled
   (`emu_session.py gdb-on`, needs a relaunch), or Eden not up yet (wait ~15 s).

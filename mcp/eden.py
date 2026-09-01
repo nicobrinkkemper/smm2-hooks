@@ -120,8 +120,14 @@ def paths() -> EdenPaths:
 
 def gdb_config(p: EdenPaths) -> dict:
     vals = _read_ini(p.config_ini)
+    # Qt keeps `key\default=true` beside a value that is still at its default;
+    # Eden then reads the default (false), whatever the value says.
+    value_on = vals.get("use_gdbstub", "?") == "true"
+    at_default = vals.get("use_gdbstub\\default", "false") == "true"
     return {
-        "use_gdbstub": vals.get("use_gdbstub", "?") == "true",
+        "use_gdbstub": value_on and not at_default,
+        "use_gdbstub_value": value_on,
+        "use_gdbstub_default_marker": at_default,
         "port": int(vals.get("gdbstub_port", "6543") or 6543),
         "ini": p.config_ini,
     }
