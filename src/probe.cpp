@@ -31,8 +31,9 @@ struct Field {
     char name[24];
     Type type;
     uint8_t depth;              // number of path steps; all but the last dereference
-    uint8_t fromModule;         // path starts at the main module (@0x71... in probe.txt) instead of x0
+    uint8_t fromModule;         // 1: path starts at the main module (@0x71... in probe.txt); 2: at absBase (@@0x...)
     uint32_t path[MAX_DEPTH];
+    uintptr_t absBase;          // @@0x...: an absolute address, e.g. a heap object at a stable address
 };
 
 struct Hook {
@@ -57,7 +58,7 @@ static bool plausible(uintptr_t p, unsigned align) {
 
 static bool read_field(uintptr_t x0, const Field& f, uint64_t& out) {
     // a module path starts at the main module's base, so its first step is the global's offset
-    uintptr_t p = f.fromModule ? hk::ro::getMainModule()->range().start() : x0;
+    uintptr_t p = f.fromModule == 2 ? f.absBase : f.fromModule ? hk::ro::getMainModule()->range().start() : x0;
     for (int i = 0; i + 1 < f.depth; i++) {
         p += f.path[i];
         if (!plausible(p, 8)) return false;
@@ -232,7 +233,16 @@ static void parse_field(char* rest) {
     copy_name(f.name, sizeof f.name, label);
     if (!parse_type(type, f.type)) { s_log.writef("E,field %s: bad type %s\n", label, type); return; }
     char* p = path;
-    if (*p == '@') {            // @0x71...: a main-module address (functions.csv space), then the usual chain
+    if (p[0] == '@' && p[1] == '@') {   // @@0x...: an absolute address (no relocation), then the usual chain
+        f.fromModule = 2;
+        p += 2;
+        char* sep = std::strchr(p, '>');
+        if (sep) *sep = '\0';
+        f.absBase = (uintptr_t)std::strtoull(p, nullptr, 16);
+        if (!f.absBase) { s_log.writef("E,field %s: bad @@address\n", label); return; }
+        p = sep ? sep + 1 : nullptr;
+        if (!p || !*p) f.path[f.depth++] = 0;   // a bare @@address reads the value there
+    } else if (*p == '@') {     // @0x71...: a main-module address (functions.csv space), then the usual chain
         f.fromModule = 1;
         p++;
         char* sep = std::strchr(p, '>');

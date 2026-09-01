@@ -220,7 +220,7 @@ def cmd_check(args) -> int:
             print(f"line {f['line']}: field {f['label']}: path deeper than 4")
             rc = 1
         try:
-            [int(s[1:] if i == 0 and s.startswith("@") else s, 16) for i, s in enumerate(steps)]
+            [int(s.lstrip("@") if i == 0 and s.startswith("@") else s, 16) for i, s in enumerate(steps)]
         except ValueError:
             print(f"line {f['line']}: field {f['label']}: bad path {f['path']}")
             rc = 1

@@ -37,6 +37,10 @@ field <hook-name> <label> <type> <path>
   global at `0x7102A692C8` (functions.csv space, relocated at runtime),
   follows it, and reads `+0x04` of the object at `+0x28`. That logs any
   global next to the hooked object's fields, e.g. the camera bounds.
+  `@@0x21aa468784` is an absolute address, not relocated: for heap objects
+  that sit at the same address every launch (the camera state and its
+  trackers do on this build); a bare `@@addr` reads the value there,
+  `@@addr>0x10` follows a pointer at it first.
 
 `python3 tools/probe.py preset rail` prints the RailMover trace config
 (block rail applier `sub_710138C520`, mover fields from the decomp's
