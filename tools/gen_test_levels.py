@@ -646,6 +646,22 @@ def level_camera_stairs() -> LevelBuilder:
     return b
 
 
+@test_level(17, "Camera Drop")
+def level_camera_drop() -> LevelBuilder:
+    """A long descent for the vertical camera: the course starts on a
+    plateau at y 16 (start_y raised, ground under it), and at x 21 the floor
+    drops twelve tiles to y 4 for the rest of an 80-tile course. Walk right
+    and the view bottom has to follow the player down 192 units.
+    """
+    b = LevelBuilder("Camera Drop", "SMB1", "Ground")
+    b.width = 80
+    b.start_y = 16
+    b.add_ground_block(0, 20, y_surface=16, height=17)
+    b.add_ground_block(21, b.width - 11, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
 @test_level(10, "Track Note")
 def level_track_note() -> LevelBuilder:
     """Two joined horizontal track pieces with a note block riding them.
