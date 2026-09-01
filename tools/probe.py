@@ -58,6 +58,39 @@ field rail act_r   f32 @0x7102C55080>0x88>0x5c
     # player actor). Per-frame and tear-free, unlike the polled status.bin
     # samples. vel_y offset confirmed by the gravity selector
     # (sub_71015D25F0 reads player+0x240).
+    # The camera beside the player: hook the player's movement step and read
+    # view slot 0 of the camera global (docs/re-notes/camera-follow.md in
+    # smm2-decomp): left/bottom/right/top at +0x0C..+0x18, centre at +0x1C,
+    # activation box at +0x54..+0x60; facing = player+0x26C (0 right, 1 left).
+    "camera": """\
+# Camera trace: hook the player's horizontal movement step (per frame, x0 =
+# player) and read the area's camera view beside it. View slot 0 of the
+# camera global 0x7102C55080 (+0x88 holds the view pointers; activation.md):
+# the spawner reads +0x0C..+0x18 as left, bottom, right, top.
+hook cam 0x71015D3CC0
+field cam pos_x  f32 0x230
+field cam pos_y  f32 0x234
+field cam vel_x  f32 0x23C
+field cam vel_y  f32 0x240
+field cam st_e   u32 0x400
+field cam facing u32 0x26C
+field cam left   f32 @0x7102C55080>0x88>0x0c
+field cam bottom f32 @0x7102C55080>0x88>0x10
+field cam right  f32 @0x7102C55080>0x88>0x14
+field cam top    f32 @0x7102C55080>0x88>0x18
+field cam half_w f32 @0x7102C55080>0x88>0x1c
+field cam half_h f32 @0x7102C55080>0x88>0x20
+field cam v24    f32 @0x7102C55080>0x88>0x24
+field cam v28    f32 @0x7102C55080>0x88>0x28
+field cam v2c    f32 @0x7102C55080>0x88>0x2c
+field cam v30    f32 @0x7102C55080>0x88>0x30
+field cam v34    f32 @0x7102C55080>0x88>0x34
+field cam v38    f32 @0x7102C55080>0x88>0x38
+field cam v3c    f32 @0x7102C55080>0x88>0x3c
+field cam v40    f32 @0x7102C55080>0x88>0x40
+field cam act_l  f32 @0x7102C55080>0x88>0x54
+field cam act_r  f32 @0x7102C55080>0x88>0x5c
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
@@ -71,6 +104,16 @@ field player grav  f32 0x640
 field player st_e   u32 0x400
 field player stfr_e u32 0x404
 field player st_p   u32 0x3F8>0x8
+# The pad object at player+0x550 (the gravity selector reads +22/+30 to
+# pick the held table): a spread of its bytes around those flags.
+field player pad14 u8 0x550>0x14
+field player pad15 u8 0x550>0x15
+field player pad16 u8 0x550>0x16
+field player pad17 u8 0x550>0x17
+field player pad1c u8 0x550>0x1C
+field player pad1d u8 0x550>0x1D
+field player pad1e u8 0x550>0x1E
+field player pad1f u8 0x550>0x1F
 """,
 }
 
