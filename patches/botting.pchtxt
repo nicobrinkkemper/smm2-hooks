@@ -1,6 +1,7 @@
 @nsobid-C2DC405AC414C37C8B1C50219C7A0F0C
 #Super Mario Maker 2 3.0.3 USA
-# Botting optimizations - skip delays, faster loading
+# Botting: the same intro skip as skip_intro.pchtxt, kept as the automation
+# profile so loading-delay patches can join it once they are known
 
 @flag print_values
 @flag offset_shift 0x100

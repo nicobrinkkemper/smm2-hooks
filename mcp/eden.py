@@ -363,8 +363,11 @@ if __name__ == "__main__":
         sys.exit(0)
     for flag, on in (("--enable", True), ("--disable", False)):
         if flag in argv:
-            name = argv[argv.index(flag) + 1]
-            print(json.dumps(set_patch(paths(), name, on)))
+            i = argv.index(flag) + 1
+            if i >= len(argv) or argv[i].startswith("--"):
+                print(f"usage: eden.py {flag} <patch>   (names: eden.py --patches)", file=sys.stderr)
+                sys.exit(2)
+            print(json.dumps(set_patch(paths(), argv[i], on)))
             sys.exit(0)
     if "--launch" in sys.argv[1:]:
         if process():
