@@ -603,7 +603,7 @@ def level_camera_walk() -> LevelBuilder:
     """
     b = LevelBuilder("Camera Walk", "SMB1", "Ground")
     b.width = 120
-    b.add_ground_block(7, b.width - 12, y_surface=4, height=5)
+    b.add_ground_block(7, b.width - 11, y_surface=4, height=5)   # ends 1.5 tiles before the pole, like Flat Ground
     b.goal_y = 5
     return b
 
