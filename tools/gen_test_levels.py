@@ -385,6 +385,11 @@ class LevelBuilder:
                              'flags': flags, 'lid': track_index, '_half_tile_offset': True})
         tr['has_object'] = True
 
+    def add_note_block(self, x: int, y: int, wings: bool = False):
+        """A free-standing note block (id 23), bottom-left tile at (x, y)."""
+        flags = 0x06000040 | (FLAG_WINGS if wings else 0)
+        self.objects.append({'id': OBJ_NOTE_BLOCK, 'x': x, 'y': y, 'flags': flags})
+
     def add_mushroom(self, x: int, y: int):
         """Add a mushroom in a ? block."""
         self.objects.append({
@@ -658,6 +663,22 @@ def level_camera_drop() -> LevelBuilder:
     b.start_y = 16
     b.add_ground_block(7, 20, y_surface=15, height=16)   # x 0..6 is the generated start area; feet at row 16
     b.add_ground_block(21, b.width - 11, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(18, "Note Bounce")
+def level_note_bounce() -> LevelBuilder:
+    """A free-standing note block three tiles above the floor: jump on it
+    and bounce while a probe logs the player and the block every frame,
+    for the bounce velocity and the note frame (bead 8og0.5).
+    """
+    b = LevelBuilder("Note Bounce", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    # A capped one-piece track: the block shuttles one tile and stays put
+    # enough to land on; the on-track actor (id 36) runs sub_71013951C0.
+    t = b.add_track(11, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0071, 0x0070))   # end[0] -> right cell (right cap 0x71), end[1] -> left cell (left cap 0x70)
+    b.add_note_block_on_track(t)
     b.goal_y = 5
     return b
 
