@@ -625,6 +625,27 @@ def level_track_spawn() -> LevelBuilder:
     return level
 
 
+@test_level(16, "Camera Stairs")
+def level_camera_stairs() -> LevelBuilder:
+    """Vertical camera: flat ground, then a staircase of one-tile steps up
+    to y 16 (three tiles per step), a plateau, and a drop back to the floor.
+    Walk right with a jump every step and the view bottom has to follow the
+    player up and back down while the probe logs both.
+    """
+    b = LevelBuilder("Camera Stairs", "SMB1", "Ground")
+    b.width = 120
+    b.add_ground_block(7, 20, y_surface=4, height=5)
+    x = 21
+    for step in range(12):                       # surfaces y 5..16
+        b.add_ground_block(x, x + 2, y_surface=5 + step, height=6 + step)
+        x += 3
+    b.add_ground_block(x, x + 12, y_surface=16, height=17)   # plateau x 57..69
+    x += 13
+    b.add_ground_block(x, b.width - 11, y_surface=4, height=5)   # floor again
+    b.goal_y = 5
+    return b
+
+
 @test_level(10, "Track Note")
 def level_track_note() -> LevelBuilder:
     """Two joined horizontal track pieces with a note block riding them.
