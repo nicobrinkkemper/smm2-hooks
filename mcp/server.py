@@ -13,7 +13,9 @@ import json
 import os
 import subprocess
 import sys
+import asyncio
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -154,7 +156,7 @@ def _nav_running() -> bool:
 
 
 @tool(exclusive=True)
-def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int = 45, budget: int = 100) -> dict:
+async def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int = 45, budget: int = 100) -> dict:
     """Navigate from the title screen: target 'editor' (edit-time), 'editor_play' (test-play the editor course), or 'coursebot' with a slot. A slot the game lists starts Coursebot play (scene_mode 7); an empty slot only offers 'Make New Course', so it opens the editor with a default course and MINUS starts test-play (scene_mode 5) instead. Read scene_mode in the returned status. The call returns within `budget` seconds; if navigation is still going it returns pending=true and keeps going, game_status then carries the outcome under 'boot', and every tool that drives the game refuses until it is done. The final result reports 'registered' as save.dat stands after the visit (Coursebot may delete the slot on the way in)."""
     if target == "coursebot" and slot is None:
         return {"error": "slot required"}
@@ -185,7 +187,11 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
     t = threading.Thread(target=navigate, name="game_boot", daemon=True)
     _NAV.update(thread=t, result={"ok": False, "pending": True, "target": target, "slot": slot})
     t.start()
-    t.join(budget)
+    # Poll instead of join: a join here blocks the server's event loop and
+    # every other tool with it for up to `budget` seconds (seen 2026-09-01).
+    deadline = time.monotonic() + budget
+    while t.is_alive() and time.monotonic() < deadline:
+        await asyncio.sleep(0.5)
     return dict(_NAV["result"])
 
 
@@ -205,7 +211,8 @@ def _registered_slots() -> set[int] | None:
 def levels_list() -> dict:
     """Generated test levels (by name) and the Coursebot save slots. `registered` is what the game lists (save.dat); a .bcd on disk without it only offers 'Make New Course', so game_boot lands in editor test-play, not Coursebot play."""
     sys.argv = ["x"]
-    import gen_test_levels as g  # noqa: WPS433
+    import importlib, gen_test_levels as g  # noqa: WPS433
+    g = importlib.reload(g)   # levels added since the server started must show up
     import parse_course as pc  # noqa: WPS433
     gen = {slot: name for slot, (name, _) in sorted(g.TEST_LEVELS.items())}
     if not P.save_dir:
@@ -312,7 +319,8 @@ def level_install(slot: int, level: str, companions_from: int | None = None) -> 
     if (err := _slot_error(slot)):
         return err
     sys.argv = ["x"]
-    import gen_test_levels as g  # noqa: WPS433
+    import importlib, gen_test_levels as g  # noqa: WPS433
+    g = importlib.reload(g)   # levels added since the server started must show up
     match = [(s, n, f) for s, (n, f) in g.TEST_LEVELS.items() if n == level]
     if not match:
         return {"error": f"unknown level {level!r}", "available": [n for _, (n, _) in g.TEST_LEVELS.items()]}
