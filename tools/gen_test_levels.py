@@ -208,6 +208,7 @@ class LevelBuilder:
         self.style_id = STYLES[style]
         self.theme_id = THEMES[theme]
         self.objects: List[dict] = []
+        self.width = AREA_WIDTH   # tiles; goal_x and the area size derive from it
         self.ground_tiles: List[Tuple[int, int, int]] = []
         self.start_y = 5  # tiles
         self.goal_y = None  # auto-calculated if None
@@ -402,7 +403,7 @@ class LevelBuilder:
         # Header
         data[0x00] = self.start_y
         data[0x01] = self.goal_y if self.goal_y else self.start_y
-        struct.pack_into('<h', data, 0x02, int((AREA_WIDTH - 9.5) * 10))  # tenths of a tile; the pole stands 9.5 tiles from the right edge
+        struct.pack_into('<h', data, 0x02, int((self.width - 9.5) * 10))  # tenths of a tile; the pole stands 9.5 tiles from the right edge
         struct.pack_into('<h', data, 0x04, 300)  # time
         struct.pack_into('<h', data, 0x08, 2026)
         data[0x0A] = 2
@@ -420,7 +421,7 @@ class LevelBuilder:
         # Area header
         area = 0x200
         data[area + 0x00] = self.theme_id
-        struct.pack_into('<i', data, area + 0x08, AREA_WIDTH * 16)
+        struct.pack_into('<i', data, area + 0x08, self.width * 16)
         struct.pack_into('<i', data, area + 0x0C, 27 * 16)
         
         # NOTE: Do NOT add goal object - game auto-generates from header goal_x/goal_y
@@ -590,6 +591,19 @@ def level_smw_flat() -> LevelBuilder:
     """Super Mario World style flat ground."""
     b = LevelBuilder("SMW Flat", "SMW", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(14, "Camera Walk")
+def level_camera_walk() -> LevelBuilder:
+    """120 tiles of flat SMB1 ground and nothing else: room for the camera
+    to scroll through a walk, a run, a turn-around and a few jumps while the
+    probe logs the view rectangle every frame.
+    """
+    b = LevelBuilder("Camera Walk", "SMB1", "Ground")
+    b.width = 120
+    b.add_ground_block(7, b.width - 11, y_surface=4, height=5)   # ends 1.5 tiles before the pole, like Flat Ground
     b.goal_y = 5
     return b
 
