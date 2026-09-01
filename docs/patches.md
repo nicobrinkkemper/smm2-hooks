@@ -18,7 +18,7 @@ MCP: `eden_patches(enable=, disable=)`; `eden_state` lists them under
 |---|---|
 | `skip_intro` | title boot phase 2 → 4: no intro cutscene (the title still shows; input is accepted from frame 1000) |
 | `corruption_bypass` | `game::CourseDataValidator::validate` returns 0: Coursebot keeps a course it would delete; a footgun for real validation runs (`validate_slots.py` wants it off) |
-| `botting` | the intro skip plus loading delays; superset of `skip_intro` |
+| `botting` | the automation profile; currently only the same intro skip as `skip_intro` (loading-delay patches will join it here once known) |
 
 A folder `load/<title>/exefs/` with patches at its root is not a mod layout
 Eden reads; patches there are inactive. Add a patch by dropping the file in
