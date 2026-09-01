@@ -13,7 +13,6 @@ import json
 import os
 import subprocess
 import sys
-import asyncio
 import threading
 import time
 import uuid
@@ -156,7 +155,7 @@ def _nav_running() -> bool:
 
 
 @tool(exclusive=True)
-async def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int = 45, budget: int = 100) -> dict:
+def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int = 45, budget: int = 100) -> dict:
     """Navigate from the title screen: target 'editor' (edit-time), 'editor_play' (test-play the editor course), or 'coursebot' with a slot. A slot the game lists starts Coursebot play (scene_mode 7); an empty slot only offers 'Make New Course', so it opens the editor with a default course and MINUS starts test-play (scene_mode 5) instead. Read scene_mode in the returned status. The call returns within `budget` seconds; if navigation is still going it returns pending=true and keeps going, game_status then carries the outcome under 'boot', and every tool that drives the game refuses until it is done. The final result reports 'registered' as save.dat stands after the visit (Coursebot may delete the slot on the way in)."""
     if target == "coursebot" and slot is None:
         return {"error": "slot required"}
@@ -187,11 +186,11 @@ async def game_boot(target: str = "coursebot", slot: int | None = None, timeout:
     t = threading.Thread(target=navigate, name="game_boot", daemon=True)
     _NAV.update(thread=t, result={"ok": False, "pending": True, "target": target, "slot": slot})
     t.start()
-    # Poll instead of join: a join here blocks the server's event loop and
-    # every other tool with it for up to `budget` seconds (seen 2026-09-01).
-    deadline = time.monotonic() + budget
-    while t.is_alive() and time.monotonic() < deadline:
-        await asyncio.sleep(0.5)
+    # Plain join: @tool runs this in a worker thread, so waiting here does not
+    # block the event loop. Keep `budget` under the host's per-call limit
+    # (this client backgrounds a call after 120 s) and read game_status for
+    # the outcome of a pending navigation.
+    t.join(budget)
     return dict(_NAV["result"])
 
 
