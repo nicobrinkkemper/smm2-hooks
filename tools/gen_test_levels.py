@@ -683,6 +683,28 @@ def level_note_bounce() -> LevelBuilder:
     return b
 
 
+@test_level(19, "Note Bounce W")
+def level_note_bounce_w() -> LevelBuilder:
+    """Note Bounce with wings on the block (railmusic's wing variant)."""
+    b = LevelBuilder("Note Bounce W", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    t = b.add_track(11, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0071, 0x0070))
+    b.add_note_block_on_track(t, wings=True)
+    b.goal_y = 5
+    return b
+
+
+@test_level(20, "Note Bounce Water")
+def level_note_bounce_water() -> LevelBuilder:
+    """Note Bounce in the underwater theme (railmusic's water skin)."""
+    b = LevelBuilder("Note Bounce Water", "SMB1", "Underwater")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    t = b.add_track(11, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0071, 0x0070))
+    b.add_note_block_on_track(t)
+    b.goal_y = 5
+    return b
+
+
 @test_level(10, "Track Note")
 def level_track_note() -> LevelBuilder:
     """Two joined horizontal track pieces with a note block riding them.
