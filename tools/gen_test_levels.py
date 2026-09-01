@@ -353,7 +353,7 @@ class LevelBuilder:
         })
     
     def add_track(self, x: int, y: int, shape: int, ends: tuple = TRACK_END_FREE_H,
-                  has_object: bool = False) -> int:
+                  has_object: bool = False, lid: int = None) -> int:
         """Add one 12-byte track record (area +0x28624, count at +0x40) and
         return its 0-based index (what an object's link id refers to).
 
@@ -363,7 +363,8 @@ class LevelBuilder:
         """
         if not hasattr(self, 'tracks'):
             self.tracks = []
-        self.tracks.append({'x': x, 'y': y, 'type': shape, 'lid': len(self.tracks) + 1,
+        self.tracks.append({'x': x, 'y': y, 'type': shape,
+                            'lid': lid if lid is not None else len(self.tracks) + 1,
                             'has_object': has_object, 'tail': ends})
         return len(self.tracks) - 1
 
@@ -389,6 +390,13 @@ class LevelBuilder:
         """A free-standing note block (id 23), bottom-left tile at (x, y)."""
         flags = 0x06000040 | (FLAG_WINGS if wings else 0)
         self.objects.append({'id': OBJ_NOTE_BLOCK, 'x': x, 'y': y, 'flags': flags})
+
+    def add_actor(self, actor_id: int, x, y, flags: int = 0x06000040,
+                  lid: int = -1, half: bool = True):
+        """Any actor record verbatim: position in tiles (half=True adds the
+        usual +0.5 centre offset), flags and track link id as given."""
+        self.objects.append({'id': actor_id, 'x': x, 'y': y, 'flags': flags,
+                             'lid': lid, '_half_tile_offset': half})
 
     def add_mushroom(self, x: int, y: int):
         """Add a mushroom in a ? block."""
@@ -702,6 +710,40 @@ def level_note_bounce_water() -> LevelBuilder:
     t = b.add_track(11, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0071, 0x0070))
     b.add_note_block_on_track(t)
     b.goal_y = 5
+    return b
+
+
+@test_level(21, "Broken Track")
+def level_broken_track() -> LevelBuilder:
+    """Replica of the editor-made "Teleport music" (broken-track glitch):
+    five detached note blocks whose parent halves survive with joint words
+    pointing into removed pieces, plus the curve the teleport targets. Track
+    records and actor records copied verbatim from that course's save."""
+    b = LevelBuilder("Broken Track", "SMB1", "Ground")
+    b.add_ground_block(0, 46, y_surface=3, height=4)
+    for has, x, y, shape, lid, e0, e1 in [
+        (0, 20,  9, 4,  2, 0x71, 0x72),
+        (1, 17,  9, 0,  3, 0x90, 0x104),
+        (1, 10,  6, 0,  1, 0x90, 0x104),
+        (0, 12,  6, 0,  4, 0x90, 0x104),
+        (0, 14,  6, 0,  5, 0x97, 0x104),
+        (0,  9,  7, 1,  6, 0x91, 0x94),
+        (0,  9,  9, 1,  7, 0x91, 0x104),
+        (1,  9, 11, 1,  8, 0x95, 0x104),
+        (0, 10, 12, 0,  9, 0x90, 0x104),
+        (0, 15, 10, 4, 10, 0x90, 0x104),
+        (1, 12, 12, 0, 11, 0x81, 0x104),
+        (0, 14, 12, 1, 12, 0x72, 0x91),
+        (1, 14,  7, 5, 13, 0x104, 0x70),
+    ]:
+        b.add_track(x, y, shape, ends=(e0, e1), has_object=bool(has), lid=lid)
+    b.add_actor(23, 18, 10, 0x06000444, lid=3)
+    b.add_actor(23, 11,  7, 0x06000444, lid=1)
+    b.add_actor(23, 13, 13, 0x06000444, lid=11)
+    b.add_actor(23, 16,  9, 0x06000444, lid=13, half=False)
+    b.add_actor(74, 19, 11, 0x06000040)
+    b.add_actor(23, 10, 12, 0x06200444, lid=8)
+    b.goal_y = 4
     return b
 
 
