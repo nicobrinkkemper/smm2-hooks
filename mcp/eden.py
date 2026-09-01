@@ -242,6 +242,41 @@ def read_status(p: EdenPaths) -> dict | None:
     }
 
 
+# ── patches (pchtxt) ──────────────────────────────────────────────────────
+# Versioned in <repo>/patches/*.pchtxt. Eden applies every *.pchtxt inside a
+# mod's exefs/ folder, so "enabled" means: a copy sits next to subsdk4.
+
+PATCHES_DIR = Path(__file__).resolve().parent.parent / "patches"
+
+
+def patches(p: EdenPaths) -> list[dict]:
+    """Every versioned patch with its deployed state, plus unversioned ones found in the mod dir."""
+    deployed = Path(p.mods_dir)
+    out = []
+    for f in sorted(PATCHES_DIR.glob("*.pchtxt")):
+        d = deployed / f.name
+        same = d.exists() and d.read_bytes() == f.read_bytes()
+        out.append({"name": f.stem, "enabled": d.exists(), "stale": d.exists() and not same, "source": str(f)})
+    for d in sorted(deployed.glob("*.pchtxt")):
+        if not (PATCHES_DIR / d.name).exists():
+            out.append({"name": d.stem, "enabled": True, "unversioned": True, "source": str(d)})
+    return out
+
+
+def set_patch(p: EdenPaths, name: str, enabled: bool) -> dict:
+    """Copy a versioned patch into (or remove it from) the deployed mod's exefs/. Takes effect on the next launch."""
+    src = PATCHES_DIR / f"{name}.pchtxt"
+    if not src.exists():
+        return {"error": f"no patches/{name}.pchtxt; known: {[f.stem for f in sorted(PATCHES_DIR.glob('*.pchtxt'))]}"}
+    dst = Path(p.mods_dir) / src.name
+    if enabled:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(src.read_bytes())
+    elif dst.exists():
+        dst.unlink()
+    return {"name": name, "enabled": enabled, "path": str(dst), "note": "takes effect on the next launch"}
+
+
 # ── mods and log ──────────────────────────────────────────────────────────
 
 def mods(p: EdenPaths) -> dict:
@@ -253,6 +288,7 @@ def mods(p: EdenPaths) -> dict:
     return {
         "active_load_dir": p.load_dir,
         "deployed": info(p.mods_dir),
+        "patches": patches(p),
         "other_copy_next_to_exe": info(p.alt_mods_dir) if p.alt_mods_dir != p.mods_dir else None,
     }
 
@@ -331,6 +367,21 @@ if __name__ == "__main__":
         r = kill()
         print(json.dumps(r))
         sys.exit(0 if r["process"] is None else 1)
+    argv = sys.argv[1:]
+    if "--patches" in argv:
+        for it in patches(paths()):
+            flag = "on " if it["enabled"] else "off"
+            extra = " (stale copy)" if it.get("stale") else (" (unversioned)" if it.get("unversioned") else "")
+            print(f"{flag} {it['name']}{extra}")
+        sys.exit(0)
+    for flag, on in (("--enable", True), ("--disable", False)):
+        if flag in argv:
+            i = argv.index(flag) + 1
+            if i >= len(argv) or argv[i].startswith("--"):
+                print(f"usage: eden.py {flag} <patch>   (names: eden.py --patches)", file=sys.stderr)
+                sys.exit(2)
+            print(json.dumps(set_patch(paths(), argv[i], on)))
+            sys.exit(0)
     if "--launch" in sys.argv[1:]:
         if process():
             print("Eden already running")

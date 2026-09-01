@@ -82,6 +82,7 @@ and is wrong about the GDB stub until it is switched to `mcp/eden.py`.
 | `docs/level-generation.md` / `docs/level-modification.md` | Test levels, BCD layout |
 | `docs/tooling-gaps.md` | What keeps breaking, and what is fixed |
 | `docs/botting-patches.md` | Patches used by the automation |
+| `docs/patches.md` | pchtxt patches versioned in `patches/`, toggled with `eden.py --enable/--disable` or MCP `eden_patches` |
 
 ## Adding Hooks
 
