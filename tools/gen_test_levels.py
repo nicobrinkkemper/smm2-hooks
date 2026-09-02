@@ -839,6 +839,125 @@ def level_rail_diag2() -> LevelBuilder:
     return level
 
 
+@test_level(22, "Gap Fall")
+def level_gap_fall() -> LevelBuilder:
+    """Vertical sync tracks with a gap, the music-level way of delaying a note
+    block: the block rides down a vertical piece, leaves its open bottom end,
+    free-falls the gap and lands on the vertical piece below. Four columns
+    in one recording (rail probe, one row per rider per frame):
+
+        A (rail x 9.5)   gap 1 tile    B (12.5) gap 2    C (15.5) gap 3
+        D (rail x 18.5)  gap 1 tile with the two closed-cap ids swapped
+
+    Upper pieces sit at y=10 (rail 10.5..12.5, block starts at 11.5): the top
+    end is a closed cap (0x72, as an editor-saved vertical piece carries) so
+    a block that first rides up turns around; the open ends are 0x104, no
+    cell. Coursebot deletes a course whose vertical ends use the 0x88..0x8F
+    open-cap ids (0x8A/0x8B tried, validate_slots 2026-09-02); closed caps
+    plus 0x104 pass.
+    """
+    N = 0x0104
+    level = LevelBuilder("Gap Fall", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x, gap, top_cap, bottom_cap in [(8, 1, 0x72, 0x73), (11, 2, 0x72, 0x73),
+                                        (14, 3, 0x72, 0x73), (17, 1, 0x73, 0x72)]:
+        upper = level.add_track(x, 10, TRACK_SHAPE_VERTICAL, ends=(top_cap, N))
+        level.add_track(x, 8 - gap, TRACK_SHAPE_VERTICAL, ends=(N, bottom_cap))
+        level.add_note_block_on_track(upper, vertical=True)
+    return level
+
+
+@test_level(23, "Gap Catch")
+def level_gap_catch() -> LevelBuilder:
+    """A note block falling off a vertical piece onto a HORIZONTAL track,
+    the delivery track of a vertical music level. Four columns, upper piece
+    as in Gap Fall (y=10, closed top cap, 0x104 bottom end):
+
+        A (rail x 9.5)  lands on an H body cell, gap 1   H piece (8,8), caps both ends
+        B (12.5)        lands on an H body cell, gap 3   H piece (11,6), caps both ends
+        C (15.5)        lands on the joint cell of two H pieces, gap 1   (13,8)+(15,8)
+        D (18.5)        lands on a closed-cap cell, gap 3   H piece (18,6), its left cap under the rail
+    """
+    N = 0x0104
+    level = LevelBuilder("Gap Catch", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x in (8, 11, 14, 17):
+        upper = level.add_track(x, 10, TRACK_SHAPE_VERTICAL, ends=(0x72, N))
+        level.add_note_block_on_track(upper, vertical=True)
+    level.add_track(8, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_track(11, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_track(13, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x90, 0x70))
+    level.add_track(15, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x71, N))
+    level.add_track(18, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    return level
+
+
+@test_level(24, "Gap Open")
+def level_gap_open() -> LevelBuilder:
+    """Gap Fall with the editor's open track ends instead of 0x104: 0x83 at
+    the upper piece's bottom, 0x82 at the lower piece's top (Coursebot
+    accepts 0x80..0x83; validate_slots 2026-09-02). The block lands at the
+    open cap cell, the rail's nominal end, a tile earlier than in Gap Fall.
+    Column D swaps the two open ids to show which faces which way: the
+    upper 0x82 is passed through, the lower 0x83 faces away and the body
+    cell below catches the block.
+    """
+    level = LevelBuilder("Gap Open", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x, gap, upper_ends, lower_ends in [(8, 1, (0x72, 0x83), (0x82, 0x73)),
+                                           (11, 2, (0x72, 0x83), (0x82, 0x73)),
+                                           (14, 3, (0x72, 0x83), (0x82, 0x73)),
+                                           (17, 1, (0x72, 0x82), (0x83, 0x73))]:
+        upper = level.add_track(x, 10, TRACK_SHAPE_VERTICAL, ends=upper_ends)
+        level.add_track(x, 8 - gap, TRACK_SHAPE_VERTICAL, ends=lower_ends)
+        level.add_note_block_on_track(upper, vertical=True)
+    return level
+
+
+@test_level(25, "Gap Open W")
+def level_gap_open_w() -> LevelBuilder:
+    """Gap Open with winged note blocks (railmusic's wing type: the rider
+    step runs them at 1.5 units per frame) and gaps of 1, 2, 3 and 4 tiles,
+    for TrackConductor's wing gaps row. Upper pieces at y=11 so the
+    four-tile column's lower piece clears the ground.
+    """
+    level = LevelBuilder("Gap Open W", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x, gap in [(8, 1), (11, 2), (14, 3), (17, 4)]:
+        upper = level.add_track(x, 11, TRACK_SHAPE_VERTICAL, ends=(0x72, 0x83))
+        level.add_track(x, 9 - gap, TRACK_SHAPE_VERTICAL, ends=(0x82, 0x73))
+        level.add_note_block_on_track(upper, wings=True, vertical=True)
+    return level
+
+
+@test_level(26, "Rider Flags")
+def level_rider_flags() -> LevelBuilder:
+    """Which way a note block starts riding, per record flag: four capped
+    one-piece tracks (the block shuttles), the rider probe logs the first
+    frames' velocity. A vertical piece without 0x100000 (col A) and with
+    it (B); a horizontal piece without (C) and with (D). Recorded
+    2026-09-02: A up, B down, C right, D left. 0x100000 is the negative
+    direction on either axis, and add_note_block_on_track's default
+    travel_left=True is why every Gap level's block rode down.
+    """
+    level = LevelBuilder("Rider Flags", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    a = level.add_track(8, 8, TRACK_SHAPE_VERTICAL, ends=(0x72, 0x73))
+    level.add_note_block_on_track(a, vertical=True, travel_left=False)
+    b = level.add_track(11, 8, TRACK_SHAPE_VERTICAL, ends=(0x72, 0x73))
+    level.add_note_block_on_track(b, vertical=True, travel_left=True)
+    c = level.add_track(14, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_note_block_on_track(c, travel_left=False)
+    d = level.add_track(17, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_note_block_on_track(d, travel_left=True)
+    return level
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
