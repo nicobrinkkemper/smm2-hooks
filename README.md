@@ -77,11 +77,13 @@ and is wrong about the GDB stub until it is switched to `mcp/eden.py`.
 | Doc | What |
 |-----|------|
 | `docs/status-system-spec.md` | `status.bin` fields, scene modes, requirements |
+| `docs/probe.md` | function probes: `probe.txt` hooks + field paths → `probe.log` (Eden has no hardware breakpoints) |
 | `docs/automation-workflow.md` | Boot sequences and timings |
 | `docs/eden-gdb-workflow.md` | GDB against Eden's stub |
 | `docs/level-generation.md` / `docs/level-modification.md` | Test levels, BCD layout |
 | `docs/tooling-gaps.md` | What keeps breaking, and what is fixed |
 | `docs/botting-patches.md` | Patches used by the automation |
+| `docs/direct-boot.md` | `boot.txt`: boot straight into a Coursebot course (play at 16 s); `tools/trace.py` records a probe run in one command |
 
 ## Adding Hooks
 

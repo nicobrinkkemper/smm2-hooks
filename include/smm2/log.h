@@ -62,6 +62,10 @@ struct Logger {
         va_start(args, fmt);
         int n = std::vsnprintf(tmp, sizeof(tmp), fmt, args);
         va_end(args);
+        // vsnprintf returns the length the full text would have had; only
+        // sizeof(tmp) - 1 bytes of it exist. A long probe.txt token must not
+        // read past the buffer.
+        if (n > (int)sizeof(tmp) - 1) n = (int)sizeof(tmp) - 1;
         if (n > 0) write(tmp, n);
     }
 

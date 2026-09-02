@@ -18,7 +18,8 @@ import shutil
 # Import from gen_test_levels for level generation
 from gen_test_levels import LevelBuilder, encrypt_course, STYLES, THEMES
 
-EDEN_ROMFS = Path("/mnt/c/Users/nico/AppData/Roaming/eden/sdmc/atmosphere/contents/01009B90006DC000/romfs/Course")
+# Eden reads mods from load/<title>/<mod>/romfs/, not from an atmosphere tree on the SD.
+EDEN_ROMFS = Path("/mnt/c/Users/nico/AppData/Roaming/eden/load/01009B90006DC000/smm2-hooks/romfs/Course")
 EDEN_DUMP = Path("/mnt/c/Users/nico/AppData/Roaming/eden/dump/01009B90006DC000/romfs/Course")
 
 

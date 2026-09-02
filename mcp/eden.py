@@ -151,6 +151,25 @@ def set_gdbstub(p: EdenPaths, enabled: bool) -> bool:
     return False
 
 
+def ensure_docked(p: EdenPaths) -> bool:
+    """Force docked mode in the real ini. Returns True if changed.
+
+    The input mod hooks only GetNpadStates(NpadFullKeyState*) — the Pro
+    Controller path Eden uses when docked. In handheld mode the game polls the
+    handheld Npad, that hook never fires, and injected input from input.bin is
+    silently ignored in every scene (the game sits on the title screen no
+    matter what we press). Guarantee docked before every launch.
+    """
+    b = Path(p.config_ini).read_bytes()
+    new = re.sub(rb"use_docked_mode=\d", b"use_docked_mode=1", b, count=1)
+    new = re.sub(rb"use_docked_mode\\default=(true|false)",
+                 b"use_docked_mode\\\\default=true", new, count=1)
+    if new != b:
+        Path(p.config_ini).write_bytes(new)
+        return True
+    return False
+
+
 # ── process ───────────────────────────────────────────────────────────────
 
 def process() -> dict | None:
@@ -183,6 +202,7 @@ def stub_listening(port: int) -> bool | None:
 
 
 def launch(p: EdenPaths, gdb: bool) -> dict:
+    docked = ensure_docked(p)
     changed = set_gdbstub(p, gdb)
     status = Path(p.sd_hooks_dir) / "status.bin"
     if status.exists():
@@ -197,6 +217,7 @@ def launch(p: EdenPaths, gdb: bool) -> dict:
             break
         time.sleep(1)
     return {"process": proc, "gdbstub_config_changed": changed, "gdb": gdb,
+            "docked_mode_forced": docked,
             "note": "paused until a debugger attaches and continues" if gdb else "booting to the title screen (~25 s)"}
 
 

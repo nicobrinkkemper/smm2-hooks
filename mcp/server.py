@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -185,6 +186,10 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
     t = threading.Thread(target=navigate, name="game_boot", daemon=True)
     _NAV.update(thread=t, result={"ok": False, "pending": True, "target": target, "slot": slot})
     t.start()
+    # Plain join: @tool runs this in a worker thread, so waiting here does not
+    # block the event loop. Keep `budget` under the host's per-call limit
+    # (this client backgrounds a call after 120 s) and read game_status for
+    # the outcome of a pending navigation.
     t.join(budget)
     return dict(_NAV["result"])
 
@@ -205,7 +210,8 @@ def _registered_slots() -> set[int] | None:
 def levels_list() -> dict:
     """Generated test levels (by name) and the Coursebot save slots. `registered` is what the game lists (save.dat); a .bcd on disk without it only offers 'Make New Course', so game_boot lands in editor test-play, not Coursebot play."""
     sys.argv = ["x"]
-    import gen_test_levels as g  # noqa: WPS433
+    import importlib, gen_test_levels as g  # noqa: WPS433
+    g = importlib.reload(g)   # levels added since the server started must show up
     import parse_course as pc  # noqa: WPS433
     gen = {slot: name for slot, (name, _) in sorted(g.TEST_LEVELS.items())}
     if not P.save_dir:
@@ -312,7 +318,8 @@ def level_install(slot: int, level: str, companions_from: int | None = None) -> 
     if (err := _slot_error(slot)):
         return err
     sys.argv = ["x"]
-    import gen_test_levels as g  # noqa: WPS433
+    import importlib, gen_test_levels as g  # noqa: WPS433
+    g = importlib.reload(g)   # levels added since the server started must show up
     match = [(s, n, f) for s, (n, f) in g.TEST_LEVELS.items() if n == level]
     if not match:
         return {"error": f"unknown level {level!r}", "available": [n for _, (n, _) in g.TEST_LEVELS.items()]}

@@ -137,6 +137,14 @@ verify a generated level visually before doing anything with GDB.
 Do the navigation with GDB at `c` (running). Never leave GDB stopped during a
 scene change.
 
+**Per-frame traces without GDB**: a probe (`docs/probe.md`) hooks a function
+named in `sd:/smm2-hooks/probe.txt` and logs its arguments plus fields behind
+`x0` on every call while the game runs at full speed. `python3 probe.py
+preset rail > probe.txt`, `python3 probe.py install probe.txt --target eden`
+(validates the addresses against main.elf), play, then `python3 probe.py
+decode probe.log -o trace.csv`. Use it for anything that needs more than a
+handful of stops; keep GDB for "who writes this".
+
 ## 5. ASLR: find the base once per launch
 
 Addresses in `smm2-decomp/data/v3.0.3/functions.csv` are `0x7100000000 + offset`.
