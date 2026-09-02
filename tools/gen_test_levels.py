@@ -917,6 +917,23 @@ def level_gap_open() -> LevelBuilder:
     return level
 
 
+@test_level(25, "Gap Open W")
+def level_gap_open_w() -> LevelBuilder:
+    """Gap Open with winged note blocks (railmusic's wing type: the rider
+    step runs them at 1.5 units per frame) and gaps of 1, 2, 3 and 4 tiles,
+    for TrackConductor's wing gaps row. Upper pieces at y=11 so the
+    four-tile column's lower piece clears the ground.
+    """
+    level = LevelBuilder("Gap Open W", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x, gap in [(8, 1), (11, 2), (14, 3), (17, 4)]:
+        upper = level.add_track(x, 11, TRACK_SHAPE_VERTICAL, ends=(0x72, 0x83))
+        level.add_track(x, 9 - gap, TRACK_SHAPE_VERTICAL, ends=(0x82, 0x73))
+        level.add_note_block_on_track(upper, wings=True, vertical=True)
+    return level
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
