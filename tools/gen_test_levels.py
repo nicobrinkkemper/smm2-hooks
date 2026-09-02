@@ -868,6 +868,32 @@ def level_gap_fall() -> LevelBuilder:
     return level
 
 
+@test_level(23, "Gap Catch")
+def level_gap_catch() -> LevelBuilder:
+    """A note block falling off a vertical piece onto a HORIZONTAL track,
+    the delivery track of a vertical music level. Four columns, upper piece
+    as in Gap Fall (y=10, closed top cap, 0x104 bottom end):
+
+        A (rail x 9.5)  lands on an H body cell, gap 1   H piece (8,8), caps both ends
+        B (12.5)        lands on an H body cell, gap 3   H piece (11,6), caps both ends
+        C (15.5)        lands on the joint cell of two H pieces, gap 1   (13,8)+(15,8)
+        D (18.5)        lands on a closed-cap cell, gap 3   H piece (18,6), its left cap under the rail
+    """
+    N = 0x0104
+    level = LevelBuilder("Gap Catch", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x in (8, 11, 14, 17):
+        upper = level.add_track(x, 10, TRACK_SHAPE_VERTICAL, ends=(0x72, N))
+        level.add_note_block_on_track(upper, vertical=True)
+    level.add_track(8, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_track(11, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_track(13, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x90, 0x70))
+    level.add_track(15, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x71, N))
+    level.add_track(18, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    return level
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
