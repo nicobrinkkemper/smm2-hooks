@@ -934,6 +934,30 @@ def level_gap_open_w() -> LevelBuilder:
     return level
 
 
+@test_level(26, "Rider Flags")
+def level_rider_flags() -> LevelBuilder:
+    """Which way a note block starts riding, per record flag: four capped
+    one-piece tracks (the block shuttles), the rider probe logs the first
+    frames' velocity. A vertical piece without 0x100000 (col A) and with
+    it (B); a horizontal piece without (C) and with (D). Recorded
+    2026-09-02: A up, B down, C right, D left. 0x100000 is the negative
+    direction on either axis, and add_note_block_on_track's default
+    travel_left=True is why every Gap level's block rode down.
+    """
+    level = LevelBuilder("Rider Flags", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    a = level.add_track(8, 8, TRACK_SHAPE_VERTICAL, ends=(0x72, 0x73))
+    level.add_note_block_on_track(a, vertical=True, travel_left=False)
+    b = level.add_track(11, 8, TRACK_SHAPE_VERTICAL, ends=(0x72, 0x73))
+    level.add_note_block_on_track(b, vertical=True, travel_left=True)
+    c = level.add_track(14, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_note_block_on_track(c, travel_left=False)
+    d = level.add_track(17, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_note_block_on_track(d, travel_left=True)
+    return level
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
