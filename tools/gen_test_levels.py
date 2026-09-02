@@ -720,7 +720,8 @@ def level_broken_track() -> LevelBuilder:
     pointing into removed pieces, plus the curve the teleport targets. Track
     records and actor records copied verbatim from that course's save."""
     b = LevelBuilder("Broken Track", "SMB1", "Ground")
-    b.add_ground_block(0, 46, y_surface=3, height=4)
+    b.width = 57   # the track/actor records reach x=22; widen the area to hold them
+    b.add_ground_block(7, 46, y_surface=3, height=4)   # start at x=7: leave x0-6 for the auto start zone
     for has, x, y, shape, lid, e0, e1 in [
         (0, 20,  9, 4,  2, 0x71, 0x72),
         (1, 17,  9, 0,  3, 0x90, 0x104),
