@@ -99,11 +99,13 @@ field player pos_y f32 0x234
 field player vel_x f32 0x23C
 field player vel_y f32 0x240
 field player grav  f32 0x640
-# The state machine at PlayerObject+0x3F8 (confirmed-states.md): both the
-# embedded and the pointer interpretation; the sane one wins.
-field player st_e   u32 0x400
-field player stfr_e u32 0x404
-field player st_p   u32 0x3F8>0x8
+# The state machine is embedded at PlayerObject+0x3F0 (confirmed-states.md):
+# the current state id at +0x3F8, its frame counter at +0x3FC, and the
+# previous state id at +0x400. Recordings made before 2026-09-03 carried
+# +0x400 as "st_e": read those as the previous state.
+field player state  u32 0x3F8
+field player stfr   u32 0x3FC
+field player prev   u32 0x400
 # The pad object at player+0x550 (the gravity selector reads +22/+30 to
 # pick the held table): a spread of its bytes around those flags.
 field player pad14 u8 0x550>0x14
