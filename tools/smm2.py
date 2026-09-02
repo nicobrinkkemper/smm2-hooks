@@ -34,6 +34,7 @@ BTN = {
 SCENE_EDITOR = 1
 SCENE_PLAY = 5      # Editor test-play
 SCENE_TITLE = 6
+TITLE_READY_FRAME = 960 + 300   # cold boot: the title is up at ~960 and takes input ~5 s later
 SCENE_COURSEBOT = 7 # Coursebot play (game-only, no editing)
 COURSEBOT_SLOTS = 180   # save slots the game knows; save.dat has one record per slot
 
@@ -484,18 +485,29 @@ class Game:
         if scene_mode == SCENE_TITLE:
             start_count = s['scene_change_count']
             if debug: print(f'to_editor: title, start_count={start_count}')
-            
-            # L+R to skip title animation, then A to enter
-            self.hold('L+R', 2000)
-            self.press('A', 500)
-            
-            # Wait for scene change (instant detection via counter)
-            result = self.wait_for(
-                lambda s: s['scene_change_count'] > start_count and s['scene_mode'] == SCENE_EDITOR,
-                timeout=10
-            )
-            if debug: print(f'to_editor: wait result={result}')
-            return result is not None
+
+            # A cold boot reaches the title at frame ~960 (the count is
+            # deterministic across launches) and drops inputs for the first
+            # seconds it is up; every first game_boot after a launch used to
+            # fail on that and the second call succeed. Let the title settle
+            # (5 s of frames) before pressing, and press twice if the first
+            # try changes nothing.
+            if start_count <= 1 and s['frame'] < TITLE_READY_FRAME:
+                self.wait_for(lambda s: s['frame'] >= TITLE_READY_FRAME, timeout=10)
+            for attempt in range(2):
+                # L+R to skip title animation, then A to enter
+                self.hold('L+R', 2000)
+                self.press('A', 500)
+
+                # Wait for scene change (instant detection via counter)
+                result = self.wait_for(
+                    lambda s: s['scene_change_count'] > start_count and s['scene_mode'] == SCENE_EDITOR,
+                    timeout=10
+                )
+                if debug: print(f'to_editor: attempt {attempt} wait result={result}')
+                if result is not None:
+                    return True
+            return False
         if debug: print(f'to_editor: unknown scene_mode {scene_mode}')
         return False
 
