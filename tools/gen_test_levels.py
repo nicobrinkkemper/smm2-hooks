@@ -839,6 +839,35 @@ def level_rail_diag2() -> LevelBuilder:
     return level
 
 
+@test_level(22, "Gap Fall")
+def level_gap_fall() -> LevelBuilder:
+    """Vertical sync tracks with a gap, the music-level way of delaying a note
+    block: the block rides down a vertical piece, leaves its open bottom end,
+    free-falls the gap and lands on the vertical piece below. Four columns
+    in one recording (rail probe, one row per rider per frame):
+
+        A (rail x 9.5)   gap 1 tile    B (12.5) gap 2    C (15.5) gap 3
+        D (rail x 18.5)  gap 1 tile with the two closed-cap ids swapped
+
+    Upper pieces sit at y=10 (rail 10.5..12.5, block starts at 11.5): the top
+    end is a closed cap (0x72, as an editor-saved vertical piece carries) so
+    a block that first rides up turns around; the open ends are 0x104, no
+    cell. Coursebot deletes a course whose vertical ends use the 0x88..0x8F
+    open-cap ids (0x8A/0x8B tried, validate_slots 2026-09-02); closed caps
+    plus 0x104 pass.
+    """
+    N = 0x0104
+    level = LevelBuilder("Gap Fall", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x, gap, top_cap, bottom_cap in [(8, 1, 0x72, 0x73), (11, 2, 0x72, 0x73),
+                                        (14, 3, 0x72, 0x73), (17, 1, 0x73, 0x72)]:
+        upper = level.add_track(x, 10, TRACK_SHAPE_VERTICAL, ends=(top_cap, N))
+        level.add_track(x, 8 - gap, TRACK_SHAPE_VERTICAL, ends=(N, bottom_cap))
+        level.add_note_block_on_track(upper, vertical=True)
+    return level
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
