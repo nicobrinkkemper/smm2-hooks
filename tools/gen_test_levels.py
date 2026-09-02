@@ -894,6 +894,29 @@ def level_gap_catch() -> LevelBuilder:
     return level
 
 
+@test_level(24, "Gap Open")
+def level_gap_open() -> LevelBuilder:
+    """Gap Fall with the editor's open track ends instead of 0x104: 0x83 at
+    the upper piece's bottom, 0x82 at the lower piece's top (Coursebot
+    accepts 0x80..0x83; validate_slots 2026-09-02). The block lands at the
+    open cap cell, the rail's nominal end, a tile earlier than in Gap Fall.
+    Column D swaps the two open ids to show which faces which way: the
+    upper 0x82 is passed through, the lower 0x83 faces away and the body
+    cell below catches the block.
+    """
+    level = LevelBuilder("Gap Open", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x, gap, upper_ends, lower_ends in [(8, 1, (0x72, 0x83), (0x82, 0x73)),
+                                           (11, 2, (0x72, 0x83), (0x82, 0x73)),
+                                           (14, 3, (0x72, 0x83), (0x82, 0x73)),
+                                           (17, 1, (0x72, 0x82), (0x83, 0x73))]:
+        upper = level.add_track(x, 10, TRACK_SHAPE_VERTICAL, ends=upper_ends)
+        level.add_track(x, 8 - gap, TRACK_SHAPE_VERTICAL, ends=lower_ends)
+        level.add_note_block_on_track(upper, vertical=True)
+    return level
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
