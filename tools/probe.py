@@ -91,6 +91,36 @@ field cam v40    f32 @0x7102C55080>0x88>0x40
 field cam act_l  f32 @0x7102C55080>0x88>0x54
 field cam act_r  f32 @0x7102C55080>0x88>0x5c
 """,
+    # The note block's bound and rider record beside the player (the
+    # centred-hit recording in smm2-decomp, docs/re-notes/note-block.md):
+    # x0 = the block in the rail applier; the first machine's state word,
+    # the bound mode/vy/displacement and the rider record at +0x550.
+    "note": """\
+# Note block: the bound (+0x478 state, +0x4BC mode, +0x4C0 vy, +0x4CC displacement)
+# and the rider record (+0x550: phase, countdown, hit masks, player slot 0)
+# beside the player's per-frame movement step.
+hook rail 0x710138C520
+field rail pos_x   f32 0x230
+field rail pos_y   f32 0x234
+field rail vel_x   f32 0x530>0x10
+field rail state   u32 0x478
+field rail b_mode  u32 0x4BC
+field rail b_vy    f32 0x4C0
+field rail b_disp  f32 0x4CC
+field rail r_phase u32 0x550>0x8
+field rail r_cnt   u32 0x550>0xC
+field rail r_hit   u32 0x550>0x10
+field rail r_last  u32 0x550>0x14
+field rail r_jump  u32 0x550>0x18
+field rail r_on    u32 0x550>0x1C
+field rail r_slot0 u32 0x550>0x20
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player st_e  u32 0x400
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
