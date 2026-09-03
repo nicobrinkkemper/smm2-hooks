@@ -450,7 +450,8 @@ class LevelBuilder:
             data[off + 0x0A] = obj.get('width', 1)
             data[off + 0x0B] = obj.get('height', 1)
             struct.pack_into('<I', data, off + 0x0C, obj.get('flags', 0x06000040))
-            struct.pack_into('<I', data, off + 0x10, 0x06000040)
+            struct.pack_into('<I', data, off + 0x10, obj.get('cflags', 0x06000040))
+            struct.pack_into('<I', data, off + 0x14, obj.get('ex', 0))
             struct.pack_into('<h', data, off + 0x18, obj['id'])
             struct.pack_into('<h', data, off + 0x1A, obj.get('contents', -1))
             struct.pack_into('<h', data, off + 0x1C, obj.get('lid', -1))
@@ -584,6 +585,20 @@ def level_one_slope() -> LevelBuilder:
     b = LevelBuilder("One Slope", "SMB1", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
     b.add_slope(12, 5, width=4, height=4, steep=True)
+    b.goal_y = 5
+    return b
+
+
+def _one_slope(name: str, flags: int = 0x06000040, ex: int = 0, cflags: int = 0x06000040, x: int = 12) -> LevelBuilder:
+    """A flat floor with one steep slope object. Coursebot accepts only the
+    default flags (0x06000040), the default child flags and ex 0 on a slope:
+    flags 0x4, 0x8, 0x10, 0x18, 0x20, 0x40000, 0x400000, ex 1 and child
+    flags 0x10 / 0x20 were each deleted (2026-09-03), so the slope's
+    direction is not in those fields."""
+    b = LevelBuilder(name, "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': x, 'y': 5, 'width': 4, 'height': 4,
+                      'flags': flags, 'ex': ex, 'cflags': cflags, '_half_tile_offset': True})
     b.goal_y = 5
     return b
 
