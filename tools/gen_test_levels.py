@@ -566,6 +566,28 @@ def level_star_run() -> LevelBuilder:
     return b
 
 
+@test_level(30, "Slope Layout Only")
+def level_slope_layout() -> LevelBuilder:
+    """The Slope Course's ground and goal without the slope objects, to see
+    which part Coursebot rejects."""
+    b = LevelBuilder("Slope Layout", "SMB1", "Ground")
+    b.add_ground_block(7, 10, y_surface=4, height=5)
+    b.add_ground(21, 23, 10)
+    b.start_y = 5
+    b.goal_y = 10
+    return b
+
+
+@test_level(31, "One Steep Slope")
+def level_one_slope() -> LevelBuilder:
+    """Flat Ground with one steep slope object on the floor."""
+    b = LevelBuilder("One Slope", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_slope(12, 5, width=4, height=4, steep=True)
+    b.goal_y = 5
+    return b
+
+
 @test_level(1, "Jump Platforms")
 def level_jump_platforms() -> LevelBuilder:
     """Platforms at different heights for jump testing."""
