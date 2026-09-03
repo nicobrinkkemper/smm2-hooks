@@ -137,7 +137,11 @@ def plan(gaps, max_h=7, slack=None, ordered=False, by_height=False, steps=(3,)):
                 diffs = [b - a for a, b in zip(rows, rows[1:])]
                 if any(d == 0 for d in diffs) or (min(diffs) < 0 < max(diffs)):
                     return
-            key = (span, chain[-1][3] - chain[0][3])
+            # tie-break: the last block to land should join flush, so the
+            # wide gap (if any) sits away from it; then the shortest wait
+            last_m = ms[-1]
+            near = min(abs(last_m - m) for m in ms[:-1])
+            key = (span, near, chain[-1][3] - chain[0][3])
             if best is None or key < best[1]:
                 best = (list(chain), key)
             return
