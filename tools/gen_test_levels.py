@@ -1068,7 +1068,7 @@ def level_packed_row_x5() -> LevelBuilder:
 @test_level(46, "Packed Row x4")
 def level_packed_row_x4() -> LevelBuilder:
     """Four note blocks with a one-way cascade of outlines: the stack draws
-    by start height (the lowest start in front), so the start rows run 10,
+    by start height (the highest start in front), so the start rows run 10,
     15, 19, 23 from the right along the row (--gaps 0.75 x3 --slack 1
     --by-height --any-order --wide; columns six tiles apart give the runs
     room). Sim gaps 1.500, 0.750, 0.750 from the left."""

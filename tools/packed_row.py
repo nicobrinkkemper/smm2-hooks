@@ -159,8 +159,8 @@ def plan(gaps, max_h=7, slack=None, ordered=False, by_height=False, steps=(3,)):
                 d = m - ms[-1]
                 if abs(d) > 2 or (k >= 2 and (d > 0) != (ms[-1] - ms[-2] > 0)):
                     continue
-            # by_height: the stack draws by start height (the lowest start in
-            # front, Eden 2026-09-04), so the start rows must all differ and
+            # by_height: the stack draws by start height (the highest start in
+            # front in Eden, 2026-09-04), so the start rows must all differ and
             # run one way along the row (checked at the end)
             if by_height and any(start_row(n, y0, h) == start_row(c[0], c[1], c[2]) for c in chain):
                 continue
@@ -234,7 +234,7 @@ def main():
     ap.add_argument("--name", default="Packed Row")
     ap.add_argument("--max-run", type=int, default=7, help="longest lead-in run in pieces")
     ap.add_argument("--wide", action="store_true", help="let a column sit six tiles from its neighbour instead of three")
-    ap.add_argument("--by-height", action="store_true", help="the start rows must run one way along the row (the stack draws by start height, lowest in front)")
+    ap.add_argument("--by-height", action="store_true", help="the start rows must run one way along the row (the stack draws by start height: in slot 7 the highest start was in front)")
     ap.add_argument("--any-order", action="store_true", help="let later blocks land on either side of earlier ones (more blocks fit, but the stack draws in landing order and the outlines interleave)")
     ap.add_argument("--slack", type=int, help="allow the row to span this many extra frames of travel (gaps of two frames where one does not line up)")
     ap.add_argument("--sim", help="path to packed_row_sim (smm2-decomp/src-sim) to confirm the row")
