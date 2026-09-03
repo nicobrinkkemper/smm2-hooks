@@ -36,97 +36,149 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 LOAD = 65                 # every column activates on the load frame
-RIDE1 = 20                # one piece: centre to the open end, 16 units at 0.75
-RIDE_PER_PIECE = 128 / 3  # 32 units per extra piece at 0.75
+DROP = {  # ride frames from activation to the drop, by vertical pieces and run pieces (packed_row_sim, bottom row 10)
+    1: {0: 20, 1: 135, 2: 177, 3: 220, 4: 263, 5: 305, 6: 348, 7: 391},
+    2: {0: 63, 1: 178, 2: 220, 3: 263, 4: 306, 5: 348, 6: 391, 7: 434},
+    3: {0: 105, 1: 220, 2: 262, 3: 305, 4: 348, 5: 390, 6: 433, 7: 476},
+    4: {0: 148, 1: 263, 2: 305, 3: 348, 4: 391, 5: 433, 6: 476, 7: 519},
+    5: {0: 191, 1: 306, 2: 348, 3: 391, 4: 434, 5: 476, 6: 519, 7: 562},
+    6: {0: 233, 1: 348, 2: 390, 3: 433, 4: 476, 5: 518, 6: 561, 7: 604},
+}
+
 FALL = {10: 31, 11: 37, 12: 43, 13: 49, 14: 54, 15: 58, 16: 62, 17: 66, 18: 70, 19: 74, 20: 78}   # rail on row 6
 RAIL_ROW = 6
-RAIL_X0, RAIL_X1 = 8, 22
+RAIL_X0 = 7               # tile 7 is the first outside the start area
 SPEED = 0.75
-MAX_TOP = 22
+MAX_TOP = 21              # a column's top row; its run sits three rows higher and must stay under row 25
+MAX_START_TILE = 25       # a block starting right of here never activates with a standing player (the spawn box)
+COL_STEP = 3              # vertical pieces are 3x3 boxes
 
 
-def ride(n):
-    return round(RIDE1 + RIDE_PER_PIECE * (n - 1))
+def arrival(n, y0, h):
+    return LOAD + DROP[n][h] + FALL[y0]
 
 
-def arrival(n, y0):
-    return LOAD + ride(n) + FALL[y0]
+def top_row(n, y0):
+    return y0 + 2 * (n - 1)
 
 
-def columns():
-    """Every (n, y0) a column can have, with its table arrival."""
+def columns(max_h):
+    """Every (n, y0, h) a column can have, with its table arrival."""
     out = []
-    for n in range(1, 7):
+    for n in DROP:
         for y0 in FALL:
-            if y0 + 2 * n <= MAX_TOP:
-                out.append((n, y0, arrival(n, y0)))
+            if top_row(n, y0) > MAX_TOP:
+                continue
+            for h in range(0, max_h + 1):
+                if h and top_row(n, y0) + 3 > 24:
+                    continue
+                out.append((n, y0, h, arrival(n, y0, h)))
     return out
 
 
-def plan(gaps, dx_choices=(3, 4, 5, 6)):
-    """Columns for a row whose sorted positions are `gaps` apart. Block 0 is
-    the rightmost column; every next column sits dx tiles further left and
-    lands later. A block's position relative to block 0, once all are on the
-    rail, is 0.75 * (arrival - arrival_0) - 16 * (tile_0 - tile): a later
-    block can land left or right of an earlier one, so the row's order is
-    not the arrival order. Returns [(dx, n, y0, arrival, offset)], the
-    earliest-finishing row."""
-    cols = columns()
-    span = sum(gaps)
-    target = [round(v, 4) for v in itertools.accumulate([0.0] + list(gaps))]   # sorted positions from the leftmost
+def fits(chain, k, n, y0, h, x):
+    """Geometry against the right-hand neighbour: the curve box next to its
+    vertical, runs over its top, runs over its run."""
+    if k == 0:
+        return True
+    pn, py, ph, _, px = chain[k - 1]
+    t, pt = top_row(n, y0), top_row(pn, py)
+    if h == 0:
+        return True                      # a plain column bothers nobody
+    if t <= pt:
+        return False                     # the curve box would meet the neighbour's vertical
+    if ph:
+        if h >= 2 and t < pt + 3:
+            return False                 # runs overlapping in x need three rows between them
+        if t < pt + 2:
+            return False                 # the run's first piece over the neighbour's curve box
+    return True
+
+
+def plan(gaps, max_h=7, slack=None):
+    """Columns for a row of len(gaps)+1 blocks, packed from the right:
+    column k sits COL_STEP tiles left of column k-1 and, on the rail, block
+    k's offset from block 0 is 0.75 * (a_k - a_0) - 48 k, so the integers
+    m_k = (a_k - a_0) - 64 k are the row's positions in frames of travel.
+    With slack None they must be consecutive (every gap one frame, 0.75);
+    with slack S the row may span up to K-1+S frames, gaps of one or two
+    frames, and the tightest span wins. Returns [(n, y0, h, arrival, tile)]
+    from the rightmost column, or None."""
+    K = len(gaps) + 1
+    max_span = (K - 1) + (0 if slack is None else slack)
+    cols = columns(max_h)
     best = None
 
-    def rec(chain, dist):
+    def rec(chain, ms):
         nonlocal best
-        if len(chain) == len(gaps) + 1:
-            offs = sorted(c[4] for c in chain)
-            rel = [round(o - offs[0], 4) for o in offs]
-            if rel == target and (best is None or chain[-1][3] < best[-1][3]):
-                best = list(chain)
+        k = len(chain)
+        if k == K:
+            span = max(ms) - min(ms)
+            srt = sorted(ms)
+            if any(b - a > 2 for a, b in zip(srt, srt[1:])):
+                return
+            key = (span, chain[-1][3] - chain[0][3])
+            if best is None or key < best[1]:
+                best = (list(chain), key)
             return
-        prev_a = chain[-1][3]
-        for dx in dx_choices:
-            for n, y0, a in cols:
-                if a <= prev_a:
-                    continue
-                off = round(SPEED * (a - chain[0][3]) - 16 * (dist + dx), 4)
-                # every position must stay within the row's span of block 0
-                if abs(off) > span + 1e-9 or any(abs(off - c[4]) < 1e-9 for c in chain):
-                    continue
-                chain.append((dx, n, y0, a, off))
-                rec(chain, dist + dx)
-                chain.pop()
+        x = chain[0][4] - COL_STEP * k
+        for n, y0, h, a in cols:
+            if h and x + 3 + 2 * (h - 1) > MAX_START_TILE:
+                continue
+            m = (a - chain[0][3]) - 64 * k
+            if m in ms or max(ms + [m]) - min(ms + [m]) > max_span:
+                continue
+            if not fits(chain, k, n, y0, h, x):
+                continue
+            chain.append((n, y0, h, a, x)); ms.append(m)
+            rec(chain, ms)
+            chain.pop(); ms.pop()
 
-    for n, y0, a in cols:
-        rec([(0, n, y0, a, 0.0)], 0)
-    return best
+    for n, y0, h, a in cols:
+        # the block starts on the last run piece, or on the column itself: that piece's tile must not pass MAX_START_TILE
+        x0 = MAX_START_TILE - (3 + 2 * (h - 1)) if h else MAX_START_TILE
+        if x0 - COL_STEP * (K - 1) < RAIL_X0 + 2:
+            continue
+        rec([(n, y0, h, a, x0)], [0])
+    return best[0] if best else None
 
 
-def build(chain, name, rightmost_x=None):
+def build(chain, name):
     import gen_test_levels as g
     N = 0x0104
     level = g.LevelBuilder(name, style='SMB1', theme='Ground')
     level.goal_y = 4
     level.add_ground_fill(7, 23, 4)
-    span = sum(c[0] for c in chain)
-    x = rightmost_x if rightmost_x is not None else 10 + span   # leftmost column two tiles clear of the rail's cap
-    x1 = max(RAIL_X1, x + 6)
-    for rx in range(RAIL_X0, x1 + 1, 2):
+    x1 = chain[0][4] + 2 if chain[0][4] % 2 else chain[0][4] + 1
+    for rx in range(RAIL_X0 + (RAIL_X0 % 2 != x1 % 2), x1 + 1, 2):
+        pass
+    rail_x = list(range(RAIL_X0, x1 + 1, 2))
+    if rail_x[-1] < chain[0][4]:
+        rail_x.append(rail_x[-1] + 2)
+    for rx in rail_x:
         level.add_track(rx, RAIL_ROW, g.TRACK_SHAPE_HORIZONTAL,
-                        ends=(0x71 if rx == x1 else 0x90, 0x70 if rx == RAIL_X0 else N))
+                        ends=(0x71 if rx == rail_x[-1] else 0x90, 0x70 if rx == rail_x[0] else N))
     placed = []
-    for dx, n, y0, a, off in chain:
-        x -= dx
-        top = None
+    for n, y0, h, a, x in chain:
+        top = top_row(n, y0)
+        piece = None
         for i in range(n):
-            top = level.add_track(x, y0 + 2 * i, g.TRACK_SHAPE_VERTICAL, ends=(0x72 if i == n - 1 else 0x91, N))
-        level.add_note_block_on_track(top, vertical=True)
-        placed.append((x, y0, n, a))
-    return level, placed
+            piece = level.add_track(x, y0 + 2 * i, g.TRACK_SHAPE_VERTICAL,
+                                    ends=((0x91 if h else 0x72) if i == n - 1 else 0x91, N))
+        if h:
+            level.add_track(x + 1, top + 2, g.TRACK_SHAPE_CURVE_TL, ends=(0x90, N))
+            for j in range(h):
+                piece = level.add_track(x + 3 + 2 * j, top + 3, g.TRACK_SHAPE_HORIZONTAL,
+                                        ends=(0x71 if j == h - 1 else 0x90, N))
+            level.add_note_block_on_track(piece, travel_left=True)
+        else:
+            level.add_note_block_on_track(piece, vertical=True)
+        placed.append((x, y0, n, h, a))
+    return level, placed, rail_x[-1]
 
 
-def sim_check(sim, placed):
-    args = [sim, f"rail={RAIL_X0}:{max(RAIL_X1, placed[0][0] + 6)}:{RAIL_ROW}", "frames=500"] + [f"{x}:{y0}:{n}" for x, y0, n, a in placed]
+def sim_check(sim, placed, rail_x1):
+    args = [sim, f"rail={RAIL_X0}:{rail_x1}:{RAIL_ROW}", "frames=800"] + [f"{x}:{y0}:{n}:{h}" for x, y0, n, h, a in placed]
     out = subprocess.run(args, capture_output=True, text=True, check=True).stdout
     return out.strip().splitlines()[-1]
 
@@ -135,27 +187,26 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--gaps", required=True, help="comma-separated gaps in units between consecutive blocks (multiples of 0.25)")
     ap.add_argument("--name", default="Packed Row")
+    ap.add_argument("--max-run", type=int, default=7, help="longest lead-in run in pieces")
+    ap.add_argument("--slack", type=int, help="allow the row to span this many extra frames of travel (gaps of two frames where one does not line up)")
     ap.add_argument("--sim", help="path to packed_row_sim (smm2-decomp/src-sim) to confirm the row")
     ap.add_argument("--out", help="write the encrypted course here")
     ap.add_argument("--install", type=int, help="install into this Coursebot slot through validate_slots (Coursebot judges it on the way)")
     args = ap.parse_args()
     gaps = [float(v) for v in args.gaps.split(",")]
-    chain = plan(gaps)
+    chain = plan(gaps, max_h=args.max_run, slack=args.slack)
     if not chain:
-        print("no column set reaches those gaps with vertical columns alone (up to six pieces, rows 10..20); "
-              "longer or finer rows need lead-up geometry (curves at 51 frames, straights at 21/22)")
+        print("no column set packs that row inside one screen (tiles 7..26, tops to row 21, runs to row 24)")
         return 1
-    level, placed = build(chain, args.name)
-    print(f"{args.name}: rail row {RAIL_ROW}, tiles {RAIL_X0}..{max(RAIL_X1, placed[0][0] + 6)}; blocks travel left")
-    for k, (x, y0, n, a) in enumerate(placed):
-        off = chain[k][4]
-        print(f"  block {k}: column at tile {x}, {n} piece{'s' if n > 1 else ''} from row {y0}, arrives frame {a}, "
-              f"settles {abs(off):.2f} {'left' if off > 0 else 'right'} of block 0" if k else
-              f"  block {k}: column at tile {x}, {n} piece{'s' if n > 1 else ''} from row {y0}, arrives frame {a}")
-    order = sorted(range(len(chain)), key=lambda k: chain[k][4])
-    print("  row, left to right: " + "  ".join(f"block {k}" + (f"  +{chain[k][4]-chain[order[j-1]][4]:.2f}" if j else "") for j, k in enumerate(order)))
+    level, placed, rail_x1 = build(chain, args.name)
+    print(f"{args.name}: rail row {RAIL_ROW}, tiles {RAIL_X0}..{rail_x1}; blocks travel left; {len(placed)} blocks")
+    a0 = placed[0][4]
+    for k, (x, y0, n, h, a) in enumerate(placed):
+        m = (a - a0) - 64 * k
+        run = f" + a run of {h} piece{'s' if h > 1 else ''} at row {top_row(n, y0) + 3}" if h else ""
+        print(f"  block {k}: tile {x}, {n} piece{'s' if n > 1 else ''} from row {y0}{run}; arrives frame {a}; row slot {m:+d} (x {m * 0.75:+.2f} from block 0)")
     if args.sim:
-        print("sim:", sim_check(args.sim, placed))
+        print("sim:", sim_check(args.sim, placed, rail_x1))
     if args.out:
         import gen_test_levels as g
         open(args.out, "wb").write(g.encrypt_course(level.build()))
