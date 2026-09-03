@@ -542,6 +542,30 @@ def level_big_flat() -> LevelBuilder:
     return b
 
 
+@test_level(28, "Long Run SMB3")
+def level_long_run_smb3() -> LevelBuilder:
+    """A 120-tile flat runway in the SMB3 style: room to hold run long
+    enough for the P-meter, to see whether the 1.3x acceleration rows and
+    the 4.0 cap in the physics block are the P-speed."""
+    b = LevelBuilder("Long Run SMB3", "SMB3", "Ground")
+    b.width = 120
+    b.add_ground_block(7, 109, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(29, "Star Run")
+def level_star_run() -> LevelBuilder:
+    """The SMB1 runway with a Super Star (object 29) on the floor at tile 9:
+    does invincibility switch the acceleration rows and the 4.0 cap?"""
+    b = LevelBuilder("Star Run", "SMB1", "Ground")
+    b.width = 120
+    b.add_ground_block(7, 109, y_surface=4, height=5)
+    b.add_actor(29, 9, 5)
+    b.goal_y = 5
+    return b
+
+
 @test_level(1, "Jump Platforms")
 def level_jump_platforms() -> LevelBuilder:
     """Platforms at different heights for jump testing."""
