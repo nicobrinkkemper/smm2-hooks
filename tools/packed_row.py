@@ -95,7 +95,7 @@ def fits(chain, k, n, y0, h, x):
     return True
 
 
-def plan(gaps, max_h=7, slack=None):
+def plan(gaps, max_h=7, slack=None, ordered=False):
     """Columns for a row of len(gaps)+1 blocks, packed from the right:
     column k sits COL_STEP tiles left of column k-1 and, on the rail, block
     k's offset from block 0 is 0.75 * (a_k - a_0) - 48 k, so the integers
@@ -128,6 +128,13 @@ def plan(gaps, max_h=7, slack=None):
             m = (a - chain[0][3]) - 64 * k
             if m in ms or max(ms + [m]) - min(ms + [m]) > max_span:
                 continue
+            # ordered: every later block lands one or two frames further in
+            # the same direction, so the row's order is the arrival order and
+            # the stacked outlines cascade one way
+            if ordered and k >= 1:
+                d = m - ms[-1]
+                if abs(d) > 2 or (k >= 2 and (d > 0) != (ms[-1] - ms[-2] > 0)):
+                    continue
             if not fits(chain, k, n, y0, h, x):
                 continue
             chain.append((n, y0, h, a, x)); ms.append(m)
@@ -159,7 +166,9 @@ def build(chain, name):
         level.add_track(rx, RAIL_ROW, g.TRACK_SHAPE_HORIZONTAL,
                         ends=(0x71 if rx == rail_x[-1] else 0x90, 0x70 if rx == rail_x[0] else N))
     placed = []
-    for n, y0, h, a, x in chain:
+    starts = []   # (row slot, the piece the block starts on, run?)
+    a0 = chain[0][3]
+    for k, (n, y0, h, a, x) in enumerate(chain):
         top = top_row(n, y0)
         piece = None
         for i in range(n):
@@ -170,10 +179,17 @@ def build(chain, name):
             for j in range(h):
                 piece = level.add_track(x + 3 + 2 * j, top + 3, g.TRACK_SHAPE_HORIZONTAL,
                                         ends=(0x71 if j == h - 1 else 0x90, N))
+        starts.append(((a - a0) - 64 * k, piece, bool(h)))
+        placed.append((x, y0, n, h, a))
+    # The game draws later objects in front. Written in row order (leftmost
+    # first), the stacked outlines cascade one way whatever the arrival
+    # order: the rightmost block is in front and each one further left peeks
+    # out on the left.
+    for m, piece, run in sorted(starts, key=lambda t: t[0]):
+        if run:
             level.add_note_block_on_track(piece, travel_left=True)
         else:
             level.add_note_block_on_track(piece, vertical=True)
-        placed.append((x, y0, n, h, a))
     return level, placed, rail_x[-1]
 
 
@@ -188,13 +204,14 @@ def main():
     ap.add_argument("--gaps", required=True, help="comma-separated gaps in units between consecutive blocks (multiples of 0.25)")
     ap.add_argument("--name", default="Packed Row")
     ap.add_argument("--max-run", type=int, default=7, help="longest lead-in run in pieces")
+    ap.add_argument("--ordered", action="store_true", help="row order = arrival order (each later block a step further the same way), for a clean cascade of outlines")
     ap.add_argument("--slack", type=int, help="allow the row to span this many extra frames of travel (gaps of two frames where one does not line up)")
     ap.add_argument("--sim", help="path to packed_row_sim (smm2-decomp/src-sim) to confirm the row")
     ap.add_argument("--out", help="write the encrypted course here")
     ap.add_argument("--install", type=int, help="install into this Coursebot slot through validate_slots (Coursebot judges it on the way)")
     args = ap.parse_args()
     gaps = [float(v) for v in args.gaps.split(",")]
-    chain = plan(gaps, max_h=args.max_run, slack=args.slack)
+    chain = plan(gaps, max_h=args.max_run, slack=args.slack, ordered=args.ordered)
     if not chain:
         print("no column set packs that row inside one screen (tiles 7..26, tops to row 21, runs to row 24)")
         return 1

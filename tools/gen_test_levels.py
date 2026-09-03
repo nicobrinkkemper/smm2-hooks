@@ -1024,7 +1024,7 @@ def level_vertical_chain() -> LevelBuilder:
 
 def _packed_row_level(name, columns, rail_x1):
     """A planner row (tools/packed_row.py): columns as (tile, bottom row,
-    vertical pieces, run pieces) over a delivery rail from tile 7 to rail_x1
+    vertical pieces, run pieces, row slot) over a delivery rail from tile 7 to rail_x1
     on row 6; a run is a TL curve at (x+1, top+2) into horizontal pieces on
     row top+3, the block starting on the last one travelling left."""
     N = 0x0104
@@ -1033,7 +1033,8 @@ def _packed_row_level(name, columns, rail_x1):
     level.add_ground_fill(7, 23, 4)
     for rx in range(7, rail_x1 + 1, 2):
         level.add_track(rx, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if rx == rail_x1 else 0x90, 0x70 if rx == 7 else N))
-    for x, y0, n, h in columns:
+    starts = []
+    for x, y0, n, h, slot in columns:
         top = y0 + 2 * (n - 1)
         piece = None
         for i in range(n):
@@ -1043,6 +1044,10 @@ def _packed_row_level(name, columns, rail_x1):
             level.add_track(x + 1, top + 2, TRACK_SHAPE_CURVE_TL, ends=(0x90, N))
             for j in range(h):
                 piece = level.add_track(x + 3 + 2 * j, top + 3, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if j == h - 1 else 0x90, N))
+        starts.append((slot, piece, bool(h)))
+    # later objects draw in front: written in row order the outlines cascade one way
+    for slot, piece, run in sorted(starts):
+        if run:
             level.add_note_block_on_track(piece, travel_left=True)
         else:
             level.add_note_block_on_track(piece, vertical=True)
@@ -1054,14 +1059,14 @@ def level_packed_row_x5() -> LevelBuilder:
     """Five note blocks two frames (1.5 units) apart on one rail, the most
     tools/packed_row.py packs inside one screen (--gaps 0.75 x4 --slack 4):
     Eden gaps 1.500 x4, arrivals 128, 190, 250, 316, 386 after the load."""
-    return _packed_row_level("Packed Row x5", [(25, 12, 1, 0), (22, 16, 2, 0), (19, 11, 4, 0), (16, 19, 1, 2), (13, 15, 4, 1)], 27)
+    return _packed_row_level("Packed Row x5", [(25, 12, 1, 0, 0), (22, 16, 2, 0, -2), (19, 11, 4, 0, -6), (16, 19, 1, 2, -4), (13, 15, 4, 1, 2)], 27)
 
 
 @test_level(46, "Packed Row x4")
 def level_packed_row_x4() -> LevelBuilder:
     """Four note blocks, three of the gaps one frame (0.75) and one two
     frames (--gaps 0.75 x3 --slack 1): Eden gaps 0.750, 0.750, 1.500."""
-    return _packed_row_level("Packed Row x4", [(25, 20, 1, 0), (22, 15, 3, 0), (19, 11, 5, 0), (16, 19, 2, 2)], 27)
+    return _packed_row_level("Packed Row x4", [(25, 20, 1, 0, 0), (22, 15, 3, 0, 1), (19, 11, 5, 0, 2), (16, 19, 2, 2, 4)], 27)
 
 
 @test_level(24, "Gap Open")
