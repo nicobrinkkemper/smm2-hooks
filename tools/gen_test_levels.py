@@ -528,6 +528,20 @@ def level_flat_ground() -> LevelBuilder:
     return b
 
 
+@test_level(27, "Big Flat")
+def level_big_flat() -> LevelBuilder:
+    """Flat Ground with a free mushroom on the floor and the 3-tall block
+    group Coursebot slot 0 carries at tiles 13..15, rows 8..11: measure Big
+    Mario's box the way small Mario's was (head bump under the block from a
+    running jump, wall pin against its faces at 208 and 256)."""
+    b = LevelBuilder("Big Flat", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_ground_block(13, 15, y_surface=11, height=4)
+    b.add_actor(OBJ_MUSHROOM, 9, 5)
+    b.goal_y = 5
+    return b
+
+
 @test_level(1, "Jump Platforms")
 def level_jump_platforms() -> LevelBuilder:
     """Platforms at different heights for jump testing."""
