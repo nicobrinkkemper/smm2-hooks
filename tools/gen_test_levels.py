@@ -894,6 +894,37 @@ def level_gap_catch() -> LevelBuilder:
     return level
 
 
+@test_level(41, "Angled Landing")
+def level_angled_landing() -> LevelBuilder:
+    """A note block riding RIGHT off the open end of a horizontal piece and
+    falling in an arc onto a lower track: the landing comes in at an angle
+    (0.75 sideways, about -2.5 down) instead of straight down as in Gap
+    Catch. Upper piece at (x, 10): left cap, right end 0x104, so the block
+    detaches one cell past the piece, at tile x+3, rail y 184. The lower
+    rail sits at row 7 (y 120), 64 units down: about 51 frames of fall and
+    38 units of drift, so the block arrives near the right edge of tile x+5.
+
+        A (x 8)   lower H piece (x+4, 6), caps both ends: lands on a body cell
+        B (x 15)  lower H piece (x+5, 6): lands on its left cap cell, 6 right of the centre
+        C (x 22)  two H pieces (x+3, 6)+(x+5, 6): lands on their joint cell
+        D (x 29)  vertical piece (x+4, 6), caps both ends: lands on a vertical rail from the side
+    """
+    N = 0x0104
+    level = LevelBuilder("Angled Landing", style='SMB1', theme='Ground')
+    level.width = 60   # the tracks reach tile 36; keep them clear of the goal area
+    level.goal_y = 4
+    level.add_ground_fill(7, level.width - 11, 4)
+    for x in (8, 15, 22, 29):
+        upper = level.add_track(x, 10, TRACK_SHAPE_HORIZONTAL, ends=(N, 0x70))
+        level.add_note_block_on_track(upper, travel_left=False)
+    level.add_track(12, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_track(20, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    level.add_track(25, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x90, 0x70))
+    level.add_track(27, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, N))
+    level.add_track(33, 6, TRACK_SHAPE_VERTICAL, ends=(0x72, 0x73))
+    return level
+
+
 @test_level(24, "Gap Open")
 def level_gap_open() -> LevelBuilder:
     """Gap Fall with the editor's open track ends instead of 0x104: 0x83 at
