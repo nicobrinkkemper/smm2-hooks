@@ -447,6 +447,7 @@ class LevelBuilder:
             offset = 80 if obj.get('_half_tile_offset') else 0
             struct.pack_into('<i', data, off + 0x00, obj['x'] * TILE + offset)
             struct.pack_into('<i', data, off + 0x04, obj['y'] * TILE + offset)
+            struct.pack_into('<H', data, off + 0x08, obj.get('res', 0))
             data[off + 0x0A] = obj.get('width', 1)
             data[off + 0x0B] = obj.get('height', 1)
             struct.pack_into('<I', data, off + 0x0C, obj.get('flags', 0x06000040))
@@ -589,16 +590,20 @@ def level_one_slope() -> LevelBuilder:
     return b
 
 
-def _one_slope(name: str, flags: int = 0x06000040, ex: int = 0, cflags: int = 0x06000040, x: int = 12) -> LevelBuilder:
+def _one_slope(name: str, flags: int = 0x06000040, ex: int = 0, cflags: int = 0x06000040, x: int = 12, y: int = 5, res: int = 0) -> LevelBuilder:
     """A flat floor with one steep slope object. Coursebot accepts only the
     default flags (0x06000040), the default child flags and ex 0 on a slope:
     flags 0x4, 0x8, 0x10, 0x18, 0x20, 0x40000, 0x400000, ex 1 and child
     flags 0x10 / 0x20 were each deleted (2026-09-03), so the slope's
-    direction is not in those fields."""
+    direction is not in those fields. Moving the anchor (x 15 keeps the tall
+    face at the anchor column; y 8 floats the slope at rows 8..11) and the
+    16-bit word after y (1 or 2, accepted and ignored) do not turn it
+    either: x is the left column, y the bottom row, and the direction is not
+    in the record's fields."""
     b = LevelBuilder(name, "SMB1", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
-    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': x, 'y': 5, 'width': 4, 'height': 4,
-                      'flags': flags, 'ex': ex, 'cflags': cflags, '_half_tile_offset': True})
+    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': x, 'y': y, 'width': 4, 'height': 4,
+                      'flags': flags, 'ex': ex, 'cflags': cflags, 'res': res, '_half_tile_offset': True})
     b.goal_y = 5
     return b
 
