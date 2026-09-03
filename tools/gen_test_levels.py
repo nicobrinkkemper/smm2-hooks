@@ -1045,8 +1045,8 @@ def _packed_row_level(name, columns, rail_x1):
             for j in range(h):
                 piece = level.add_track(x + 3 + 2 * j, top + 3, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if j == h - 1 else 0x90, N))
         starts.append((slot, piece, bool(h)))
-    # later objects draw in front: written in row order the outlines cascade one way
-    for slot, piece, run in sorted(starts):
+    # the stack draws in landing order, whatever the object order (Eden, 2026-09-04)
+    for slot, piece, run in starts:
         if run:
             level.add_note_block_on_track(piece, travel_left=True)
         else:
@@ -1057,15 +1057,20 @@ def _packed_row_level(name, columns, rail_x1):
 @test_level(45, "Packed Row x5")
 def level_packed_row_x5() -> LevelBuilder:
     """Five note blocks two frames (1.5 units) apart on one rail, the most
-    tools/packed_row.py packs inside one screen (--gaps 0.75 x4 --slack 4):
-    Eden gaps 1.500 x4, arrivals 128, 190, 250, 316, 386 after the load."""
+    tools/packed_row.py packs inside one screen (--gaps 0.75 x4 --slack 4
+    --any-order): Eden gaps 1.500 x4, arrivals 128, 190, 250, 316, 386 after
+    the load. The landing order is not the row order (slots 0, -2, -6, -4,
+    +2) and the stack draws in landing order, so its outlines interleave;
+    Packed Row x4 is the ordered one."""
     return _packed_row_level("Packed Row x5", [(25, 12, 1, 0, 0), (22, 16, 2, 0, -2), (19, 11, 4, 0, -6), (16, 19, 1, 2, -4), (13, 15, 4, 1, 2)], 27)
 
 
 @test_level(46, "Packed Row x4")
 def level_packed_row_x4() -> LevelBuilder:
     """Four note blocks, three of the gaps one frame (0.75) and one two
-    frames (--gaps 0.75 x3 --slack 1): Eden gaps 0.750, 0.750, 1.500."""
+    frames (--gaps 0.75 x3 --slack 1): Eden gaps 0.750, 0.750, 1.500. Each
+    later block lands a step further right (slots 0, +1, +2, +4), so the
+    stack cascades one way: the most that packs ordered inside one screen."""
     return _packed_row_level("Packed Row x4", [(25, 20, 1, 0, 0), (22, 15, 3, 0, 1), (19, 11, 5, 0, 2), (16, 19, 2, 2, 4)], 27)
 
 

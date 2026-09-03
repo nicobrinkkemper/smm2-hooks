@@ -2,8 +2,13 @@
 """Plan a packed row of note blocks on one delivery rail, and build the course.
 
     python3 packed_row.py --gaps 0.75,0.75              # three blocks, one frame of travel apart
-    python3 packed_row.py --gaps 0.25,0.25 --name "Row 1/4" --install 8
-    python3 packed_row.py --gaps 0.75,0.75 --sim ../smm2-decomp/src-sim/packed_row_sim
+    python3 packed_row.py --gaps 0.75,0.75,0.75 --slack 1 --sim ../smm2-decomp/src-sim/packed_row_sim
+    python3 packed_row.py --gaps 0.75,0.75,0.75,0.75 --slack 4 --any-order --install 9
+
+By default later blocks land a step further the same way every time, so the
+row's order is the landing order and the stack's outlines cascade one way
+(the game draws a later lander in front). --any-order drops that and packs
+more, with interleaved outlines: five inside one screen instead of four.
 
 Every block rides its own column of vertical track pieces (block on the top
 piece, open bottom end) and drops onto a shared horizontal rail, where all of
@@ -181,11 +186,11 @@ def build(chain, name):
                                         ends=(0x71 if j == h - 1 else 0x90, N))
         starts.append(((a - a0) - 64 * k, piece, bool(h)))
         placed.append((x, y0, n, h, a))
-    # The game draws later objects in front. Written in row order (leftmost
-    # first), the stacked outlines cascade one way whatever the arrival
-    # order: the rightmost block is in front and each one further left peeks
-    # out on the left.
-    for m, piece, run in sorted(starts, key=lambda t: t[0]):
+    # The stack draws in landing order (a later lander in front), not in
+    # object order: writing the blocks in row order changed nothing in Eden
+    # (2026-09-04). A clean cascade therefore needs the arrival order to be
+    # the row order, which is what --ordered (the default) searches for.
+    for m, piece, run in starts:
         if run:
             level.add_note_block_on_track(piece, travel_left=True)
         else:
@@ -204,14 +209,14 @@ def main():
     ap.add_argument("--gaps", required=True, help="comma-separated gaps in units between consecutive blocks (multiples of 0.25)")
     ap.add_argument("--name", default="Packed Row")
     ap.add_argument("--max-run", type=int, default=7, help="longest lead-in run in pieces")
-    ap.add_argument("--ordered", action="store_true", help="row order = arrival order (each later block a step further the same way), for a clean cascade of outlines")
+    ap.add_argument("--any-order", action="store_true", help="let later blocks land on either side of earlier ones (more blocks fit, but the stack draws in landing order and the outlines interleave)")
     ap.add_argument("--slack", type=int, help="allow the row to span this many extra frames of travel (gaps of two frames where one does not line up)")
     ap.add_argument("--sim", help="path to packed_row_sim (smm2-decomp/src-sim) to confirm the row")
     ap.add_argument("--out", help="write the encrypted course here")
     ap.add_argument("--install", type=int, help="install into this Coursebot slot through validate_slots (Coursebot judges it on the way)")
     args = ap.parse_args()
     gaps = [float(v) for v in args.gaps.split(",")]
-    chain = plan(gaps, max_h=args.max_run, slack=args.slack, ordered=args.ordered)
+    chain = plan(gaps, max_h=args.max_run, slack=args.slack, ordered=not args.any_order)
     if not chain:
         print("no column set packs that row inside one screen (tiles 7..26, tops to row 21, runs to row 24)")
         return 1
