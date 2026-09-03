@@ -653,6 +653,22 @@ def level_steep_slope_5() -> LevelBuilder:
     return b
 
 
+@test_level(36, "Gentle Slope 8x4")
+def level_gentle_slope() -> LevelBuilder:
+    """A gentle slope (object 87, 8 wide, 4 tall) drawn into the floor like
+    the steep ones: the floor under its footprint stops at row 3, the
+    object sits at (12, 4), and a column from tile 20 with its top at row 7
+    meets the ramp's top."""
+    b = LevelBuilder("Gentle Slope", "SMB1", "Ground")
+    b.add_ground_block(7, 11, y_surface=4, height=5)
+    b.add_ground_block(12, 19, y_surface=3, height=4)
+    b.objects.append({'id': OBJ_SLIGHT_SLOPE, 'x': 12, 'y': 4, 'width': 8, 'height': 4,
+                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_ground_block(20, 24, y_surface=7, height=8)
+    b.goal_y = 8
+    return b
+
+
 @test_level(1, "Jump Platforms")
 def level_jump_platforms() -> LevelBuilder:
     """Platforms at different heights for jump testing."""
