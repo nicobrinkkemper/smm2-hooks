@@ -82,25 +82,33 @@ def columns(max_h):
 
 
 def fits(chain, k, n, y0, h, x):
-    """Geometry against the right-hand neighbour: the curve box next to its
-    vertical, runs over its top, runs over its run."""
-    if k == 0:
-        return True
-    pn, py, ph, _, px = chain[k - 1]
-    t, pt = top_row(n, y0), top_row(pn, py)
+    """Geometry against every column to the right: the curve box next to a
+    vertical, runs over tops, runs over runs, by actual tile ranges."""
     if h == 0:
         return True                      # a plain column bothers nobody
-    if t <= pt:
-        return False                     # the curve box would meet the neighbour's vertical
-    if ph:
-        if h >= 2 and t < pt + 3:
-            return False                 # runs overlapping in x need three rows between them
-        if t < pt + 2:
-            return False                 # the run's first piece over the neighbour's curve box
+    t = top_row(n, y0)
+    curve = (x + 1, x + 3, t + 2, t + 4)             # x0, x1, row0, row1 (inclusive boxes)
+    run = (x + 3, x + 3 + 2 * (h - 1) + 2, t + 3, t + 5)
+    def overlap(a, b):
+        return not (a[1] < b[0] or b[1] < a[0] or a[3] < b[2] or b[3] < a[2])
+    for pn, py, ph, _, px in chain:
+        pt = top_row(pn, py)
+        boxes = [(px, px + 2, py, pt + 2)]                       # the vertical stack
+        if ph:
+            boxes.append((px + 1, px + 3, pt + 2, pt + 4))       # its curve
+            boxes.append((px + 3, px + 3 + 2 * (ph - 1) + 2, pt + 3, pt + 5))   # its run
+        for b in boxes:
+            if overlap(curve, b) or overlap(run, b):
+                return False
     return True
 
 
-def plan(gaps, max_h=7, slack=None, ordered=False):
+def start_row(n, y0, h):
+    """The row a column's block starts on: its run's row, or its top piece."""
+    return top_row(n, y0) + 3 if h else top_row(n, y0)
+
+
+def plan(gaps, max_h=7, slack=None, ordered=False, by_height=False, steps=(3,)):
     """Columns for a row of len(gaps)+1 blocks, packed from the right:
     column k sits COL_STEP tiles left of column k-1 and, on the rail, block
     k's offset from block 0 is 0.75 * (a_k - a_0) - 48 k, so the integers
@@ -122,15 +130,26 @@ def plan(gaps, max_h=7, slack=None, ordered=False):
             srt = sorted(ms)
             if any(b - a > 2 for a, b in zip(srt, srt[1:])):
                 return
+            if by_height:
+                # the start rows must run one way along the ROW (sorted by
+                # slot), whatever order the blocks landed in
+                rows = [start_row(c[0], c[1], c[2]) for _, c in sorted(zip(ms, chain), key=lambda t: t[0])]
+                diffs = [b - a for a, b in zip(rows, rows[1:])]
+                if any(d == 0 for d in diffs) or (min(diffs) < 0 < max(diffs)):
+                    return
             key = (span, chain[-1][3] - chain[0][3])
             if best is None or key < best[1]:
                 best = (list(chain), key)
             return
-        x = chain[0][4] - COL_STEP * k
-        for n, y0, h, a in cols:
+        for step in steps:
+          x = chain[-1][4] - step
+          if x < RAIL_X0 + 2:
+              continue
+          D = (chain[0][4] - x) // 3      # column offset in units of three tiles: 64 frames of travel each
+          for n, y0, h, a in cols:
             if h and x + 3 + 2 * (h - 1) > MAX_START_TILE:
                 continue
-            m = (a - chain[0][3]) - 64 * k
+            m = (a - chain[0][3]) - 64 * D
             if m in ms or max(ms + [m]) - min(ms + [m]) > max_span:
                 continue
             # ordered: every later block lands one or two frames further in
@@ -140,6 +159,11 @@ def plan(gaps, max_h=7, slack=None, ordered=False):
                 d = m - ms[-1]
                 if abs(d) > 2 or (k >= 2 and (d > 0) != (ms[-1] - ms[-2] > 0)):
                     continue
+            # by_height: the stack draws by start height (the lowest start in
+            # front, Eden 2026-09-04), so the start rows must all differ and
+            # run one way along the row (checked at the end)
+            if by_height and any(start_row(n, y0, h) == start_row(c[0], c[1], c[2]) for c in chain):
+                continue
             if not fits(chain, k, n, y0, h, x):
                 continue
             chain.append((n, y0, h, a, x)); ms.append(m)
@@ -149,7 +173,7 @@ def plan(gaps, max_h=7, slack=None, ordered=False):
     for n, y0, h, a in cols:
         # the block starts on the last run piece, or on the column itself: that piece's tile must not pass MAX_START_TILE
         x0 = MAX_START_TILE - (3 + 2 * (h - 1)) if h else MAX_START_TILE
-        if x0 - COL_STEP * (K - 1) < RAIL_X0 + 2:
+        if x0 - min(steps) * (K - 1) < RAIL_X0 + 2:
             continue
         rec([(n, y0, h, a, x0)], [0])
     return best[0] if best else None
@@ -209,6 +233,8 @@ def main():
     ap.add_argument("--gaps", required=True, help="comma-separated gaps in units between consecutive blocks (multiples of 0.25)")
     ap.add_argument("--name", default="Packed Row")
     ap.add_argument("--max-run", type=int, default=7, help="longest lead-in run in pieces")
+    ap.add_argument("--wide", action="store_true", help="let a column sit six tiles from its neighbour instead of three")
+    ap.add_argument("--by-height", action="store_true", help="the start rows must run one way along the row (the stack draws by start height, lowest in front)")
     ap.add_argument("--any-order", action="store_true", help="let later blocks land on either side of earlier ones (more blocks fit, but the stack draws in landing order and the outlines interleave)")
     ap.add_argument("--slack", type=int, help="allow the row to span this many extra frames of travel (gaps of two frames where one does not line up)")
     ap.add_argument("--sim", help="path to packed_row_sim (smm2-decomp/src-sim) to confirm the row")
@@ -216,17 +242,18 @@ def main():
     ap.add_argument("--install", type=int, help="install into this Coursebot slot through validate_slots (Coursebot judges it on the way)")
     args = ap.parse_args()
     gaps = [float(v) for v in args.gaps.split(",")]
-    chain = plan(gaps, max_h=args.max_run, slack=args.slack, ordered=not args.any_order)
+    chain = plan(gaps, max_h=args.max_run, slack=args.slack, ordered=not args.any_order, by_height=args.by_height, steps=(3, 6) if args.wide else (3,))
     if not chain:
         print("no column set packs that row inside one screen (tiles 7..26, tops to row 21, runs to row 24)")
         return 1
     level, placed, rail_x1 = build(chain, args.name)
     print(f"{args.name}: rail row {RAIL_ROW}, tiles {RAIL_X0}..{rail_x1}; blocks travel left; {len(placed)} blocks")
-    a0 = placed[0][4]
+    a0, x0 = placed[0][4], placed[0][0]
     for k, (x, y0, n, h, a) in enumerate(placed):
-        m = (a - a0) - 64 * k
+        m = (a - a0) - 64 * ((x0 - x) // 3)
         run = f" + a run of {h} piece{'s' if h > 1 else ''} at row {top_row(n, y0) + 3}" if h else ""
-        print(f"  block {k}: tile {x}, {n} piece{'s' if n > 1 else ''} from row {y0}{run}; arrives frame {a}; row slot {m:+d} (x {m * 0.75:+.2f} from block 0)")
+        start = f"; starts on row {start_row(n, y0, h)}"
+        print(f"  block {k}: tile {x}, {n} piece{'s' if n > 1 else ''} from row {y0}{run}{start}; arrives frame {a}; row slot {m:+d} (x {m * 0.75:+.2f} from block 0)")
     if args.sim:
         print("sim:", sim_check(args.sim, placed, rail_x1))
     if args.out:

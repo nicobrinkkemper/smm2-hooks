@@ -1067,11 +1067,12 @@ def level_packed_row_x5() -> LevelBuilder:
 
 @test_level(46, "Packed Row x4")
 def level_packed_row_x4() -> LevelBuilder:
-    """Four note blocks, three of the gaps one frame (0.75) and one two
-    frames (--gaps 0.75 x3 --slack 1): Eden gaps 0.750, 0.750, 1.500. Each
-    later block lands a step further right (slots 0, +1, +2, +4), so the
-    stack cascades one way: the most that packs ordered inside one screen."""
-    return _packed_row_level("Packed Row x4", [(25, 20, 1, 0, 0), (22, 15, 3, 0, 1), (19, 11, 5, 0, 2), (16, 19, 2, 2, 4)], 27)
+    """Four note blocks with a one-way cascade of outlines: the stack draws
+    by start height (the lowest start in front), so the start rows run 10,
+    15, 19, 23 from the right along the row (--gaps 0.75 x3 --slack 1
+    --by-height --any-order --wide; columns six tiles apart give the runs
+    room). Sim gaps 1.500, 0.750, 0.750 from the left."""
+    return _packed_row_level("Packed Row x4", [(25, 10, 1, 0, 0), (19, 12, 1, 1, 1), (13, 12, 3, 2, 2), (10, 16, 3, 3, 0)], 27)
 
 
 @test_level(24, "Gap Open")
