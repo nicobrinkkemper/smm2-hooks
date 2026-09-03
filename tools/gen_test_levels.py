@@ -669,6 +669,20 @@ def level_gentle_slope() -> LevelBuilder:
     return b
 
 
+@test_level(37, "Gentle Slope SMB3")
+def level_gentle_slope_smb3() -> LevelBuilder:
+    """The gentle slope level in the SMB3 style, where ducking on a slope
+    slides."""
+    b = LevelBuilder("Gentle Slope 3", "SMB3", "Ground")
+    b.add_ground_block(7, 11, y_surface=4, height=5)
+    b.add_ground_block(12, 19, y_surface=3, height=4)
+    b.objects.append({'id': OBJ_SLIGHT_SLOPE, 'x': 12, 'y': 4, 'width': 8, 'height': 4,
+                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_ground_block(20, 24, y_surface=7, height=8)
+    b.goal_y = 8
+    return b
+
+
 @test_level(1, "Jump Platforms")
 def level_jump_platforms() -> LevelBuilder:
     """Platforms at different heights for jump testing."""
