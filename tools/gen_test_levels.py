@@ -608,6 +608,24 @@ def _one_slope(name: str, flags: int = 0x06000040, ex: int = 0, cflags: int = 0x
     return b
 
 
+@test_level(33, "Steep Slope Up")
+def level_steep_slope_up() -> LevelBuilder:
+    """A steep slope rising to the right, drawn into the floor the way the
+    editor does it: the floor under the slope's 4x4 footprint stops at row
+    3, the slope object at (12, 4) supplies the surface row there (its foot
+    tile is a full block, the diagonal rises over the next three columns),
+    and a column at tiles 16..24 with its top at row 7 meets the ramp's
+    top. A slope overlapping ground tiles is deleted by Coursebot."""
+    b = LevelBuilder("Steep Slope Up", "SMB1", "Ground")
+    b.add_ground_block(7, 11, y_surface=4, height=5)
+    b.add_ground_block(12, 15, y_surface=3, height=4)
+    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': 12, 'y': 4, 'width': 4, 'height': 4,
+                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_ground_block(16, 24, y_surface=7, height=8)
+    b.goal_y = 8
+    return b
+
+
 @test_level(1, "Jump Platforms")
 def level_jump_platforms() -> LevelBuilder:
     """Platforms at different heights for jump testing."""
