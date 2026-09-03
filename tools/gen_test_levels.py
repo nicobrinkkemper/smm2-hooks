@@ -925,6 +925,87 @@ def level_angled_landing() -> LevelBuilder:
     return level
 
 
+@test_level(42, "Packed Row 3/4")
+def level_packed_row_34() -> LevelBuilder:
+    """Three note blocks delivered onto one horizontal rail 0.75 apart, one
+    frame of travel: the smallest spacing whose hits land on distinct
+    frames. Each column is a stack of vertical pieces (block on the top
+    piece, open bottom end) over a shared delivery rail at row 6; the
+    columns sit 3 tiles apart and their arrival frames differ by 65, so
+    each block lands 0.75 ahead of the previous one (48 units of column
+    offset against 48.75 of travel). Chosen with the sim (src-sim in
+    smm2-decomp): single piece at row 20 (tile 16), three pieces from row 15
+    (tile 13), five from row 11 (tile 10) land at frames 163, 228, 293 after
+    a load at frame 65.
+    """
+    N = 0x0104
+    level = LevelBuilder("Packed Row 3/4", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    # the delivery rail starts at tile 8: Coursebot deletes a course with
+    # track pieces inside the start area (rails from tile 2 and 6 were)
+    for x in range(8, 24, 2):
+        level.add_track(x, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if x == 22 else 0x90, 0x70 if x == 8 else N))
+    # two tiles clear of the left cap: a block landing on the cell next to a
+    # cap comes down 0.02 off (the sim), enough to spoil the row
+    for x, y0, n in [(16, 20, 1), (13, 15, 3), (10, 11, 5)]:
+        top = None
+        for i in range(n):
+            # each joint is owned by the piece below through its top end
+            # (0x91), as the editor writes vertical chains; every bottom end
+            # is 0x104, the bottom piece's being the open drop
+            top = level.add_track(x, y0 + 2 * i, TRACK_SHAPE_VERTICAL,
+                                  ends=(0x72 if i == n - 1 else 0x91, N))
+        level.add_note_block_on_track(top, vertical=True)
+    return level
+
+
+@test_level(43, "Packed Row 1/4")
+def level_packed_row_14() -> LevelBuilder:
+    """Three note blocks delivered onto one rail 0.25 apart, the finest
+    spacing the rail lattice allows (8-unit cell offsets against 0.75 per
+    frame): columns 4 tiles apart whose arrival frames differ by 85 and 86
+    (one, three and five pieces from row 10 at tiles 18, 14, 10: landings at
+    116, 201, 287),
+    so the middle block lands 0.25 ahead of the first and the third 0.25
+    behind it. The hits of such a row collapse onto shared frames; the row
+    exists only until the first cap, whose snap makes the blocks coincide.
+    """
+    N = 0x0104
+    level = LevelBuilder("Packed Row 1/4", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x in range(8, 24, 2):
+        level.add_track(x, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if x == 22 else 0x90, 0x70 if x == 8 else N))
+    for x, y0, n in [(18, 10, 1), (14, 10, 3), (10, 10, 5)]:
+        top = None
+        for i in range(n):
+            # each joint is owned by the piece below through its top end
+            # (0x91), as the editor writes vertical chains; every bottom end
+            # is 0x104, the bottom piece's being the open drop
+            top = level.add_track(x, y0 + 2 * i, TRACK_SHAPE_VERTICAL,
+                                  ends=(0x72 if i == n - 1 else 0x91, N))
+        level.add_note_block_on_track(top, vertical=True)
+    return level
+
+
+@test_level(44, "Vertical Chain")
+def level_vertical_chain() -> LevelBuilder:
+    """Coursebot control for a stacked vertical chain: two vertical pieces
+    (joint owned by the lower piece's top end, 0x91), block on the top one,
+    open bottom, a capped horizontal piece below to catch it.
+    """
+    N = 0x0104
+    level = LevelBuilder("Vertical Chain", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    lower = level.add_track(11, 10, TRACK_SHAPE_VERTICAL, ends=(0x91, N))
+    upper = level.add_track(11, 12, TRACK_SHAPE_VERTICAL, ends=(0x72, N))
+    level.add_note_block_on_track(upper, vertical=True)
+    level.add_track(11, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    return level
+
+
 @test_level(24, "Gap Open")
 def level_gap_open() -> LevelBuilder:
     """Gap Fall with the editor's open track ends instead of 0x104: 0x83 at
