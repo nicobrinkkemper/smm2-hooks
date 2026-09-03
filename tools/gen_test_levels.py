@@ -409,8 +409,24 @@ class LevelBuilder:
             'contents': OBJ_MUSHROOM,
         })
     
+    START_AREA_TILES = 7   # x 0..6 is the generated start area; Coursebot deletes a course with a track or object in it
+
+    def preflight(self):
+        """Refuse what Coursebot is known to delete, before an Eden round trip:
+        a track piece (its 3x3 box) or an object inside the start area."""
+        bad = []
+        for t in getattr(self, 'tracks', []):
+            if t['x'] < self.START_AREA_TILES:
+                bad.append(f"track ({t['x']}, {t['y']}) box reaches into the start area (x < {self.START_AREA_TILES})")
+        for o in self.objects:
+            if o['x'] < self.START_AREA_TILES:
+                bad.append(f"object id {o['id']} at ({o['x']}, {o['y']}) is in the start area (x < {self.START_AREA_TILES})")
+        if bad:
+            raise ValueError(f"{self.name}: " + "; ".join(bad))
+
     def build(self) -> bytes:
         """Build the course data."""
+        self.preflight()
         data = self.data
         
         # Header
