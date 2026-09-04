@@ -409,8 +409,24 @@ class LevelBuilder:
             'contents': OBJ_MUSHROOM,
         })
     
+    START_AREA_TILES = 7   # x 0..6 is the generated start area; Coursebot deletes a course with a track or object in it
+
+    def preflight(self):
+        """Refuse what Coursebot is known to delete, before an Eden round trip:
+        a track piece (its 3x3 box) or an object inside the start area."""
+        bad = []
+        for t in getattr(self, 'tracks', []):
+            if t['x'] < self.START_AREA_TILES:
+                bad.append(f"track ({t['x']}, {t['y']}) box reaches into the start area (x < {self.START_AREA_TILES})")
+        for o in self.objects:
+            if o['x'] < self.START_AREA_TILES:
+                bad.append(f"object id {o['id']} at ({o['x']}, {o['y']}) is in the start area (x < {self.START_AREA_TILES})")
+        if bad:
+            raise ValueError(f"{self.name}: " + "; ".join(bad))
+
     def build(self) -> bytes:
         """Build the course data."""
+        self.preflight()
         data = self.data
         
         # Header
@@ -923,6 +939,141 @@ def level_angled_landing() -> LevelBuilder:
     level.add_track(27, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, N))
     level.add_track(33, 6, TRACK_SHAPE_VERTICAL, ends=(0x72, 0x73))
     return level
+
+
+@test_level(42, "Packed Row 3/4")
+def level_packed_row_34() -> LevelBuilder:
+    """Three note blocks delivered onto one horizontal rail 0.75 apart, one
+    frame of travel: the smallest spacing whose hits land on distinct
+    frames. Each column is a stack of vertical pieces (block on the top
+    piece, open bottom end) over a shared delivery rail at row 6; the
+    columns sit 3 tiles apart and their arrival frames differ by 65, so
+    each block lands 0.75 ahead of the previous one (48 units of column
+    offset against 48.75 of travel). Chosen with the sim (src-sim in
+    smm2-decomp): single piece at row 20 (tile 16), three pieces from row 15
+    (tile 13), five from row 11 (tile 10) land at frames 163, 228, 293 after
+    a load at frame 65.
+    """
+    N = 0x0104
+    level = LevelBuilder("Packed Row 3/4", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    # the delivery rail starts at tile 8: Coursebot deletes a course with
+    # track pieces inside the start area (rails from tile 2 and 6 were)
+    for x in range(8, 24, 2):
+        level.add_track(x, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if x == 22 else 0x90, 0x70 if x == 8 else N))
+    # two tiles clear of the left cap: a block landing on the cell next to a
+    # cap comes down 0.02 off (the sim), enough to spoil the row
+    for x, y0, n in [(16, 20, 1), (13, 15, 3), (10, 11, 5)]:
+        top = None
+        for i in range(n):
+            # each joint is owned by the piece below through its top end
+            # (0x91), as the editor writes vertical chains; every bottom end
+            # is 0x104, the bottom piece's being the open drop
+            top = level.add_track(x, y0 + 2 * i, TRACK_SHAPE_VERTICAL,
+                                  ends=(0x72 if i == n - 1 else 0x91, N))
+        level.add_note_block_on_track(top, vertical=True)
+    return level
+
+
+@test_level(43, "Packed Row 1/4")
+def level_packed_row_14() -> LevelBuilder:
+    """Three note blocks delivered onto one rail 0.25 apart, the finest
+    spacing the rail lattice allows (8-unit cell offsets against 0.75 per
+    frame): columns 4 tiles apart whose arrival frames differ by 85 and 86
+    (one, three and five pieces from row 10 at tiles 18, 14, 10: landings at
+    116, 201, 287),
+    so the middle block lands 0.25 ahead of the first and the third 0.25
+    behind it. The hits of such a row collapse onto shared frames; the row
+    exists only until the first cap, whose snap makes the blocks coincide.
+    """
+    N = 0x0104
+    level = LevelBuilder("Packed Row 1/4", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for x in range(8, 24, 2):
+        level.add_track(x, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if x == 22 else 0x90, 0x70 if x == 8 else N))
+    for x, y0, n in [(18, 10, 1), (14, 10, 3), (10, 10, 5)]:
+        top = None
+        for i in range(n):
+            # each joint is owned by the piece below through its top end
+            # (0x91), as the editor writes vertical chains; every bottom end
+            # is 0x104, the bottom piece's being the open drop
+            top = level.add_track(x, y0 + 2 * i, TRACK_SHAPE_VERTICAL,
+                                  ends=(0x72 if i == n - 1 else 0x91, N))
+        level.add_note_block_on_track(top, vertical=True)
+    return level
+
+
+@test_level(44, "Vertical Chain")
+def level_vertical_chain() -> LevelBuilder:
+    """Coursebot control for a stacked vertical chain: two vertical pieces
+    (joint owned by the lower piece's top end, 0x91), block on the top one,
+    open bottom, a capped horizontal piece below to catch it.
+    """
+    N = 0x0104
+    level = LevelBuilder("Vertical Chain", style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    lower = level.add_track(11, 10, TRACK_SHAPE_VERTICAL, ends=(0x91, N))
+    upper = level.add_track(11, 12, TRACK_SHAPE_VERTICAL, ends=(0x72, N))
+    level.add_note_block_on_track(upper, vertical=True)
+    level.add_track(11, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
+    return level
+
+
+def _packed_row_level(name, columns, rail_x1):
+    """A planner row (tools/packed_row.py): columns as (tile, bottom row,
+    vertical pieces, run pieces, row slot) over a delivery rail from tile 7 to rail_x1
+    on row 6; a run is a TL curve at (x+1, top+2) into horizontal pieces on
+    row top+3, the block starting on the last one travelling left."""
+    N = 0x0104
+    level = LevelBuilder(name, style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    for rx in range(7, rail_x1 + 1, 2):
+        level.add_track(rx, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if rx == rail_x1 else 0x90, 0x70 if rx == 7 else N))
+    starts = []
+    for x, y0, n, h, slot in columns:
+        top = y0 + 2 * (n - 1)
+        piece = None
+        for i in range(n):
+            piece = level.add_track(x, y0 + 2 * i, TRACK_SHAPE_VERTICAL,
+                                    ends=((0x91 if h else 0x72) if i == n - 1 else 0x91, N))
+        if h:
+            level.add_track(x + 1, top + 2, TRACK_SHAPE_CURVE_TL, ends=(0x90, N))
+            for j in range(h):
+                piece = level.add_track(x + 3 + 2 * j, top + 3, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if j == h - 1 else 0x90, N))
+        starts.append((slot, piece, bool(h)))
+    # the stack draws in landing order, whatever the object order (Eden, 2026-09-04)
+    for slot, piece, run in starts:
+        if run:
+            level.add_note_block_on_track(piece, travel_left=True)
+        else:
+            level.add_note_block_on_track(piece, vertical=True)
+    return level
+
+
+@test_level(45, "Packed Row x5")
+def level_packed_row_x5() -> LevelBuilder:
+    """Five note blocks two frames (1.5 units) apart on one rail, the most
+    tools/packed_row.py packs inside one screen (--gaps 0.75 x4 --slack 4
+    --any-order): Eden gaps 1.500 x4, arrivals 128, 190, 250, 316, 386 after
+    the load. The landing order is not the row order (slots 0, -2, -6, -4,
+    +2) and the stack draws in landing order, so its outlines interleave;
+    Packed Row x4 is the ordered one."""
+    return _packed_row_level("Packed Row x5", [(25, 12, 1, 0, 0), (22, 16, 2, 0, -2), (19, 11, 4, 0, -6), (16, 19, 1, 2, -4), (13, 15, 4, 1, 2)], 27)
+
+
+@test_level(46, "Packed Row x4")
+def level_packed_row_x4() -> LevelBuilder:
+    """Four note blocks with a one-way cascade of outlines: the stack draws
+    by start height (the highest start in front), so the start rows run 12,
+    17, 21, 23 from the right along the row (--gaps 0.75 x3 --slack 1
+    --by-height --any-order --wide; columns six tiles apart give the runs
+    room). The one two-frame gap sits between the first two landers, so the
+    last block joins flush: sim gaps 0.750, 0.750, 1.500 from the left."""
+    return _packed_row_level("Packed Row x4", [(25, 12, 1, 0, 0), (19, 14, 1, 1, 0), (13, 14, 3, 2, 0), (10, 10, 6, 1, 0)], 27)
 
 
 @test_level(24, "Gap Open")
