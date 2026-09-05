@@ -327,11 +327,17 @@ class LevelBuilder:
                 '_half_tile_offset': True,
             })
     
-    def add_slope(self, x: int, y: int, width: int, height: int, steep: bool = False):
+    def add_slope(self, x: int, y: int, width: int, height: int, steep: bool = False,
+                  descending: bool = False):
         """Add a slope object.
         
         Slopes are objects (not ground tiles) with IDs 87 (slight) or 88 (steep).
         Coordinates are in tiles. Slopes need +0.5 tile offset (placed at tile centers).
+        (x, y) is the box's bottom-left tile; the surface runs from the box's
+        top corner to the opposite bottom corner, 1:1 steep and 1:2 slight
+        (a steep slope is w x (w-1)). Without `descending` it rises to the
+        right; with it, flag 0x100000 (uploaded courses: every slope of the
+        SMB3 slide 4067530 carries it and descends).
         """
         self.objects.append({
             'id': OBJ_STEEP_SLOPE if steep else OBJ_SLIGHT_SLOPE,
@@ -339,6 +345,7 @@ class LevelBuilder:
             'y': y,
             'width': width,
             'height': height,
+            'flags': 0x06100040 if descending else 0x06000040,
             '_half_tile_offset': True,  # Flag for build() to add +80 units
         })
     
@@ -1138,6 +1145,62 @@ def level_rider_flags() -> LevelBuilder:
     d = level.add_track(17, 8, TRACK_SHAPE_HORIZONTAL, ends=(0x71, 0x70))
     level.add_note_block_on_track(d, travel_left=True)
     return level
+
+
+@test_level(47, "Slope Walk")
+def level_slope_walk() -> LevelBuilder:
+    """The slope surface, for a walk recorded by the probe (feet y per x).
+
+    A: from a plateau, a descending slight slope (4x2) into a descending
+       steep slope (6x5) that overlaps it by two columns, over the staircase
+       of ground an author draws under slopes (the SMB3 slide's junction,
+       columns 18-25 there, moved to 13-20 here). The two surfaces disagree
+       on the overlap: the slight one ends at y 13 - 2 = 11 at column 17
+       while the steep one is already at 10 there.
+    B: a descending slight slope with nothing under its box (ground only up
+       to row 2): does the object carry its own body?
+    C: a rising steep slope (4x3) over a staircase, then the goal plateau.
+    """
+    b = LevelBuilder("Slope Walk", "SMB1", "Ground")
+    b.width = 60
+    b.start_y = 13
+    b.add_ground_block(7, 12, y_surface=12, height=13)
+    # A: staircase tops per column under the two slopes.
+    for x, top in [(13, 11), (14, 10), (15, 10), (16, 9), (17, 8), (18, 7), (19, 6), (20, 5)]:
+        for y in range(0, top + 1):
+            b.add_ground_fill(x, x, y)
+    b.add_slope(13, 11, width=4, height=2, steep=False, descending=True)
+    b.add_slope(15, 7, width=6, height=5, steep=True, descending=True)
+    b.add_ground_block(21, 26, y_surface=5, height=6)
+    # B: the slope box (rows 4-5) and row 3 stay empty; floor at row 2.
+    for x in range(27, 31):
+        for y in range(0, 3):
+            b.add_ground_fill(x, x, y)
+    b.add_slope(27, 4, width=4, height=2, steep=False, descending=True)
+    b.add_ground_block(31, 38, y_surface=3, height=4)
+    # C: rising steep, surface from y 4 at column 39 to y 8 at column 43.
+    for x, top in [(39, 3), (40, 4), (41, 5), (42, 6)]:
+        for y in range(0, top + 1):
+            b.add_ground_fill(x, x, y)
+    b.add_slope(39, 5, width=4, height=3, steep=True)
+    b.add_ground_block(43, 48, y_surface=7, height=8)
+    b.goal_y = 8
+    return b
+
+
+@test_level(48, "Note Static")
+def level_note_static() -> LevelBuilder:
+    """Note Bounce without the track: one free-standing note block two
+    tiles above the floor at column 11. The same probe log settles whether
+    a block off a track bounces like the on-track one the fixtures measured,
+    and it is the fixture for smm2-sim's static note blocks.
+    """
+    b = LevelBuilder("Note Static", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.objects.append({'id': OBJ_NOTE_BLOCK, 'x': 11, 'y': 6, 'width': 1, 'height': 1,
+                      '_half_tile_offset': True})
+    b.goal_y = 5
+    return b
 
 
 @test_level(8, "Flat Ground (NSMBU)")
