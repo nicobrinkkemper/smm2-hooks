@@ -1160,6 +1160,10 @@ def level_slope_walk() -> LevelBuilder:
     B: a descending slight slope with nothing under its box (ground only up
        to row 2): does the object carry its own body?
     C: a rising steep slope (4x3) over a staircase, then the goal plateau.
+       The ground before it sits at the box's ledge height (row 4, surface
+       5): the first cut had it two rows lower and the walker stopped at
+       the box's wall. Ground under a slope stays a row under its line;
+       Coursebot deleted a cut whose staircase touched it.
     """
     b = LevelBuilder("Slope Walk", "SMB1", "Ground")
     b.width = 60
@@ -1177,14 +1181,15 @@ def level_slope_walk() -> LevelBuilder:
         for y in range(0, 3):
             b.add_ground_fill(x, x, y)
     b.add_slope(27, 4, width=4, height=2, steep=False, descending=True)
-    b.add_ground_block(31, 38, y_surface=3, height=4)
-    # C: rising steep, surface from y 4 at column 39 to y 8 at column 43.
-    for x, top in [(39, 3), (40, 4), (41, 5), (42, 6)]:
+    b.add_ground_block(31, 38, y_surface=4, height=5)
+    # C: rising steep 4x3 at (39,4): the line runs (40,5)->(42,7), column 39
+    # is its ledge at 5, the plateau at 7.
+    for x, top in [(39, 3), (40, 3), (41, 4), (42, 5)]:
         for y in range(0, top + 1):
             b.add_ground_fill(x, x, y)
-    b.add_slope(39, 5, width=4, height=3, steep=True)
-    b.add_ground_block(43, 48, y_surface=7, height=8)
-    b.goal_y = 8
+    b.add_slope(39, 4, width=4, height=3, steep=True)
+    b.add_ground_block(43, 48, y_surface=6, height=7)
+    b.goal_y = 7
     return b
 
 
