@@ -397,11 +397,16 @@ class Game:
             from_start: if the flow lands in the editor instead, hold MINUS
                 (play from the course start) rather than tap it (play in place)
 
-        A registered slot's detail screen defaults to "Play", so A starts
-        Coursebot play (scene_mode 7, game-only). An empty slot only offers
-        "Make New Course", which opens the editor (scene_mode 1) with a default
-        course; MINUS then starts editor test-play (scene_mode 5). Check
-        scene_mode afterwards to know which one you got.
+        A registered slot's detail screen opens with the cursor on "Make"
+        (seen on every installed course, 2026-09-05), and A there opens the
+        editor. The screen is a grid: Make, Upload, then Name / Description /
+        delete, then Play Together / Play; UP from Make climbs to the tab bar
+        and stays there, so the tab is the home: UP x3, DOWN to Make, DOWN,
+        DOWN, RIGHT, DOWN lands on Play and A starts Coursebot play
+        (scene_mode 7, game-only). An empty slot only offers "Make New
+        Course", which opens the editor (scene_mode 1) with a default course;
+        MINUS then starts editor test-play (scene_mode 5). Check scene_mode
+        afterwards to know which one you got.
         """
         if not isinstance(slot, int) or not 0 <= slot < COURSEBOT_SLOTS:
             raise ValueError(f"slot {slot!r} is not a Coursebot slot (0..{COURSEBOT_SLOTS - 1})")
@@ -439,11 +444,16 @@ class Game:
             self.press('DOWN', 100)
             time.sleep(0.5)
 
-        # A -> course details (cursor defaults to Play), A -> go
+        # A -> course details; home the cursor on the tab bar, walk it to
+        # Play, A -> go. On an empty slot the same presses land on "Make New
+        # Course" (the only button), which the editor fallback below handles.
         s = self.status()
         start_count = s['scene_change_count'] if s else 0
         self.press('A', 100)
         time.sleep(2.0)
+        for button in ('UP', 'UP', 'UP', 'DOWN', 'DOWN', 'DOWN', 'RIGHT', 'DOWN'):
+            self.press(button, 100)
+            time.sleep(0.6)
         self.press('A', 100)
 
         s = self.wait_for(
