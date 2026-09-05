@@ -1188,6 +1188,21 @@ def level_slope_walk() -> LevelBuilder:
     return b
 
 
+@test_level(48, "Note Static")
+def level_note_static() -> LevelBuilder:
+    """Note Bounce without the track: one free-standing note block two
+    tiles above the floor at column 11. The same probe log settles whether
+    a block off a track bounces like the on-track one the fixtures measured,
+    and it is the fixture for smm2-sim's static note blocks.
+    """
+    b = LevelBuilder("Note Static", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.objects.append({'id': OBJ_NOTE_BLOCK, 'x': 11, 'y': 6, 'width': 1, 'height': 1,
+                      '_half_tile_offset': True})
+    b.goal_y = 5
+    return b
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
