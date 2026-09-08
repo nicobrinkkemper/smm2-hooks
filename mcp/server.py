@@ -314,18 +314,35 @@ def _install_slot(slot: int, course: bytes, companions_from: int | None) -> dict
 
 @tool(exclusive=True)
 def level_install(slot: int, level: str, companions_from: int | None = None) -> dict:
-    """Write a generated level (name from levels_list) into Coursebot slot N and register it: copies a valid course_thumb + course_replay from another registered slot (or companions_from) and sets the slot's used flag in save.dat. Each replaced file is backed up once as .orig (level_restore puts all three back). Restart the game to see it; Coursebot deletes the slot on its next visit if the course itself is invalid."""
+    """Write a generated level (name from levels_list) or a course file (a path: the sim dataset's .zlib, or a .bcd) into Coursebot slot N and register it: copies a valid course_thumb + course_replay from another registered slot (or companions_from) and sets the slot's used flag in save.dat. Each replaced file is backed up once as .orig (level_restore puts all three back). Restart the game to see it; Coursebot deletes the slot on its next visit if the course itself is invalid."""
     if (err := _slot_error(slot)):
         return err
     sys.argv = ["x"]
     import importlib, gen_test_levels as g  # noqa: WPS433
     g = importlib.reload(g)   # levels added since the server started must show up
+    if not P.save_dir:
+        return {"error": "no save dir found"}
+    path = Path(level)
+    if path.suffix in (".zlib", ".bcd") and path.exists():
+        # A course file: the sim's dataset keeps decrypted course data zlib-
+        # compressed (public/courses/hf/<id>.zlib); a .bcd is taken as is
+        # when it decrypts, else as decrypted data to encrypt.
+        import parse_course as pc  # noqa: WPS433
+        raw = path.read_bytes()
+        if path.suffix == ".zlib":
+            import zlib  # noqa: WPS433
+            raw = zlib.decompress(raw)
+        dec = pc.decrypt_course(str(path)) if path.suffix == ".bcd" else None
+        plain = dec if dec is not None else raw
+        if len(plain) != 0x5BFC0:
+            return {"error": f"{path}: {len(plain)} bytes of course data, expected {0x5BFC0}"}
+        course = raw if dec is not None else g.encrypt_course(plain)
+        out = _install_slot(slot, course, companions_from)
+        return {"level": pc.parse_header(plain)["name"], "file": str(path), **out}
     match = [(s, n, f) for s, (n, f) in g.TEST_LEVELS.items() if n == level]
     if not match:
         return {"error": f"unknown level {level!r}", "available": [n for _, (n, _) in g.TEST_LEVELS.items()]}
     _, name, builder = match[0]
-    if not P.save_dir:
-        return {"error": "no save dir found"}
     out = _install_slot(slot, g.encrypt_course(builder().build()), companions_from)
     return {"level": name, **out}
 
