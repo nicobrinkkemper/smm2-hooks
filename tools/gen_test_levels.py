@@ -600,8 +600,9 @@ def level_underwater() -> LevelBuilder:
 def level_3dw_flat() -> LevelBuilder:
     """3D World style flat ground with detailed edges."""
     b = LevelBuilder("3DW Flat", "3DW", "Ground")
-    # 3DW: smaller level like Nico's example (x=7-13)
-    b.add_ground_block(7, 13, y_surface=4, height=5)
+    # Ground all the way to the goal area, like the other styles' flats (the
+    # 3DW goal recording was made on a slot whose gap Nico had filled by hand).
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_y = 5
     return b
 
