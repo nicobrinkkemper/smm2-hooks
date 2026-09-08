@@ -472,8 +472,10 @@ def trace_record(action: str = "status", name: str = "", presets: str = "player,
     tools/probe.py PRESETS: player, rail, note, camera), deploy a newer mod build, relaunch Eden (the
     probe is read at boot) and remember the recording; then play. action=stop: wait for the mod's
     flush, decode probe.log into <out_dir>/<name>_eden.csv (actor rows with the pad columns),
-    <name>_eden_inputs.csv (the pad as a tas.csv script) and <name>_eden.json (what was recorded);
-    out_dir defaults to smm2-decomp's src-sim/test/fixtures. action=status: the recording in progress."""
+    <name>_eden_inputs.csv (the pad as a tas.csv script) and <name>_eden.json (what was recorded, with the
+    marks); out_dir defaults to smm2-decomp's src-sim/test/fixtures. action=mark: stamp the game's current
+    frame with `name` as a label (a milestone: "reached door A") into the recording in progress.
+    action=status: the recording in progress."""
     sd = Path(P.sd_hooks_dir)
     rec = sd / RECORD_FILE
     state = json.loads(rec.read_text()) if rec.exists() else None
@@ -506,6 +508,17 @@ def trace_record(action: str = "status", name: str = "", presets: str = "player,
         rec.write_text(json.dumps(state, indent=1))
         return {"recording": state, "mod": deployed, "killed": killed, "launch": launched,
                 "note": "the probe is armed for this boot: navigate to the course and play; stop when done"}
+    if action == "mark":
+        if not state:
+            return {"error": "no recording in progress (start one first)"}
+        status = eden.read_status(P)
+        mark = {"label": name.strip() or f"mark {len(state.get('marks', [])) + 1}",
+                "frame": status["frame"] if status else None,
+                "scene": status["scene"] if status else None,
+                "player": (status or {}).get("player"), "at": time.strftime("%H:%M:%S")}
+        state.setdefault("marks", []).append(mark)
+        rec.write_text(json.dumps(state, indent=1))
+        return {"mark": mark, "marks": state["marks"]}
     if action == "stop":
         if not state:
             return {"error": "no recording in progress (start one first)"}
