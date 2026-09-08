@@ -624,6 +624,15 @@ def level_smw_flat() -> LevelBuilder:
     return b
 
 
+@test_level(47, "Castle Flat")
+def level_castle_flat() -> LevelBuilder:
+    """Flat ground in the castle theme: the goal is the axe and the bridge it drops."""
+    b = LevelBuilder("Castle Flat", "SMB1", "Castle")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
 @test_level(14, "Camera Walk")
 def level_camera_walk() -> LevelBuilder:
     """120 tiles of flat SMB1 ground and nothing else: room for the camera
