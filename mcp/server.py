@@ -409,6 +409,111 @@ def gdb_log(last: int = 10) -> dict:
     return {"entries": GDB.log[-last:]}
 
 
+
+# ── recording ─────────────────────────────────────────────────────────────
+# A play session as a fixture: the probe (tools/probe.py presets) traces the
+# actors per frame and the mod logs the pad it saw on the same frame counter;
+# stop decodes both into <name>_eden.csv + <name>_eden_inputs.csv (the mod's
+# tas.csv script) + <name>_eden.json in the sim's fixtures directory.
+RECORD_FILE = "record.json"
+
+
+def _fixtures_dir() -> Path:
+    root = HERE.parents[1]
+    for name in ("smm2-decomp-integration", "smm2-decomp"):
+        d = root / name / "src-sim" / "test" / "fixtures"
+        if d.is_dir():
+            return d
+    return root / "smm2-decomp" / "src-sim" / "test" / "fixtures"
+
+
+def _probe_module():
+    tools_dir = str(HERE.parent / "tools")
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+    import probe  # noqa: WPS433
+    return probe
+
+
+def _deploy_built_mod() -> dict:
+    """The built nso into the active mods dir when it is newer than what is deployed."""
+    built = HERE.parent / "build" / "smm2-hooks.nso"
+    target = Path(P.mods_dir) / "subsdk4"
+    if not built.exists():
+        return {"deployed": False, "reason": "build/smm2-hooks.nso missing (ninja -C build)"}
+    if target.exists() and target.stat().st_mtime >= built.stat().st_mtime:
+        return {"deployed": False, "reason": "already current"}
+    import shutil  # noqa: WPS433
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(built, target)
+    return {"deployed": True, "path": str(target)}
+
+
+@tool(exclusive=True)
+def trace_record(action: str = "status", name: str = "", presets: str = "player,rail", out_dir: str | None = None) -> dict:
+    """Record a play session as a sim fixture. action=start: install the probe presets (comma list of
+    tools/probe.py PRESETS: player, rail, note, camera), deploy a newer mod build, relaunch Eden (the
+    probe is read at boot) and remember the recording; then play. action=stop: wait for the mod's
+    flush, decode probe.log into <out_dir>/<name>_eden.csv (actor rows with the pad columns),
+    <name>_eden_inputs.csv (the pad as a tas.csv script) and <name>_eden.json (what was recorded);
+    out_dir defaults to smm2-decomp's src-sim/test/fixtures. action=status: the recording in progress."""
+    sd = Path(P.sd_hooks_dir)
+    rec = sd / RECORD_FILE
+    state = json.loads(rec.read_text()) if rec.exists() else None
+    if action == "status":
+        log = sd / "probe.log"
+        return {"recording": state, "probe_log_bytes": log.stat().st_size if log.exists() else 0, "eden": eden.process()}
+    if action == "start":
+        if not name.strip():
+            return {"error": "name the recording (it names the fixture files)"}
+        name = name.strip()
+        probe = _probe_module()
+        keys = [k.strip() for k in presets.split(",") if k.strip()]
+        unknown = [k for k in keys if k not in probe.PRESETS]
+        if unknown:
+            return {"error": f"unknown presets {unknown}; known: {sorted(probe.PRESETS)}"}
+        config = "".join(probe.PRESETS[k] for k in keys)
+        sd.mkdir(parents=True, exist_ok=True)
+        cfg = sd / "probe.txt"
+        cfg.write_text(config)
+        import types  # noqa: WPS433
+        if probe.cmd_check(types.SimpleNamespace(config=str(cfg))):
+            return {"error": "the probe config failed its check against main.elf (see the server log)"}
+        deployed = _deploy_built_mod()
+        killed = None
+        if eden.process():
+            killed = eden.kill()
+        launched = eden.launch(P, False)
+        state = {"name": name, "presets": keys, "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+                 "out_dir": str(Path(out_dir) if out_dir else _fixtures_dir()), "config": config}
+        rec.write_text(json.dumps(state, indent=1))
+        return {"recording": state, "mod": deployed, "killed": killed, "launch": launched,
+                "note": "the probe is armed for this boot: navigate to the course and play; stop when done"}
+    if action == "stop":
+        if not state:
+            return {"error": "no recording in progress (start one first)"}
+        time.sleep(6)   # the mod flushes probe.log every 300 frames or 8 KB
+        log = sd / "probe.log"
+        if not log.exists():
+            return {"error": f"{log} missing: was Eden launched after start?", "recording": state}
+        probe = _probe_module()
+        out = Path(out_dir) if out_dir else Path(state["out_dir"])
+        out.mkdir(parents=True, exist_ok=True)
+        base = out / f"{state['name']}_eden"
+        fixture, inputs, sidecar = f"{base}.csv", f"{base}_inputs.csv", f"{base}.json"
+        try:
+            decoded = probe.decode_log(str(log), fixture, inputs)
+        except SystemExit as e:
+            return {"error": str(e), "recording": state}
+        status = eden.read_status(P)
+        meta = {**state, "stopped": time.strftime("%Y-%m-%d %H:%M:%S"), "decoded": decoded,
+                "status_at_stop": status, "files": {"fixture": fixture, "inputs": inputs}}
+        Path(sidecar).write_text(json.dumps(meta, indent=1))
+        rec.unlink()
+        return {"saved": {"fixture": fixture, "inputs": inputs, "sidecar": sidecar}, "decoded": decoded, "status_at_stop": status}
+    return {"error": f"unknown action {action}; start, stop or status"}
+
+
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         print(json.dumps(anyio.run(eden_state), indent=1)[:1500])

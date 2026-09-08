@@ -1,4 +1,5 @@
 #include "smm2/tas.h"
+#include "smm2/probe.h"
 #include "smm2/frame.h"
 #include "smm2/status.h"
 #include "smm2/log.h"
@@ -160,6 +161,7 @@ static HkTrampoline<int, nn::hid::full_key_state*, int, const uint32_t&> npad_fu
         int written = npad_fullkey_hook.orig(out, count, id);
         update_input();
         inject_buttons(out, written);
+        if (written > 0) probe::log_pad(out[0].buttons, out[0].sl_x, out[0].sl_y);
         return written;
     });
 
