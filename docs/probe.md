@@ -92,3 +92,26 @@ python3 tools/probe.py decode <sd>/smm2-hooks/probe.log -o rail_trace.csv
 
 The CSV is the oracle for the decomp's `tests/bridge/test_rail_mover_replay.py`:
 the reference model there must reproduce every frame.
+
+## Pad rows and recordings
+
+Beside the R rows the mod writes one pad row per frame from its npad hook,
+the buttons and left stick the game saw (the human's pad with any injected
+input merged in), on the same frame counter as the probes:
+
+```
+P,<frame>,<buttons hex>,<lx>,<ly>
+```
+
+`probe.py decode --inputs script.csv` adds `pad_buttons,pad_lx,pad_ly`
+columns to every R row and writes the pad as the mod's own `tas.csv` script
+(frame,buttons,stick_lx,stick_ly, only the frames where the input changes),
+so a recorded session replays in the emulator by copying that file to
+`sd:/smm2-hooks/tas.csv`.
+
+The MCP tool `trace_record` (also `mcp/ctl.py trace_record`, and the Record
+card on the mission-control /smm2/ panel) does the whole session: `start`
+installs the chosen presets, deploys a newer mod build, relaunches Eden and
+remembers the name; `stop` waits for the flush and decodes into
+`<name>_eden.csv`, `<name>_eden_inputs.csv` and `<name>_eden.json` in
+smm2-decomp's `src-sim/test/fixtures`.
