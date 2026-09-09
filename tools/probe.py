@@ -233,6 +233,27 @@ field lift h48     u64 0x30
     # component is embedded at actor+0xD20 (+8 direction 0..3, +0x18 timer);
     # speed +0x274, accel +0x280, wait timer +0x53C; the foot's chosen kind
     # slot and owner handle from the bg-check object (surfaces.md).
+    # The actor manager's per-frame walk (docs/re-notes/processing-order.md
+    # in the decomp): Actor's slot-8 base sub_71008D7C70 runs once per actor
+    # per frame in execution order (every class chains to it: the player's
+    # sub_710158A3F0, EnemyUber's sub_710128A2D0, the lifts' sub_71008DB240),
+    # and lr0 names the override that called it. The order pass
+    # sub_7100D5F1F0 (x0 = the manager item) closes each frame's group.
+    "order": """\
+hook calc 0x71008D7C70 callers=1
+field calc id    u32 0x40
+field calc pos_x f32 0x230
+field calc pos_y f32 0x234
+field calc vt    u64 0x0
+field calc h30   u64 0x30
+hook walk 0x7100D5F1F0
+field walk item  u32 0x20
+field walk nact  u32 0x88
+field walk nord  u32 0xD8
+field walk ysort u8  0x138
+field walk thr   u32 0x148
+field walk nring u32 0x160
+""",
     "plant": """\
 hook plant 0x710128A2D0
 field plant pos_x   f32 0x230
