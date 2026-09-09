@@ -260,6 +260,18 @@ field plant s5kind  u32 0x650>0x9D0>0x364
 field plant dst     u32 0x468>0x28
 field plant dwait   u32 0x468>0x84
 field plant f523    u8  0x523
+# The player as the pipe's near check sees it, and the pipe itself at that
+# check (sub_71012AA800: x0 = the pipe actor; pos = the mouth's centre)
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player st_e  u32 0x400
+hook pipe 0x71012AA800
+field pipe pos_x f32 0x230
+field pipe pos_y f32 0x234
+field pipe dir   u32 0x26C
 hook lift 0x71008DB240
 field lift pos_x   f32 0x230
 field lift pos_y   f32 0x234
