@@ -1611,6 +1611,34 @@ def level_surface_kinds() -> LevelBuilder:
     return b
 
 
+@test_level(59, "Plant Gallery")
+def level_plant_gallery() -> LevelBuilder:
+    """Plain piranha plants (id 2, no flags) on every surface the guide's
+    contraptions put them on, one per column, for the `plant` probe preset:
+    on the ground (col 9), on a 3-wide blue lift (col 12, lift at row 8),
+    on a 3-wide conveyor (id 53, col 16, belt at row 6) and in an upward
+    pipe (2x2 at cols 20..21, row 5). A pipe's content is its own record
+    with the in-pipe bit 0x1, placed 80 right of and 240 above the pipe's
+    record point, sharing the pipe's link id, the pipe carrying flags
+    0x060400C0 (read off Eternal's pipes, 2026-09-09). The ground stays at
+    7..24 and the width at 35: a ground block reaching the goal area gets
+    the course deleted.
+    """
+    b = LevelBuilder("Plant Gallery", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def plant(x, y, flags=0x06000040, half=True, lid=-1):
+        return {'id': 2, 'x': x, 'y': y, 'width': 1, 'height': 1, 'flags': flags, 'lid': lid, '_half_tile_offset': half}
+    b.objects.append(plant(9, 5))
+    b.objects.append({'id': OBJ_LIFT, 'x': 12, 'y': 8, 'width': 3, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True})
+    b.objects.append(plant(12, 9))
+    b.objects.append({'id': 53, 'x': 16, 'y': 6, 'width': 3, 'height': 1, 'flags': 0x06000048, '_half_tile_offset': True})
+    b.objects.append(plant(16, 7))
+    b.objects.append({'id': 9, 'x': 20, 'y': 5, 'width': 2, 'height': 2, 'flags': 0x060400C0, 'lid': 1, '_half_tile_offset': True})
+    b.objects.append(plant(21, 7, 0x06000041, half=False, lid=1))
+    return b
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
