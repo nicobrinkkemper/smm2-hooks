@@ -803,7 +803,7 @@ def level_smw_flat() -> LevelBuilder:
     return b
 
 
-@test_level(47, "Castle Flat")
+@test_level(55, "Castle Flat")
 def level_castle_flat() -> LevelBuilder:
     """Flat ground in the castle theme: the goal is the axe and the bridge it drops."""
     b = LevelBuilder("Castle Flat", "SMB1", "Castle")

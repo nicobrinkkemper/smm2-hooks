@@ -29,6 +29,43 @@ FUNCS = DECOMP / "data/v3.0.3/functions.csv"
 MAX_FIELDS = 24  # keep in step with src/probe.cpp
 
 PRESETS = {
+    # the bounce sub_7101290900 (slot 63) the frame the impulse lands.
+    "dossun": """\
+# Thwomp (GameEnemyDossun, vtable 0x71028C6B28): which virtual runs per frame
+# with x0 = the actor. Candidates: +0x38/+0x40 (EnemyUber's), the Dossun
+# overrides +0x18/+0x20/+0x58.
+hook v38 0x710128A090
+field v38 pos_x  f32 0x230
+field v38 pos_y  f32 0x234
+field v38 vel_y  f32 0x240
+field v38 st     u32 0x400
+hook v40 0x710128A2D0
+field v40 pos_x  f32 0x230
+field v40 pos_y  f32 0x234
+field v40 vel_y  f32 0x240
+field v40 st     u32 0x400
+hook v18 0x71010CC0C0
+field v18 pos_x  f32 0x230
+field v18 pos_y  f32 0x234
+hook v20 0x71010CC130
+field v20 pos_x  f32 0x230
+field v20 pos_y  f32 0x234
+hook v58 0x71010CC1B0
+field v58 pos_x  f32 0x230
+field v58 pos_y  f32 0x234
+field v58 vel_y  f32 0x240
+# Note-block hit registered on the enemy (x0 = enemy)
+hook resp 0x710128CD40
+field resp pos_x   f32 0x230
+field resp pos_y   f32 0x234
+field resp f524    u32 0x524
+# The enemy's bounce off the block (x0 = enemy); who calls it
+hook bounce 0x7101290900 callers=2
+field bounce pos_x f32 0x230
+field bounce pos_y f32 0x234
+field bounce vel_y f32 0x240
+field bounce f658  u32 0x658
+""",
     # The note block's per-frame rail applier; x0 = the block. Field paths are
     # from docs/re-notes/rail-follower.md in smm2-decomp (rider at +0x530,
     # RailMover at rider+8, StateMachine at rider+0xd8).
