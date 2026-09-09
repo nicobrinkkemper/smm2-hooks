@@ -254,6 +254,36 @@ field walk ysort u8  0x138
 field walk thr   u32 0x148
 field walk nring u32 0x160
 """,
+    # The placeholder (docs/re-notes/placeholder.md in the decomp): every
+    # enemy's per-frame with its activation flags (+0x52C: 0x20000 offscreen,
+    # 0x40000 activated), the ground-contact activation bit (+0x658 bit 29),
+    # its record link (+0x4E4) and the owner handle of the body under its
+    # foot; the lifts with their own link (+0x350); the surface walk that
+    # sets the activation bit, with who called it.
+    "placeholder": """\
+hook enemy 0x710128A2D0
+field enemy id    u32 0x40
+field enemy pos_x f32 0x230
+field enemy pos_y f32 0x234
+field enemy vel_y f32 0x240
+field enemy f52C  u32 0x52C
+field enemy f658  u64 0x658
+field enemy link  u32 0x4E4
+field enemy own   u32 0x350
+field enemy h30   u64 0x30
+field enemy bgown u64 0x650>0x358
+field enemy sysst u32 0x400
+hook lift 0x71008DB240
+field lift id    u32 0x40
+field lift pos_x f32 0x230
+field lift pos_y f32 0x234
+field lift own   u32 0x350
+field lift h30   u64 0x30
+hook activate 0x7100D81E60 callers=2
+field activate id    u32 0x40
+field activate pos_x f32 0x230
+field activate pos_y f32 0x234
+""",
     "plant": """\
 hook plant 0x710128A2D0
 field plant pos_x   f32 0x230

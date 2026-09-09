@@ -1703,6 +1703,40 @@ def level_order_column() -> LevelBuilder:
     return b
 
 
+@test_level(62, "Placeholder Clip")
+def level_placeholder_clip() -> LevelBuilder:
+    """The guide's 'Placeholder clipping', three variants stacked above the
+    view (the view's top is row 13.5, an actor activates when its box grown
+    by a tile overlaps the view, so everything from row 16 up spawns at load
+    as a placeholder; the player stands still on the floor). Each variant is
+    a free 3-wide blue lift (shuttling 3 tiles left and back) with a spike
+    ball resting on it. A record's link id is its track link (real courses:
+    a free lift, a ball and a Blaster all carry -1; a linked record with no
+    track gets the course deleted), so what rides a lift is a plain record
+    placed on it.
+    A (col 12, row 18): the lift and its ball alone.
+    B (col 20, row 18): a Bill Blaster on the same lift, beside the ball.
+    C (col 12, row 24): a Bill Blaster on a pillar of hard blocks at the
+       lift's left bound, so the ball meets a solid that is not on its lift.
+    """
+    b = LevelBuilder("Placeholder Clip", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def lift(x, y):
+        return {'id': OBJ_LIFT, 'x': x, 'y': y, 'width': 3, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True}
+    def ball(x, y):
+        return {'id': OBJ_SPIKE_BALL, 'x': x, 'y': y, 'width': 1, 'height': 1, 'flags': 0x06000044, '_half_tile_offset': True}
+    def blaster(x, y):
+        return {'id': 13, 'x': x, 'y': y, 'width': 1, 'height': 2, 'flags': 0x06000040, '_half_tile_offset': True}
+    b.objects += [lift(12, 18), ball(12, 19)]
+    b.objects += [lift(20, 18), ball(20, 19), blaster(21, 19)]
+    b.objects += [lift(12, 24), ball(12, 25)]
+    for row in range(19, 25):
+        b.objects.append({'id': OBJ_HARD_BLOCK, 'x': 9, 'y': row, 'width': 1, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True})
+    b.objects.append(blaster(9, 25))
+    return b
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
