@@ -1545,6 +1545,72 @@ def level_note_static() -> LevelBuilder:
     return b
 
 
+OBJ_LIFT = 11        # Lift (blue; the record's w byte is its length in tiles; two lifts may not overlap)
+OBJ_SPIKE_BALL = 74
+
+
+def _lift_tie(name: str, first_is_left: bool) -> LevelBuilder:
+    """The guide's 'Conflicting priorities': two lifts of the same kind at the
+    same height side by side (the validator deletes a course whose lifts
+    overlap, 2026-09-09) and a spike ball dropped onto their seam, so both
+    surfaces meet its foot at the same distance. The two variants differ
+    only in which lift record comes first (the editor's delete + undo moves
+    a record to the end); the recording shows which lift the foot picks at
+    equal priority. A lift record's x is its centre tile (record 10 -> origin
+    168, record 13 -> 216), its surface line spans the centre +-27, and both
+    lifts move left 0.5 per frame from spawn; the ball lands 49 frames after
+    spawn (frame-exact across runs), when the seam has moved from 192 to
+    184, so the ball's origin goes to x = 184 (record 11 with the half-tile
+    offset), two tiles up:
+    its origin sits 16 under its record centre, so record y 9 put it inside
+    the lifts and it fell through.
+    """
+    b = LevelBuilder(name, "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    left = {'id': OBJ_LIFT, 'x': 10, 'y': 8, 'width': 3, 'height': 1, '_half_tile_offset': True}
+    right = {'id': OBJ_LIFT, 'x': 13, 'y': 8, 'width': 3, 'height': 1, '_half_tile_offset': True}
+    b.objects += [left, right] if first_is_left else [right, left]
+    b.objects.append({'id': OBJ_SPIKE_BALL, 'x': 11, 'y': 11, 'width': 1, 'height': 1,
+                      'flags': 0x06000044, '_half_tile_offset': True})
+    return b
+
+
+@test_level(56, "Lift Tie LR")
+def level_lift_tie_lr() -> LevelBuilder:
+    return _lift_tie("Lift Tie LR", True)
+
+
+@test_level(57, "Lift Tie RL")
+def level_lift_tie_rl() -> LevelBuilder:
+    return _lift_tie("Lift Tie RL", False)
+
+
+@test_level(58, "Surface Kinds")
+def level_surface_kinds() -> LevelBuilder:
+    """The guide's 'Ground priority test' surfaces, one per column, each with
+    a spike ball dropped on it from two tiles up: a note block (23), a
+    conveyor belt (94), a donut block (21), the other donut id (82), a spike
+    ball resting on the ground (74) and a one-tile ground column. The
+    `surface` probe logs the kind word of the shape each ball lands on, which
+    indexes the game's surface priority table (docs/re-notes/surfaces.md).
+    """
+    b = LevelBuilder("Surface Kinds", "SMB1", "Ground")
+    b.add_ground_block(7, 26, y_surface=4, height=5)
+    b.goal_y = 5
+    cols = [(9, 23, 0x06000040), (12, 94, 0x06000040), (15, 21, 0x06000040), (18, 82, 0x06000040),
+            (21, 74, 0x06000044)]
+    for x, oid, flags in cols:
+        b.objects.append({'id': oid, 'x': x, 'y': 6, 'width': 1, 'height': 1, 'flags': flags,
+                          '_half_tile_offset': True})
+        b.objects.append({'id': OBJ_SPIKE_BALL, 'x': x, 'y': 9, 'width': 1, 'height': 1,
+                          'flags': 0x06000044, '_half_tile_offset': True})
+    b.ground_tiles.append((24, 6, GROUND_FILL))
+    b.objects.append({'id': OBJ_SPIKE_BALL, 'x': 24, 'y': 9, 'width': 1, 'height': 1,
+                      'flags': 0x06000044, '_half_tile_offset': True})
+    return b
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""

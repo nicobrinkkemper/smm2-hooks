@@ -441,9 +441,12 @@ class Game:
         for _ in range(col):
             self.press('RIGHT', 100)
             time.sleep(0.5)
-        for _ in range(row):
+        for i in range(row):
             self.press('DOWN', 100)
-            time.sleep(0.5)
+            # rows 0..3 are on screen; from row 3 on every DOWN scrolls the
+            # list and a press during that animation is dropped (slot 19
+            # landed on 15, 2026-09-09), so give the scroll time to finish
+            time.sleep(1.6 if i >= 2 else 0.5)
 
         # A -> course details; home the cursor on the tab bar, walk it to
         # Play, A -> go. On an empty slot the same presses land on "Make New

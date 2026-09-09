@@ -158,6 +158,74 @@ field player vel_x f32 0x23C
 field player vel_y f32 0x240
 field player st_e  u32 0x400
 """,
+    # What an enemy's foot stands on, read from its bg-check object, which is
+    # embedded 0x10 into the physics sub-object at actor+0x650 (so every
+    # path below is 0x650 > bg offset + 0x10; docs/re-notes/surfaces.md in
+    # smm2-decomp): the per-side flags at bg+0x394 (12 per side), the chosen
+    # kind slot per side at bg+0x3C4, the slot tables at bg+0x3E8 + 392*side
+    # (7 slots of 56 bytes: +0 valid, +0x14/+0x18 the hit point, +0x28 the
+    # surface shape, +0x30 its kind word; lifts file under kind slot 2, the
+    # terrain under 5, measured 2026-09-09), the attached owner handles at
+    # bg+0x330.., the attach list head at bg+0xA0 (= shape + 0x300), the
+    # actor's surface ref at +0x338. Through a
+    # shape: +0x278 its owner actor, +0x364 its kind word, the owner's
+    # position at +0x230. x0 = the enemy (EnemyUber +0x40 per frame). The
+    # `lift` hook is the plain Actor per-frame (vtable +0x40 of every actor
+    # that does not override it: lifts, blocks, ...), x0 = the actor.
+    "surface": """\
+hook foot 0x710128A2D0
+field foot pos_x   f32 0x230
+field foot pos_y   f32 0x234
+field foot vel_y   f32 0x240
+field foot id      u32 0x40
+field foot sref    u64 0x338
+field foot bgfl    u32 0x650>0x2C8
+field foot sf3     u32 0x650>0x3C8
+field foot k3      u32 0x650>0x3E0
+field foot v3      u8  0x650>0x890
+field foot h3      u64 0x650>0x358
+field foot glist   u64 0x650>0xB0
+field foot s2hx    f32 0x650>0x914
+field foot s2hy    f32 0x650>0x918
+field foot s2sh    u64 0x650>0x928
+field foot s2kind  u32 0x650>0x928>0x364
+field foot s2ox    f32 0x650>0x928>0x278>0x230
+field foot s2oy    f32 0x650>0x928>0x278>0x234
+field foot sf2     u32 0x650>0x3BC
+field foot k2      u32 0x650>0x3DC
+field foot v2      u8  0x650>0x708
+field foot h2      u64 0x650>0x350
+field foot sf0     u32 0x650>0x3A4
+field foot k0      u32 0x650>0x3D4
+field foot v0      u8  0x650>0x3F8
+# The same actor's move step (EnemyUber vtable +0x48): the foot side's seven
+# kind slots (valid byte and kind word each) and the wall handles.
+hook foot2 0x710128ACC0
+field foot2 pos_x  f32 0x230
+field foot2 st     u32 0x400
+field foot2 h0     u64 0x650>0x340
+field foot2 h1     u64 0x650>0x348
+field foot2 va0    u8  0x650>0x890
+field foot2 va1    u8  0x650>0x8C8
+field foot2 va2    u8  0x650>0x900
+field foot2 va3    u8  0x650>0x938
+field foot2 va4    u8  0x650>0x970
+field foot2 va5    u8  0x650>0x9A8
+field foot2 va6    u8  0x650>0x9E0
+field foot2 kw0    u32 0x650>0x8C0
+field foot2 kw1    u32 0x650>0x8F8
+field foot2 kw2    u32 0x650>0x930
+field foot2 kw3    u32 0x650>0x968
+field foot2 kw4    u32 0x650>0x9A0
+field foot2 kw5    u32 0x650>0x9D8
+field foot2 kw6    u32 0x650>0xA10
+field foot2 sh5    u64 0x650>0x9D0
+hook lift 0x71008DB240
+field lift pos_x   f32 0x230
+field lift pos_y   f32 0x234
+field lift id      u32 0x40
+field lift h48     u64 0x30
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
