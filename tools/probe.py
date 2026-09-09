@@ -91,6 +91,36 @@ field cam v40    f32 @0x7102C55080>0x88>0x40
 field cam act_l  f32 @0x7102C55080>0x88>0x54
 field cam act_r  f32 @0x7102C55080>0x88>0x5c
 """,
+    # The note block's bound and rider record beside the player (the
+    # centred-hit recording in smm2-decomp, docs/re-notes/note-block.md):
+    # x0 = the block in the rail applier; the first machine's state word,
+    # the bound mode/vy/displacement and the rider record at +0x550.
+    "note": """\
+# Note block: the bound (+0x478 state, +0x4BC mode, +0x4C0 vy, +0x4CC displacement)
+# and the rider record (+0x550: phase, countdown, hit masks, player slot 0)
+# beside the player's per-frame movement step.
+hook rail 0x710138C520
+field rail pos_x   f32 0x230
+field rail pos_y   f32 0x234
+field rail vel_x   f32 0x530>0x10
+field rail state   u32 0x478
+field rail b_mode  u32 0x4BC
+field rail b_vy    f32 0x4C0
+field rail b_disp  f32 0x4CC
+field rail r_phase u32 0x550>0x8
+field rail r_cnt   u32 0x550>0xC
+field rail r_hit   u32 0x550>0x10
+field rail r_last  u32 0x550>0x14
+field rail r_jump  u32 0x550>0x18
+field rail r_on    u32 0x550>0x1C
+field rail r_slot0 u32 0x550>0x20
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player st_e  u32 0x400
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
@@ -268,10 +298,16 @@ def decode_value(hexval: str, typ: str):
     return v
 
 
-def cmd_decode(args) -> int:
+PAD_COLUMNS = ["pad_buttons", "pad_lx", "pad_ly"]
+
+
+def parse_log(text: str):
+    """The mod's probe.log: hooks by index, R rows, and the pad by frame (P rows)."""
     hooks: dict[int, dict] = {}
     rows = []
-    for raw in Path(args.log).read_text().splitlines():
+    pad: dict[int, tuple[int, int, int]] = {}
+    errors = []
+    for raw in text.splitlines():
         parts = raw.split(",")
         if parts[0] == "H":
             idx = int(parts[1])
@@ -279,29 +315,69 @@ def cmd_decode(args) -> int:
             hooks[idx] = {"name": parts[2], "vaddr": int(parts[3], 16), "status": parts[4], "fields": fields}
         elif parts[0] == "R":
             rows.append(parts)
+        elif parts[0] == "P" and len(parts) >= 5:
+            pad[int(parts[1])] = (int(parts[2], 16), int(parts[3]), int(parts[4]))
         elif parts[0] == "E":
-            print("mod error:", ",".join(parts[1:]), file=sys.stderr)
-    if not hooks:
-        print("no H lines: the mod did not read a probe.txt", file=sys.stderr)
-        return 1
+            errors.append(",".join(parts[1:]))
+    return hooks, rows, pad, errors
+
+
+def write_inputs(pad: dict[int, tuple[int, int, int]], path: str) -> int:
+    """The pad rows as the mod's own tas.csv script (frame,buttons,stick_lx,
+    stick_ly; only the frames where the input changes), replayable by copying
+    it to sd:/smm2-hooks/tas.csv. Returns the number of keyframes."""
+    n = 0
+    with open(path, "w", newline="") as f:
+        f.write("frame,buttons,stick_lx,stick_ly\n")
+        last = None
+        for frame in sorted(pad):
+            cur = pad[frame]
+            if cur == last:
+                continue
+            f.write(f"{frame},0x{cur[0]:x},{cur[1]},{cur[2]}\n")
+            last = cur
+            n += 1
+    return n
+
+
+def decode_log(log: str, out: str | None, inputs: str | None = None) -> dict:
+    hooks, rows, pad, errors = parse_log(Path(log).read_text())
+    for e in errors:
+        print("mod error:", e, file=sys.stderr)
+    if not hooks and not pad:
+        raise SystemExit("no H or P lines: the mod did not read a probe.txt and logged no pad")
     for idx, h in hooks.items():
         if h["status"] != "ok":
             print(f"hook {h['name']} {h['vaddr']:#x}: install {h['status']}", file=sys.stderr)
-    out = open(args.out, "w", newline="") if args.out else sys.stdout
-    w = csv.writer(out)
+    fh = open(out, "w", newline="") if out else sys.stdout
+    w = csv.writer(fh)
     labels = sorted({lab for h in hooks.values() for lab, _ in h["fields"]})
-    w.writerow(["frame", "hook"] + [f"x{i}" for i in range(8)] + labels)
+    w.writerow(["frame", "hook"] + [f"x{i}" for i in range(8)] + labels + (PAD_COLUMNS if pad else []))
     for parts in rows:
         idx = int(parts[2])
         h = hooks.get(idx)
         if not h:
             continue
+        frame = int(parts[1])
         regs = [f"0x{int(x, 16):x}" for x in parts[3:11]]
         vals = {lab: decode_value(hv, typ) for (lab, typ), hv in zip(h["fields"], parts[11:])}
-        w.writerow([int(parts[1]), h["name"]] + regs + [vals.get(lab, "") for lab in labels])
+        padrow = []
+        if pad:
+            pv = pad.get(frame)
+            padrow = [f"0x{pv[0]:x}", pv[1], pv[2]] if pv else ["", "", ""]
+        w.writerow([frame, h["name"]] + regs + [vals.get(lab, "") for lab in labels] + padrow)
+    if out:
+        fh.close()
+    keyframes = write_inputs(pad, inputs) if inputs and pad else 0
+    return {"rows": len(rows), "hooks": [h["name"] for h in hooks.values()], "pad_frames": len(pad),
+            "keyframes": keyframes, "errors": errors}
+
+
+def cmd_decode(args) -> int:
+    r = decode_log(args.log, args.out, args.inputs)
     if args.out:
-        out.close()
-        print(f"wrote {args.out}: {len(rows)} rows, hooks {[h['name'] for h in hooks.values()]}")
+        print(f"wrote {args.out}: {r['rows']} rows, hooks {r['hooks']}, pad frames {r['pad_frames']}"
+              + (f", {r['keyframes']} input keyframes -> {args.inputs}" if args.inputs else ""))
     return 0
 
 
@@ -318,9 +394,10 @@ def main() -> int:
     p = sub.add_parser("preset", help="print a ready-made probe.txt")
     p.add_argument("name", choices=sorted(PRESETS))
     p.set_defaults(fn=cmd_preset)
-    p = sub.add_parser("decode", help="probe.log -> typed CSV")
+    p = sub.add_parser("decode", help="probe.log -> typed CSV (with the pad columns when the mod logged P rows)")
     p.add_argument("log")
     p.add_argument("-o", "--out")
+    p.add_argument("--inputs", help="also write the pad as a tas.csv input script (frame,buttons,stick_lx,stick_ly)")
     p.set_defaults(fn=cmd_decode)
     args = ap.parse_args()
     return args.fn(args)

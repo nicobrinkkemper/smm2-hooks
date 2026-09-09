@@ -310,5 +310,14 @@ void flush() {
     s_log.flush();
 }
 
+static uint32_t s_last_pad_frame = 0xFFFFFFFFu;
+
+void log_pad(uint64_t buttons, int32_t lx, int32_t ly) {
+    const uint32_t f = frame::current();
+    if (f == s_last_pad_frame) return;
+    s_last_pad_frame = f;
+    s_log.writef("P,%u,%llx,%d,%d\n", (unsigned)f, (unsigned long long)buttons, (int)lx, (int)ly);
+}
+
 } // namespace probe
 } // namespace smm2
