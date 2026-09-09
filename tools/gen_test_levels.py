@@ -1242,6 +1242,113 @@ def _packed_row_level(name, columns, rail_x1):
     return level
 
 
+def _packed_row_level2(name, columns, rail_x1, right=False, width=None):
+    """A planner row whose lead-in runs may step down through a diagonal:
+    columns as (tile, bottom row, vertical pieces, low run pieces, high run
+    pieces, row slot). The low run sits on row top+3 as before; with high
+    pieces an ascending diagonal joins the last low piece's east end to a
+    run two rows up, and the block starts on the last high piece travelling
+    left. Joint words from the rail decomp's pair table: the low piece's
+    east end owns the south-west junction (0xA5, pair north-east/west), the
+    first high piece's west end owns the north-east one (0x9D, pair
+    east/south-west); the diagonal's ends are 0x104."""
+    N = 0x0104
+    level = LevelBuilder(name, style='SMB1', theme='Ground')
+    if width:
+        level.width = width
+    level.goal_y = 4
+    level.add_ground_fill(7, min(rail_x1, level.width - 11), 4)
+    for rx in range(7, rail_x1 + 1, 2):
+        level.add_track(rx, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x71 if rx == rail_x1 else 0x90, 0x70 if rx == 7 else N))
+    starts = []
+    for x, y0, n, h, hh, slot in columns:
+        top = y0 + 2 * (n - 1)
+        piece = None
+        for i in range(n):
+            piece = level.add_track(x, y0 + 2 * i, TRACK_SHAPE_VERTICAL,
+                                    ends=((0x91 if h else 0x72) if i == n - 1 else 0x91, N))
+        if h and not right:
+            level.add_track(x + 1, top + 2, TRACK_SHAPE_CURVE_TL, ends=(0x90, N))
+            low_row = top + 3
+            for j in range(h):
+                last_low = j == h - 1
+                east = 0xA5 if (last_low and hh) else (0x71 if last_low else 0x90)
+                piece = level.add_track(x + 3 + 2 * j, low_row, TRACK_SHAPE_HORIZONTAL, ends=(east, N))
+            if hh:
+                xl = x + 3 + 2 * (h - 1)
+                level.add_track(xl + 2, low_row + 1, TRACK_SHAPE_ASC_DIAGONAL, ends=(N, N))
+                for j in range(hh):
+                    east = 0x71 if j == hh - 1 else 0x90
+                    west = 0x9D if j == 0 else N
+                    piece = level.add_track(xl + 4 + 2 * j, low_row + 2, TRACK_SHAPE_HORIZONTAL, ends=(east, west))
+        elif h:
+            # Mirrored for a row travelling right: a TR curve at (x-1, top+2)
+            # into a run going left along row top+3 (the curve owns that
+            # joint), and, with high pieces, a descending diagonal from the
+            # last low piece's west end (0x9E, pair east/north-west) up to a
+            # run two rows higher whose first piece's east end owns the
+            # north-west junction (0xA6, pair west/south-east).
+            level.add_track(x - 1, top + 2, TRACK_SHAPE_CURVE_TR, ends=(N, 0x90))
+            low_row = top + 3
+            for j in range(h):
+                last_low = j == h - 1
+                west = 0x9E if (last_low and hh) else (0x70 if last_low else 0x90)
+                piece = level.add_track(x - 3 - 2 * j, low_row, TRACK_SHAPE_HORIZONTAL, ends=(N, west))
+            if hh:
+                xl = x - 3 - 2 * (h - 1)
+                level.add_track(xl - 2, low_row + 1, TRACK_SHAPE_DESC_DIAGONAL, ends=(N, N))
+                for j in range(hh):
+                    east = 0xA6 if j == 0 else N
+                    west = 0x70 if j == hh - 1 else 0x90
+                    piece = level.add_track(xl - 4 - 2 * j, low_row + 2, TRACK_SHAPE_HORIZONTAL, ends=(east, west))
+        starts.append((slot, piece, bool(h)))
+    for slot, piece, run in starts:
+        if run:
+            level.add_note_block_on_track(piece, travel_left=not right)
+        else:
+            level.add_note_block_on_track(piece, vertical=True)
+    return level
+
+
+@test_level(54, "Packed Row R4")
+def level_packed_row_r4() -> LevelBuilder:
+    """Four blocks one frame (0.75 units) apart in a row travelling right, all
+    loaded at course start. Every column feeds its vertical through a run
+    from the left (a bare column's block bounces at its top cap and would land
+    going left); the two right columns use a diagonal. Oracle: gaps 0.75 x3,
+    row complete 532 frames after the first block activates."""
+    return _packed_row_level2("Packed Row R4",
+                              [(10, 8, 1, 1, 0, 0), (16, 8, 3, 2, 0, 0), (19, 15, 1, 2, 1, 0), (25, 15, 3, 3, 1, 0)],
+                              60, right=True, width=80)
+
+
+@test_level(53, "Diag Run R")
+def level_diag_run_r() -> LevelBuilder:
+    """Diag Run mirrored for a row travelling right: the descending diagonal
+    and its two junction words, on a long rail in an 80-wide course."""
+    return _packed_row_level2("Diag Run R", [(19, 10, 1, 1, 2, 0)], 60, right=True, width=80)
+
+
+@test_level(51, "Diag Run")
+def level_diag_run() -> LevelBuilder:
+    """One column whose lead-in steps down through a diagonal: the frame cost
+    of the diagonal and its two junctions, for the packed-row planner."""
+    return _packed_row_level2("Diag Run", [(13, 10, 1, 1, 2, 0)], 27)
+
+
+@test_level(52, "Packed Row x4d")
+def level_packed_row_x4d() -> LevelBuilder:
+    """Four note blocks one frame apart with a clean cascade, the first row
+    the planner's vocabulary could not reach: the leftmost column's lead-in
+    steps down through a diagonal (60 frames), which shifts its arrival off
+    the 43-frame grid the others share. From the exhaustive sweep of the
+    arrival model: x7 n2 y0=17 run 2+2 with the diagonal (start row 24),
+    x13 n3 y0=12 run 2, x19 n1 y0=12 run 1, x25 n1 y0=10; arrivals 497,
+    370, 243, 116 after the load, positions 0.75 apart, start rows 24, 19,
+    15, 10 running one way so the stack cascades."""
+    return _packed_row_level2("Packed Row x4d", [(7, 17, 2, 2, 2, 0), (13, 12, 3, 2, 0, 0), (19, 12, 1, 1, 0, 0), (25, 10, 1, 0, 0, 0)], 27)
+
+
 @test_level(45, "Packed Row x5")
 def level_packed_row_x5() -> LevelBuilder:
     """Five note blocks two frames (1.5 units) apart on one rail, the most
@@ -1262,6 +1369,45 @@ def level_packed_row_x4() -> LevelBuilder:
     room). The one two-frame gap sits between the first two landers, so the
     last block joins flush: sim gaps 0.750, 0.750, 1.500 from the left."""
     return _packed_row_level("Packed Row x4", [(25, 12, 1, 0, 0), (19, 14, 1, 1, 0), (13, 14, 3, 2, 0), (10, 10, 6, 1, 0)], 27)
+
+
+def _piece_gallery(name, wings):
+    """The Rail Trace loop lowered to rows 5..13 (rails y 6.5 / 12.5, x 9.5 /
+    17.5) beside the Rail Diag2 bend at tiles 19..23, both riders starting
+    rightwards, so one screen shows a block cross a straight, a curve and a
+    diagonal. The guide's piece pictures are cropped from a play screenshot
+    of this course with the rail probe's per-frame positions drawn on."""
+    N = 0x0104
+    level = LevelBuilder(name, style='SMB1', theme='Ground')
+    level.goal_y = 4
+    level.add_ground_fill(7, 23, 4)
+    level.add_track(9, 6, TRACK_SHAPE_CURVE_BL, ends=(0x0090, 0x0091))
+    loop_start = level.add_track(11, 5, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, N))
+    level.add_track(13, 5, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, N))
+    level.add_track(15, 6, TRACK_SHAPE_CURVE_BR, ends=(0x0091, N))
+    level.add_track(16, 8, TRACK_SHAPE_VERTICAL, ends=(0x0091, N))
+    level.add_track(15, 10, TRACK_SHAPE_CURVE_TR, ends=(N, N))
+    level.add_track(13, 11, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, N))
+    level.add_track(11, 11, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, N))
+    level.add_track(9, 10, TRACK_SHAPE_CURVE_TL, ends=(0x0090, N))
+    level.add_track(8, 8, TRACK_SHAPE_VERTICAL, ends=(0x0091, N))
+    diag_start = level.add_track(19, 5, TRACK_SHAPE_HORIZONTAL, ends=(0x00A5, 0x0070))
+    level.add_track(21, 6, TRACK_SHAPE_ASC_DIAGONAL, ends=(0x0077, N))
+    level.add_note_block_on_track(loop_start, wings=wings, travel_left=False)
+    level.add_note_block_on_track(diag_start, wings=wings, travel_left=False)
+    return level
+
+
+@test_level(49, "Piece Gallery")
+def level_piece_gallery() -> LevelBuilder:
+    """Straight, curve and diagonal under one non-winged block each (0.75 a frame)."""
+    return _piece_gallery("Piece Gallery", wings=False)
+
+
+@test_level(50, "Piece Gallery W")
+def level_piece_gallery_w() -> LevelBuilder:
+    """Piece Gallery with winged blocks (1.5 a frame)."""
+    return _piece_gallery("Piece Gallery W", wings=True)
 
 
 @test_level(24, "Gap Open")
