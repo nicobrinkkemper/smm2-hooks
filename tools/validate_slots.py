@@ -17,6 +17,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, '..', 'mcp'))
 argv, sys.argv = sys.argv[1:], ['x']
 import eden  # noqa: E402
+import parse_course  # noqa: E402
 import save_dat  # noqa: E402
 from smm2 import Game  # noqa: E402
 
@@ -28,7 +29,21 @@ def used_slots(sd):
     return [s for s, f in save_dat.records(body) if f]
 
 
+def check_encrypted(plan):
+    """A course file the game can read is AES-encrypted with a CRC trailer; a raw
+    LevelBuilder.build() is not, and Coursebot deletes it as corrupt, which
+    looks exactly like a rejected layout. Refuse before installing anything."""
+    for slot, files in plan.items():
+        try:
+            ok = parse_course.decrypt_course(files[0]) is not None
+        except Exception:  # wrong size / not a course at all
+            ok = False
+        if not ok:
+            sys.exit(f'slot {slot}: {files[0]} is not an encrypted course (gen_test_levels.encrypt_course); refusing')
+
+
 def install(sd, plan):
+    check_encrypted(plan)
     registered = used_slots(sd)
     body = bytearray(save_dat.decrypt(open(os.path.join(sd, 'save.dat'), 'rb').read()))
     for slot, files in plan.items():

@@ -120,18 +120,50 @@ def paths() -> EdenPaths:
 
 def gdb_config(p: EdenPaths) -> dict:
     vals = _read_ini(p.config_ini)
+    # Qt keeps `key\default=true` beside a value that is still at its default;
+    # Eden then reads the default (false), whatever the value says.
+    value_on = vals.get("use_gdbstub", "?") == "true"
+    at_default = vals.get("use_gdbstub\\default", "false") == "true"
     return {
-        "use_gdbstub": vals.get("use_gdbstub", "?") == "true",
+        "use_gdbstub": value_on and not at_default,
+        "use_gdbstub_value": value_on,
+        "use_gdbstub_default_marker": at_default,
         "port": int(vals.get("gdbstub_port", "6543") or 6543),
         "ini": p.config_ini,
     }
 
 
 def set_gdbstub(p: EdenPaths, enabled: bool) -> bool:
-    """Flip use_gdbstub in the real ini, preserving CRLF. Returns True if changed."""
+    """Flip use_gdbstub in the real ini, preserving CRLF. Returns True if changed.
+
+    Eden's ini is yuzu-style: `key\\default=true` means "at the default", and the
+    value line is ignored while it is set. Enabling the stub must clear that
+    flag as well, or Eden boots with the stub off and rewrites the value back.
+    """
     b = Path(p.config_ini).read_bytes()
-    want = f"use_gdbstub={'true' if enabled else 'false'}".encode()
-    new = re.sub(rb"use_gdbstub=(true|false)", want, b, count=1)
+    value = b"true" if enabled else b"false"
+    new = re.sub(rb"use_gdbstub=(true|false)", b"use_gdbstub=" + value, b, count=1)
+    flag = b"false" if enabled else b"true"
+    new = re.sub(rb"use_gdbstub\\default=(true|false)", lambda _: b"use_gdbstub\\default=" + flag, new, count=1)
+    if new != b:
+        Path(p.config_ini).write_bytes(new)
+        return True
+    return False
+
+
+def ensure_docked(p: EdenPaths) -> bool:
+    """Force docked mode in the real ini. Returns True if changed.
+
+    The input mod hooks only GetNpadStates(NpadFullKeyState*) — the Pro
+    Controller path Eden uses when docked. In handheld mode the game polls the
+    handheld Npad, that hook never fires, and injected input from input.bin is
+    silently ignored in every scene (the game sits on the title screen no
+    matter what we press). Guarantee docked before every launch.
+    """
+    b = Path(p.config_ini).read_bytes()
+    new = re.sub(rb"use_docked_mode=\d", b"use_docked_mode=1", b, count=1)
+    new = re.sub(rb"use_docked_mode\\default=(true|false)",
+                 b"use_docked_mode\\\\default=true", new, count=1)
     if new != b:
         Path(p.config_ini).write_bytes(new)
         return True
@@ -170,6 +202,7 @@ def stub_listening(port: int) -> bool | None:
 
 
 def launch(p: EdenPaths, gdb: bool) -> dict:
+    docked = ensure_docked(p)
     changed = set_gdbstub(p, gdb)
     status = Path(p.sd_hooks_dir) / "status.bin"
     if status.exists():
@@ -184,6 +217,7 @@ def launch(p: EdenPaths, gdb: bool) -> dict:
             break
         time.sleep(1)
     return {"process": proc, "gdbstub_config_changed": changed, "gdb": gdb,
+            "docked_mode_forced": docked,
             "note": "paused until a debugger attaches and continues" if gdb else "booting to the title screen (~25 s)"}
 
 

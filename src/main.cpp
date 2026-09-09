@@ -59,10 +59,21 @@ namespace smm2 { namespace placeholder_debug {
     void init();
 }}
 
+namespace smm2 { namespace probe {
+    void init();
+    void flush();
+}}
+
+namespace smm2 { namespace directboot {
+    void init();
+    void per_frame(uint32_t frame);
+}}
+
 static void on_frame(uint32_t frame) {
     smm2::game_phase::per_frame(frame);
     smm2::status::update(frame);
     smm2::sim_trace::per_frame(frame);
+    smm2::directboot::per_frame(frame);
     // smm2::camera_debug::per_frame(frame); // disabled — forces viewport dims
 
     // Flush logs periodically
@@ -71,6 +82,7 @@ static void on_frame(uint32_t frame) {
         smm2::xlink2_enum::flush();
         smm2::sim_trace::flush();
         smm2::rng_trace::flush();
+        smm2::probe::flush();
     }
 }
 
@@ -92,4 +104,6 @@ extern "C" void hkMain() {
     smm2::xlink2_enum::init();      // captures xlink2 enum definitions
     smm2::sim_trace::init();        // per-frame player trace for sim comparison
     smm2::placeholder_debug::init(); // force spikeballs into placeholder state
+    smm2::probe::init();
+    smm2::directboot::init();       // sd:/smm2-hooks/boot.txt: skip the title and menus            // sd:/smm2-hooks/probe.txt -> probe.log (docs/probe.md)
 }

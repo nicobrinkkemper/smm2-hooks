@@ -4,8 +4,8 @@ from __future__ import annotations
 import re
 import pexpect
 
-PROMPT = r"\(gdb\) $"
-FORBIDDEN = re.compile(r"^\s*(b|br|bre|brea|break|tb|tbreak|handle\s+SIGTRAP.*\bpass\b)", re.I)
+PROMPT = r"\(gdb\) (?:\x1b\[\?2004h)?\s*$"   # readline may append its bracketed-paste enable right after the prompt
+FORBIDDEN = re.compile(r"^\s*(?:(?:b|br|bre|brea|break|tb|tbreak)(?:\s|$)|handle\s+SIGTRAP.*\bpass\b)", re.I)
 CSV_BASE = 0x7100000000
 
 
@@ -29,6 +29,9 @@ class GdbSession:
         return out
 
     def detach(self) -> str:
+        """End the session for this launch. Eden's stub has not accepted a second
+        connection after a detach (2026-09-01), so this is teardown, not a pause:
+        to keep working, `delete` + continue instead."""
         if not self.child:
             return "not attached"
         try:

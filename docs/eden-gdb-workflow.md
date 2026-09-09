@@ -16,7 +16,7 @@
 
 - **ONE persistent GDB session** via tmux (`eden-gdb`). Never use batch `-batch` connections — they crash Eden on reconnect.
 - **Always continue after a breakpoint/watchpoint hit**: `c` in GDB. Game is frozen while stopped!
-- **Use `hbreak` NOT `break`**: Eden's GDB stub doesn't remove software breakpoints! They persist and loop forever. Hardware breakpoints (`hbreak`) clean up properly.
+- **No breakpoints at all**: `break` is baked into Eden's code cache and loops forever; `hbreak` is accepted by GDB but the stub answers Z1 with EMPTY, so it never fires. Use watchpoints (`watch`/`rwatch`/`awatch`) or the probe (`docs/probe.md`).
 - **Don't set breakpoints during loading** — `changeState` fires on Prepare Thread during scene transitions and freezes everything.
 - **Delete breakpoints before continuing** if you're done with them: `delete <num>`, then `c`.
 - **Handle SIGTRAP**: if spurious stops appear after deleting watchpoints, `handle SIGTRAP nostop noprint nopass`. Never `pass`: passing the initial SIGTRAP into the guest kills Eden on the first continue (tooling-gaps #7).
