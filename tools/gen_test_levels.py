@@ -447,10 +447,12 @@ class LevelBuilder:
             offset = 80 if obj.get('_half_tile_offset') else 0
             struct.pack_into('<i', data, off + 0x00, obj['x'] * TILE + offset)
             struct.pack_into('<i', data, off + 0x04, obj['y'] * TILE + offset)
+            struct.pack_into('<H', data, off + 0x08, obj.get('res', 0))
             data[off + 0x0A] = obj.get('width', 1)
             data[off + 0x0B] = obj.get('height', 1)
             struct.pack_into('<I', data, off + 0x0C, obj.get('flags', 0x06000040))
-            struct.pack_into('<I', data, off + 0x10, 0x06000040)
+            struct.pack_into('<I', data, off + 0x10, obj.get('cflags', 0x06000040))
+            struct.pack_into('<I', data, off + 0x14, obj.get('ex', 0))
             struct.pack_into('<h', data, off + 0x18, obj['id'])
             struct.pack_into('<h', data, off + 0x1A, obj.get('contents', -1))
             struct.pack_into('<h', data, off + 0x1C, obj.get('lid', -1))
@@ -526,6 +528,175 @@ def level_flat_ground() -> LevelBuilder:
     b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_y = 5
     return b
+
+
+@test_level(27, "Big Flat")
+def level_big_flat() -> LevelBuilder:
+    """Flat Ground with a free mushroom on the floor and the 3-tall block
+    group Coursebot slot 0 carries at tiles 13..15, rows 8..11: measure Big
+    Mario's box the way small Mario's was (head bump under the block from a
+    running jump, wall pin against its faces at 208 and 256)."""
+    b = LevelBuilder("Big Flat", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_ground_block(13, 15, y_surface=11, height=4)
+    b.add_actor(OBJ_MUSHROOM, 9, 5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(28, "Long Run SMB3")
+def level_long_run_smb3() -> LevelBuilder:
+    """A 120-tile flat runway in the SMB3 style: room to hold run long
+    enough for the P-meter, to see whether the 1.3x acceleration rows and
+    the 4.0 cap in the physics block are the P-speed."""
+    b = LevelBuilder("Long Run SMB3", "SMB3", "Ground")
+    b.width = 120
+    b.add_ground_block(7, 109, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(29, "Star Run")
+def level_star_run() -> LevelBuilder:
+    """The SMB1 runway with a Super Star (object 29) on the floor at tile 9:
+    does invincibility switch the acceleration rows and the 4.0 cap?"""
+    b = LevelBuilder("Star Run", "SMB1", "Ground")
+    b.width = 120
+    b.add_ground_block(7, 109, y_surface=4, height=5)
+    b.add_actor(29, 9, 5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(30, "Slope Layout Only")
+def level_slope_layout() -> LevelBuilder:
+    """The Slope Course's ground and goal without the slope objects, to see
+    which part Coursebot rejects."""
+    b = LevelBuilder("Slope Layout", "SMB1", "Ground")
+    b.add_ground_block(7, 10, y_surface=4, height=5)
+    b.add_ground(21, 23, 10)
+    b.start_y = 5
+    b.goal_y = 10
+    return b
+
+
+@test_level(31, "One Steep Slope")
+def level_one_slope() -> LevelBuilder:
+    """Flat Ground with one steep slope object on the floor."""
+    b = LevelBuilder("One Slope", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_slope(12, 5, width=4, height=4, steep=True)
+    b.goal_y = 5
+    return b
+
+
+def _one_slope(name: str, flags: int = 0x06000040, ex: int = 0, cflags: int = 0x06000040, x: int = 12, y: int = 5, res: int = 0) -> LevelBuilder:
+    """A flat floor with one steep slope object. Coursebot accepts only the
+    default flags (0x06000040), the default child flags and ex 0 on a slope:
+    flags 0x4, 0x8, 0x10, 0x18, 0x20, 0x40000, 0x400000, ex 1 and child
+    flags 0x10 / 0x20 were each deleted (2026-09-03), so the slope's
+    direction is not in those fields. Moving the anchor (x 15 keeps the tall
+    face at the anchor column; y 8 floats the slope at rows 8..11) and the
+    16-bit word after y (1 or 2, accepted and ignored) do not turn it
+    either: x is the left column, y the bottom row, and the direction is not
+    in the record's fields."""
+    b = LevelBuilder(name, "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': x, 'y': y, 'width': 4, 'height': 4,
+                      'flags': flags, 'ex': ex, 'cflags': cflags, 'res': res, '_half_tile_offset': True})
+    b.goal_y = 5
+    return b
+
+
+@test_level(33, "Steep Slope Up")
+def level_steep_slope_up() -> LevelBuilder:
+    """A steep slope rising to the right, drawn into the floor the way the
+    editor does it: the floor under the slope's 4x4 footprint stops at row
+    3, the slope object at (12, 4) supplies the surface row there (its foot
+    tile is a full block, the diagonal rises over the next three columns),
+    and a column at tiles 16..24 with its top at row 7 meets the ramp's
+    top. A slope overlapping ground tiles is deleted by Coursebot."""
+    b = LevelBuilder("Steep Slope Up", "SMB1", "Ground")
+    b.add_ground_block(7, 11, y_surface=4, height=5)
+    b.add_ground_block(12, 15, y_surface=3, height=4)
+    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': 12, 'y': 4, 'width': 4, 'height': 4,
+                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_ground_block(16, 24, y_surface=7, height=8)
+    b.goal_y = 8
+    return b
+
+
+@test_level(34, "Steep Slope, nothing after")
+def level_steep_slope_open() -> LevelBuilder:
+    """The 4x4 steep slope drawn into the floor with nothing at its top:
+    the floor beyond continues one row lower."""
+    b = LevelBuilder("Steep Slope Open", "SMB1", "Ground")
+    b.add_ground_block(7, 11, y_surface=4, height=5)
+    b.add_ground_block(12, 24, y_surface=3, height=4)
+    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': 12, 'y': 4, 'width': 4, 'height': 4,
+                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.goal_y = 4
+    return b
+
+
+def _steep_slope(name: str, style: str) -> LevelBuilder:
+    """A 5x5 steep slope drawn into the floor, meeting a column whose top
+    is at the ramp's top row."""
+    b = LevelBuilder(name, style, "Ground")
+    b.add_ground_block(7, 11, y_surface=4, height=5)
+    b.add_ground_block(12, 16, y_surface=3, height=4)
+    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': 12, 'y': 4, 'width': 5, 'height': 5,
+                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_ground_block(17, 24, y_surface=8, height=9)
+    b.goal_y = 9
+    return b
+
+
+@test_level(35, "Steep Slope 5, column")
+def level_steep_slope_5() -> LevelBuilder:
+    return _steep_slope("Steep Slope 5", "SMB1")
+
+
+@test_level(40, "Steep Slope SMB3")
+def level_steep_slope_smb3() -> LevelBuilder:
+    """The steep slope in the SMB3 style, where ducking on a slope slides."""
+    return _steep_slope("Steep Slope 3", "SMB3")
+
+
+def _gentle_slope(name: str, style: str) -> LevelBuilder:
+    """A gentle slope (object 87, 8 wide, 4 tall) drawn into the floor like
+    the steep ones: the floor under its footprint stops at row 3, the
+    object sits at (12, 4), and a column from tile 20 with its top at row 7
+    meets the ramp's top."""
+    b = LevelBuilder(name, style, "Ground")
+    b.add_ground_block(7, 11, y_surface=4, height=5)
+    b.add_ground_block(12, 19, y_surface=3, height=4)
+    b.objects.append({'id': OBJ_SLIGHT_SLOPE, 'x': 12, 'y': 4, 'width': 8, 'height': 4,
+                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_ground_block(20, 24, y_surface=7, height=8)
+    b.goal_y = 8
+    return b
+
+
+@test_level(36, "Gentle Slope 8x4")
+def level_gentle_slope() -> LevelBuilder:
+    return _gentle_slope("Gentle Slope", "SMB1")
+
+
+@test_level(37, "Gentle Slope SMB3")
+def level_gentle_slope_smb3() -> LevelBuilder:
+    """The gentle slope in the SMB3 style, where ducking on a slope slides."""
+    return _gentle_slope("Gentle Slope 3", "SMB3")
+
+
+@test_level(38, "Gentle Slope SMW")
+def level_gentle_slope_smw() -> LevelBuilder:
+    return _gentle_slope("Gentle Slope W", "SMW")
+
+
+@test_level(39, "Gentle Slope NSMBU")
+def level_gentle_slope_nsmbu() -> LevelBuilder:
+    return _gentle_slope("Gentle Slope U", "NSMBU")
 
 
 @test_level(1, "Jump Platforms")
