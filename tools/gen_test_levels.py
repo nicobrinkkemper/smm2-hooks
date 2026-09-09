@@ -1665,6 +1665,20 @@ def level_plant_gallery() -> LevelBuilder:
     return b
 
 
+@test_level(60, "Plant Pipe Near")
+def level_plant_pipe_near() -> LevelBuilder:
+    """One upward pipe with a piranha plant five tiles from the start (cols
+    10..11, row 5) and nothing else, for the pipe plant's player-near rule
+    (smm2-decomp docs/re-notes/piranha-plant.md).
+    """
+    b = LevelBuilder("Plant Pipe Near", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    b.objects.append({'id': 9, 'x': 10, 'y': 5, 'width': 2, 'height': 2, 'flags': 0x060400C0, 'lid': 1, '_half_tile_offset': True})
+    b.objects.append({'id': 2, 'x': 11, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000041, 'lid': 1, '_half_tile_offset': False})
+    return b
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""

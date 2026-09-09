@@ -256,6 +256,10 @@ field plant k3      u32 0x650>0x3E0
 field plant h3      u64 0x650>0x358
 field plant s2kind  u32 0x650>0x928>0x364
 field plant s5kind  u32 0x650>0x9D0>0x364
+# The Dokan handler (system state 5) at actor+0x468: its machine's state at +0x28, its wait count at +0x84
+field plant dst     u32 0x468>0x28
+field plant dwait   u32 0x468>0x84
+field plant f523    u8  0x523
 hook lift 0x71008DB240
 field lift pos_x   f32 0x230
 field lift pos_y   f32 0x234
