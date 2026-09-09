@@ -117,7 +117,7 @@ def main() -> int:
         print((sd / "directboot.log").read_text() if (sd / "directboot.log").exists() else "(none)")
         eden.kill()
         return 1
-    print(f"play at {time.time() - t0:.0f} s, frame {st['frame']}")
+    print(f"play at {time.time() - t0:.0f} s, frame {st['frame']}, scene {st['scene_mode']} ({'Coursebot play' if st['scene_mode'] == COURSEBOT_PLAY else 'editor test-play'})")
 
     samples: list[tuple[int, float, float]] = []
 
