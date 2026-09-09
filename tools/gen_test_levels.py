@@ -417,11 +417,37 @@ class LevelBuilder:
         })
     
     START_AREA_TILES = 7   # x 0..6 is the generated start area; Coursebot deletes a course with a track or object in it
+    # The goal area is the course's last tiles: the pole stands 9.5 tiles from
+    # the right edge and terrain reaching the tile under it or beyond gets
+    # the course deleted (2026-09-09: a ground block to column 30 at width
+    # 40, goal at 30.5, deleted; to column 26 at width 35, goal at 25.5,
+    # deleted; to column 24 accepted). Objects and tracks have been accepted
+    # up to column 27 at width 35 (the packed rows), so their bound is
+    # looser; either way nothing generated goes past these columns.
+    GOAL_AREA_TILES = 10          # terrain: column width - 10 and beyond
+    GOAL_AREA_OBJECT_TILES = 7    # objects and tracks: column width - 7 and beyond
+
+    def goal_area_start(self, objects: bool = False) -> int:
+        return self.width - (self.GOAL_AREA_OBJECT_TILES if objects else self.GOAL_AREA_TILES)
 
     def preflight(self):
         """Refuse what Coursebot is known to delete, before an Eden round trip:
-        a track piece (its 3x3 box) or an object inside the start area."""
+        a track piece (its 3x3 box) or an object inside the start area, and
+        any object, tile, slope or track reaching the goal area."""
         bad = []
+        g = self.goal_area_start()
+        go = self.goal_area_start(objects=True)
+        for t in getattr(self, 'tracks', []):
+            if t['x'] >= go:
+                bad.append(f"track ({t['x']}, {t['y']}) starts in the goal area (x >= {go})")
+        for o in self.objects:
+            right = o['x'] + max(1, int(o.get('width', 1))) - 1
+            if right >= go:
+                bad.append(f"object id {o['id']} at ({o['x']}, {o['y']}) w {o.get('width', 1)} reaches the goal area (x >= {go})")
+        for (x, y, tile_id) in self.ground_tiles:
+            if x >= g:
+                bad.append(f"tile {tile_id:#x} at ({x}, {y}) is in the goal area (x >= {g})")
+                break
         for t in getattr(self, 'tracks', []):
             if t['x'] < self.START_AREA_TILES:
                 bad.append(f"track ({t['x']}, {t['y']}) box reaches into the start area (x < {self.START_AREA_TILES})")
@@ -1596,7 +1622,7 @@ def level_surface_kinds() -> LevelBuilder:
     indexes the game's surface priority table (docs/re-notes/surfaces.md).
     """
     b = LevelBuilder("Surface Kinds", "SMB1", "Ground")
-    b.add_ground_block(7, 26, y_surface=4, height=5)
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_y = 5
     cols = [(9, 23, 0x06000040), (12, 94, 0x06000040), (15, 21, 0x06000040), (18, 82, 0x06000040),
             (21, 74, 0x06000044)]
@@ -1605,8 +1631,8 @@ def level_surface_kinds() -> LevelBuilder:
                           '_half_tile_offset': True})
         b.objects.append({'id': OBJ_SPIKE_BALL, 'x': x, 'y': 9, 'width': 1, 'height': 1,
                           'flags': 0x06000044, '_half_tile_offset': True})
-    b.ground_tiles.append((24, 6, GROUND_FILL))
-    b.objects.append({'id': OBJ_SPIKE_BALL, 'x': 24, 'y': 9, 'width': 1, 'height': 1,
+    b.ground_tiles.append((23, 6, GROUND_FILL))
+    b.objects.append({'id': OBJ_SPIKE_BALL, 'x': 23, 'y': 9, 'width': 1, 'height': 1,
                       'flags': 0x06000044, '_half_tile_offset': True})
     return b
 
