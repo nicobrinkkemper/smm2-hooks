@@ -1637,6 +1637,28 @@ def level_surface_kinds() -> LevelBuilder:
     return b
 
 
+@test_level(64, "Note Pitch")
+def level_note_pitch() -> LevelBuilder:
+    """A height sweep of note blocks, for the pitch reading. One free-standing
+    block per column from 8 to 20, each a row higher than the last (rows 5 to
+    17), plus a second block at the SAME row as the first two columns further
+    on, so the reading says whether x matters. Every block is inside the
+    opening view, so all of them spawn at load and register their sound
+    there. The `notepitch` preset reads the 5-bit slot at actor+0x914 beside
+    the position, so the recording gives slot against spawn height directly.
+    """
+    b = LevelBuilder("Note Pitch", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def block(x, y):
+        return {'id': OBJ_NOTE_BLOCK, 'x': x, 'y': y, 'width': 1, 'height': 1, '_half_tile_offset': True}
+    for i, col in enumerate(range(8, 21)):
+        b.objects.append(block(col, 5 + i))
+    b.objects.append(block(22, 5))    # the same row as column 8: does x matter
+    b.objects.append(block(23, 6))    # and the same row as column 9
+    return b
+
+
 @test_level(63, "Note Ceiling")
 def level_note_ceiling() -> LevelBuilder:
     """A note block's impulse thrown into a ceiling. Two columns, each a note

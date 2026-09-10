@@ -132,6 +132,51 @@ field cam act_r  f32 @0x7102C55080>0x88>0x5c
     # centred-hit recording in smm2-decomp, docs/re-notes/note-block.md):
     # x0 = the block in the rail applier; the first machine's state word,
     # the bound mode/vy/displacement and the rider record at +0x550.
+    # The note a block will play. A block registers its sound once, at spawn
+    # (docs/re-notes/note-block.md): the 5-bit slot at actor+0x914 bits 27..31
+    # with the request type at +0x894, and the pitch record at +0x388
+    # ({target id, current, offset, extra}) whose current+extra lands in the
+    # actor's third position word +0x238 -- the block's pitch position, which
+    # indexes flt_71023C67C0. A static block overrides the plain per-frame, so
+    # this rides the manager's own walk (0x71008D7C70, the processing-order
+    # hook), which sees every actor.
+    "notepitch": """\
+hook calc 0x71008D7C70 callers=1
+field calc id    u32 0x40
+field calc pos_x f32 0x230
+field calc pos_y f32 0x234
+field calc pos_z f32 0x238
+field calc snd   u32 0x914
+field calc req   u32 0x894
+field calc rtgt  u32 0x388
+field calc rcur  f32 0x38C
+field calc roff  f32 0x390
+field calc rext  f32 0x394
+""",
+    # Who carries the note. The block holds nothing height-dependent (every
+    # block in the Note Pitch sweep reads snd 0x0810001B, req 6, pitch record
+    # zero), so the sound is either positional off the block's emitter or it
+    # belongs to the hitter. This reads the emitter request words on BOTH: the
+    # player's +0x894/+0x914 beside its movement step, and every actor's
+    # through the manager walk, so a hit frame shows which one changes.
+    "notesound": """\
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_y f32 0x240
+field player state u32 0x3F8
+field player p_req u32 0x894
+field player p_snd u32 0x914
+field player p_910 u32 0x910
+field player p_a70 u32 0xA70
+hook calc 0x71008D7C70 callers=1
+field calc id    u32 0x40
+field calc pos_x f32 0x230
+field calc pos_y f32 0x234
+field calc snd   u32 0x914
+field calc req   u32 0x894
+field calc a70   u32 0xA70
+""",
     "note": """\
 # Note block: the bound (+0x478 state, +0x4BC mode, +0x4C0 vy, +0x4CC displacement)
 # and the rider record (+0x550: phase, countdown, hit masks, player slot 0)
