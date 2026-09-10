@@ -1637,6 +1637,40 @@ def level_surface_kinds() -> LevelBuilder:
     return b
 
 
+@test_level(63, "Note Ceiling")
+def level_note_ceiling() -> LevelBuilder:
+    """A note block's impulse thrown into a ceiling. Two columns, each a note
+    block at row 6 with a Goomba on it (row 7, its box top at 128, boxed in
+    by a hard block either side so it does not walk off) and a hard-block
+    ceiling over it: column 11 with its underside at 144, one tile of
+    headroom, and column 17 at 192, four. Jumping into each
+    block from below fires it; the `placeholder` preset's enemy hook reads
+    the Goomba's y and vel_y per frame, so the recording says whether the body
+    keeps any of its upward speed at the ceiling and where its top comes to
+    rest. The gaps differ so a stop that depends on the speed at contact
+    separates from one that does not.
+    """
+    b = LevelBuilder("Note Ceiling", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def block(x):
+        return {'id': OBJ_NOTE_BLOCK, 'x': x, 'y': 6, 'width': 1, 'height': 1, '_half_tile_offset': True}
+    def goomba(x):
+        return {'id': OBJ_GOOMBA, 'x': x, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True}
+    def hard(x, y):
+        return {'id': OBJ_HARD_BLOCK, 'x': x, 'y': y, 'width': 1, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True}
+    for col, ceil in ((11, 9), (17, 12)):
+        b.objects.append(block(col))
+        # Boxed in on the block's top: a walker left alone strolls off a
+        # one-tile block long before the player arrives.
+        b.objects.append(goomba(col))
+        b.objects.append(hard(col - 1, 7))
+        b.objects.append(hard(col + 1, 7))
+        for x in (col - 1, col, col + 1):
+            b.objects.append(hard(x, ceil))
+    return b
+
+
 @test_level(59, "Plant Gallery")
 def level_plant_gallery() -> LevelBuilder:
     """Plain piranha plants (id 2, no flags) on every surface the guide's
