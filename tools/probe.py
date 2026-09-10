@@ -126,7 +126,9 @@ field cam v38    f32 @0x7102C55080>0x88>0x38
 field cam v3c    f32 @0x7102C55080>0x88>0x3c
 field cam v40    f32 @0x7102C55080>0x88>0x40
 field cam act_l  f32 @0x7102C55080>0x88>0x54
+field cam act_b  f32 @0x7102C55080>0x88>0x58
 field cam act_r  f32 @0x7102C55080>0x88>0x5c
+field cam act_t  f32 @0x7102C55080>0x88>0x60
 """,
     # The note block's bound and rider record beside the player (the
     # centred-hit recording in smm2-decomp, docs/re-notes/note-block.md):
