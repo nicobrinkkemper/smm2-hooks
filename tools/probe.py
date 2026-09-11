@@ -179,6 +179,27 @@ field calc snd   u32 0x914
 field calc req   u32 0x894
 field calc a70   u32 0xA70
 """,
+    # The note timeline: which block sounded on which frame. A block's state
+    # word +0x478 going 0 -> 2 is the delivery frame (note-block.md, measured
+    # live), so reading it for every actor through the manager's own walk
+    # catches static blocks and blocks on tracks alike -- the rail applier
+    # only ever sees the ones on rails. Each row carries the block's position,
+    # which is what names it.
+    "notetime": """\
+hook calc 0x71008D7C70 callers=1
+field calc id    u32 0x40
+field calc pos_x f32 0x230
+field calc pos_y f32 0x234
+field calc state u32 0x478
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player st_e  u32 0x3F8
+field player left  f32 @0x7102C55080>0x88>0x0c
+field player bottom f32 @0x7102C55080>0x88>0x10
+""",
     "note": """\
 # Note block: the bound (+0x478 state, +0x4BC mode, +0x4C0 vy, +0x4CC displacement)
 # and the rider record (+0x550: phase, countdown, hit masks, player slot 0)
