@@ -226,6 +226,58 @@ field lift pos_y   f32 0x234
 field lift id      u32 0x40
 field lift h48     u64 0x30
 """,
+    # A plain piranha plant (GameEnemyPakkun, an EnemyUber): x0 = the actor
+    # at its per-frame. The Basic handler sits at actor+0x440 with its own
+    # machine at +0x20 (state id at +0x28: 0 None, 1 Wait, 2 Stick, 3 Jump,
+    # 4 Floating, 5 Fall, 6 Down, 7 OnpuJump, 8 TornadoFloat); the plant
+    # component is embedded at actor+0xD20 (+8 direction 0..3, +0x18 timer);
+    # speed +0x274, accel +0x280, wait timer +0x53C; the foot's chosen kind
+    # slot and owner handle from the bg-check object (surfaces.md).
+    "plant": """\
+hook plant 0x710128A2D0
+field plant pos_x   f32 0x230
+field plant pos_y   f32 0x234
+field plant vel_x   f32 0x23C
+field plant vel_y   f32 0x240
+field plant id      u32 0x40
+field plant sysst   u32 0x400
+field plant hst     u32 0x440>0x28
+field plant dir     u32 0xD28
+field plant ctimer  u32 0xD38
+field plant speed   f32 0x274
+field plant accel   f32 0x280
+field plant wait    u32 0x53C
+field plant f520    u32 0x520
+field plant f524    u32 0x524
+field plant f530    u32 0x530
+field plant f658    u32 0x658
+field plant bgfl    u32 0x650>0x2C8
+field plant k3      u32 0x650>0x3E0
+field plant h3      u64 0x650>0x358
+field plant s2kind  u32 0x650>0x928>0x364
+field plant s5kind  u32 0x650>0x9D0>0x364
+# The Dokan handler (system state 5) at actor+0x468: its machine's state at +0x28, its wait count at +0x84
+field plant dst     u32 0x468>0x28
+field plant dwait   u32 0x468>0x84
+field plant f523    u8  0x523
+# The player as the pipe's near check sees it, and the pipe itself at that
+# check (sub_71012AA800: x0 = the pipe actor; pos = the mouth's centre)
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player st_e  u32 0x400
+hook pipe 0x71012AA800
+field pipe pos_x f32 0x230
+field pipe pos_y f32 0x234
+field pipe dir   u32 0x26C
+hook lift 0x71008DB240
+field lift pos_x   f32 0x230
+field lift pos_y   f32 0x234
+field lift id      u32 0x40
+field lift h48     u64 0x30
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
