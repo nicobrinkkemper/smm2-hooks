@@ -100,6 +100,7 @@ OBJ_MUSHROOM = 20
 OBJ_SLOPE_GENTLE = 44  # Gentle slope
 OBJ_SLOPE_STEEP = 45   # Steep slope
 OBJ_NOTE_BLOCK = 23    # Note block (music block is the same id with a flag)
+OBJ_DOOR = 55          # Door; doors pair 2k with 2k+1 through flag bits 20-23
 
 # Object flags (community BCD sheet, "Flags for Objects"). 0x40 and 0x6000000
 # are set on every object; the generator's default 0x06000040 is exactly that.
@@ -217,6 +218,18 @@ class LevelBuilder:
         # view itself rather than the whole column.
         self.vertical = False
         self.height = 27          # tiles
+        # The subworld (area 1). A vertical area has no goal of its own -- the
+        # goal lives in the overworld -- so a vertical column is always built
+        # here and reached through a door or pipe.
+        self.sub_vertical = False
+        self.sub_width = 84       # tiles
+        self.sub_height = 27
+        self.sub_theme = None     # None = the same theme as the overworld
+        self.sub_autoscroll = 0   # a vertical area scrolls UPWARD, and the
+                                  # scroll moves what is in spawn range with it
+        self.sub_objects: List[dict] = []
+        self.sub_ground_tiles: List[Tuple[int, int, int]] = []
+        self.sub_tracks: List[dict] = []
         self.ground_tiles: List[Tuple[int, int, int]] = []
         self.start_y = 5  # tiles
         self.goal_y = None  # auto-calculated if None
@@ -497,65 +510,26 @@ class LevelBuilder:
         
         # NOTE: Do NOT add goal object - game auto-generates from header goal_x/goal_y
         
-        # Write objects
-        obj_base = area + 0x48
-        for i, obj in enumerate(self.objects):
-            off = obj_base + i * 0x20
-            # Slopes need +0.5 tile offset (80 units) to align properly
-            offset = 80 if obj.get('_half_tile_offset') else 0
-            struct.pack_into('<i', data, off + 0x00, obj['x'] * TILE + offset)
-            struct.pack_into('<i', data, off + 0x04, obj['y'] * TILE + offset)
-            struct.pack_into('<H', data, off + 0x08, obj.get('res', 0))
-            data[off + 0x0A] = obj.get('width', 1)
-            data[off + 0x0B] = obj.get('height', 1)
-            struct.pack_into('<I', data, off + 0x0C, obj.get('flags', 0x06000040))
-            struct.pack_into('<I', data, off + 0x10, obj.get('cflags', 0x06000040))
-            struct.pack_into('<I', data, off + 0x14, obj.get('ex', 0))
-            struct.pack_into('<h', data, off + 0x18, obj['id'])
-            struct.pack_into('<h', data, off + 0x1A, obj.get('contents', -1))
-            struct.pack_into('<h', data, off + 0x1C, obj.get('lid', -1))
-            struct.pack_into('<h', data, off + 0x1E, -1)
-        
-        # Write ground tiles
-        ground_base = area + 0x247A4
-        for i, (x, y, tile_id) in enumerate(self.ground_tiles):
-            off = ground_base + i * 4
-            data[off + 0] = x
-            data[off + 1] = y
-            struct.pack_into('<H', data, off + 2, tile_id)
-        
-        # Write track records (see add_track)
-        tracks = getattr(self, 'tracks', [])
-        track_base = area + 0x28624
-        for i, tr in enumerate(tracks):
-            off = track_base + i * 12
-            struct.pack_into('<H', data, off + 0x0, 0)
-            data[off + 0x2] = 1 if tr['has_object'] else 0
-            data[off + 0x3] = tr['x']
-            data[off + 0x4] = tr['y']
-            data[off + 0x5] = tr['type']
-            struct.pack_into('<H', data, off + 0x6, tr['lid'])
-            struct.pack_into('<HH', data, off + 0x8, *tr['tail'])
+        _write_area(data, area, self.objects, self.ground_tiles,
+                    getattr(self, 'tracks', []))
 
-        # Set counts
-        struct.pack_into('<i', data, area + 0x1C, len(self.objects))
-        struct.pack_into('<i', data, area + 0x3C, len(self.ground_tiles))
-        struct.pack_into('<i', data, area + 0x40, len(tracks))
-        
-        # Initialize subworld (Area 1) header
+        # Area 1, the subworld. Vertical areas live here: a vertical area has
+        # no goal, the overworld does, so the column is always the sub-area
+        # and the player arrives through a door or pipe.
         area1 = 0x2E0E0
-        data[area1 + 0x00] = self.theme_id  # Same theme as main
-        data[area1 + 0x01] = 0  # Autoscroll
-        data[area1 + 0x02] = 1  # Boundary flags (from original)
-        data[area1 + 0x03] = 0  # Orientation
-        data[area1 + 0x04] = 1  # liquid_end_height
-        data[area1 + 0x05] = 0  # liquid_mode
-        data[area1 + 0x06] = 0  # liquid_speed
-        data[area1 + 0x07] = 1  # liquid_start_height (CRITICAL!)
-        struct.pack_into('<i', data, area1 + 0x08, 84 * 16)  # Width: 1344 (84 tiles)
-        struct.pack_into('<i', data, area1 + 0x0C, 27 * 16)  # Height: 432 (27 tiles)
-        # Object and ground counts stay 0 for empty subworld
-        
+        data[area1 + 0x00] = self.sub_theme if self.sub_theme is not None else self.theme_id
+        data[area1 + 0x01] = self.sub_autoscroll   # upward in a vertical area
+        data[area1 + 0x02] = 1                     # boundary flags (from original)
+        data[area1 + 0x03] = 1 if self.sub_vertical else 0
+        data[area1 + 0x04] = 1                     # liquid_end_height
+        data[area1 + 0x05] = 0                     # liquid_mode
+        data[area1 + 0x06] = 0                     # liquid_speed
+        data[area1 + 0x07] = 1                     # liquid_start_height (CRITICAL!)
+        struct.pack_into('<i', data, area1 + 0x08, self.sub_width * 16)
+        struct.pack_into('<i', data, area1 + 0x0C, self.sub_height * 16)
+        _write_area(data, area1, self.sub_objects, self.sub_ground_tiles,
+                    self.sub_tracks)
+
         return bytes(data)
 
 
@@ -564,6 +538,54 @@ class LevelBuilder:
 # ═══════════════════════════════════════════════════════════════════════════
 
 TEST_LEVELS = {}
+
+def _write_area(data: bytearray, area: int, objects: list, ground: list,
+                tracks: list) -> None:
+    """Objects, ground and track records into one area, and its three counts.
+
+    Both areas have the same layout, so the overworld and the subworld are
+    written by the same code; only the base offset differs.
+    """
+    obj_base = area + 0x48
+    for i, obj in enumerate(objects):
+        off = obj_base + i * 0x20
+        # Slopes need +0.5 tile offset (80 units) to align properly
+        offset = 80 if obj.get('_half_tile_offset') else 0
+        struct.pack_into('<i', data, off + 0x00, obj['x'] * TILE + offset)
+        struct.pack_into('<i', data, off + 0x04, obj['y'] * TILE + offset)
+        struct.pack_into('<H', data, off + 0x08, obj.get('res', 0))
+        data[off + 0x0A] = obj.get('width', 1)
+        data[off + 0x0B] = obj.get('height', 1)
+        struct.pack_into('<I', data, off + 0x0C, obj.get('flags', 0x06000040))
+        struct.pack_into('<I', data, off + 0x10, obj.get('cflags', 0x06000040))
+        struct.pack_into('<I', data, off + 0x14, obj.get('ex', 0))
+        struct.pack_into('<h', data, off + 0x18, obj['id'])
+        struct.pack_into('<h', data, off + 0x1A, obj.get('contents', -1))
+        struct.pack_into('<h', data, off + 0x1C, obj.get('lid', -1))
+        struct.pack_into('<h', data, off + 0x1E, -1)
+
+    ground_base = area + 0x247A4
+    for i, (x, y, tile_id) in enumerate(ground):
+        off = ground_base + i * 4
+        data[off + 0] = x
+        data[off + 1] = y
+        struct.pack_into('<H', data, off + 2, tile_id)
+
+    track_base = area + 0x28624
+    for i, tr in enumerate(tracks):
+        off = track_base + i * 12
+        struct.pack_into('<H', data, off + 0x0, 0)
+        data[off + 0x2] = 1 if tr['has_object'] else 0
+        data[off + 0x3] = tr['x']
+        data[off + 0x4] = tr['y']
+        data[off + 0x5] = tr['type']
+        struct.pack_into('<H', data, off + 0x6, tr['lid'])
+        struct.pack_into('<HH', data, off + 0x8, *tr['tail'])
+
+    struct.pack_into('<i', data, area + 0x1C, len(objects))
+    struct.pack_into('<i', data, area + 0x3C, len(ground))
+    struct.pack_into('<i', data, area + 0x40, len(tracks))
+
 
 def test_level(slot: int, name: str):
     """Decorator to register a test level."""
@@ -1833,34 +1855,53 @@ def level_stack_drop() -> LevelBuilder:
     camera, and the one load distance the community's table does not cover
     (docs/re-notes/globality.md in smm2-decomp).
 
-    The rig: two Bowsers stacked on a note block at the top of a tall
-    vertical column, and nothing else in the column. The player drops down
-    the column; the bosses keep landing on the block, so the block keeps
-    sounding, and the frame the sound stops is the frame the stack unloaded.
-    Read the distance off the camera, not off the player.
+    The rig: two Bowsers stacked on a note block near the top of a tall
+    vertical subworld, nothing else in the column, and a floor far below. The
+    player takes the door down, lands beside the stack and drops; the bosses
+    keep landing on the block so it keeps sounding, and the frame the sound
+    stops is the frame the stack unloaded. Read the distance off the camera,
+    not off the player.
+
+    A vertical area is always the SUBWORLD: it has no goal of its own, the
+    overworld carries it, so the overworld here is a short strip with the
+    goal and a door. Doors pair 2k with 2k+1 through flag bits 20-23, so the
+    overworld's is link 0 and the column's link 1.
+
+    Autoscroll is left off (`sub_autoscroll = 0`). A vertical area scrolls
+    UPWARD when it is on, which carries the spawn window with it and would
+    confound a measurement of how far *behind* the camera a stack survives --
+    turn it on deliberately to measure the interaction, not by default.
 
     Each Bowser is two tiles tall (spawn_rects.csv type 62: off_y 16,
     half_h 16), so they stack at +1 and +3 above the block.
-
-    Vertical areas only widen what loads by the view itself -- the spawner's
-    +-1000 top/bottom widening is the `if (!vertical)` branch of
-    sub_7100E40D80 -- which is why nothing like this shows up horizontally.
     """
     b = LevelBuilder("Stack Drop", "SMB1", "Ground")
-    b.vertical = True
-    # The Lost Woods subworld's own size (48 x 168 tiles): known-good numbers
-    # for a tall vertical area rather than invented ones.
-    b.width = 48
-    b.height = 168
-    col = 12
-    top = b.height - 8
-    b.start_y = top - 6          # the player starts beside the stack and drops
+
+    # Overworld: the goal, and the door down. Kept clear of the goal area.
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_y = 5
-    b.add_ground_block(7, 24, y_surface=4, height=5)     # a floor to land on
-    b.add_platform(col - 1, top, width=3)                # the block's perch
-    b.add_note_block(col, top + 1)
-    b.add_actor(62, col, top + 2)                        # Bowser, 2 tiles tall
-    b.add_actor(62, col, top + 4)                        # the second, stacked
+    b.objects.append({'id': OBJ_DOOR, 'x': 10, 'y': 5,
+                      'flags': 0x06000040, '_half_tile_offset': True})
+
+    # Subworld: the column. Lost Woods' own subworld size (48 x 168 tiles),
+    # so the dimensions are known-good rather than invented.
+    b.sub_vertical = True
+    b.sub_width = 48
+    b.sub_height = 168
+    col = 12
+    top = b.sub_height - 8
+    for x in range(col - 4, col + 5):
+        b.sub_ground_tiles.append((x, 4, GROUND_FILL))          # the floor, far below
+    b.sub_objects.append({'id': OBJ_DOOR, 'x': col + 4, 'y': top - 5,
+                          'flags': 0x06100040, '_half_tile_offset': True})  # link 1
+    for dx in (-1, 0, 1):                                        # the block's perch
+        b.sub_objects.append({'id': OBJ_HARD_BLOCK, 'x': col + dx, 'y': top,
+                              'width': 1, 'height': 1, '_half_tile_offset': True})
+    b.sub_objects.append({'id': OBJ_NOTE_BLOCK, 'x': col, 'y': top + 1,
+                          'flags': 0x06000040})
+    for dy in (2, 4):                                            # the two Bowsers
+        b.sub_objects.append({'id': 62, 'x': col, 'y': top + dy,
+                              'flags': 0x06000040, '_half_tile_offset': True})
     return b
 
 
