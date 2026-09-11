@@ -352,6 +352,32 @@ field activate id    u32 0x40
 field activate pos_x f32 0x230
 field activate pos_y f32 0x234
 """,
+    # Who is still loaded, and where the camera is (docs/re-notes/globality.md
+    # in the decomp). Every enemy's per-frame (0x710128A2D0) carries its
+    # identity (+0x30 handle, +0x4E4 record link), its activation flags
+    # (+0x52C: 0x20000 offscreen, 0x40000 activated) and the globality word
+    # the surface chain marks (+0xCFC: 0x40000000 already-walked, 0x90000000
+    # set by sub_710107B990), beside the area's camera view read on the
+    # player's own step. An enemy that unloads simply stops appearing, so the
+    # last frame a handle is seen is the frame it despawned -- and the camera
+    # on that frame is the distance we are after.
+    "despawn": """\
+hook enemy 0x710128A2D0
+field enemy id    u32 0x40
+field enemy pos_x f32 0x230
+field enemy pos_y f32 0x234
+field enemy f52C  u32 0x52C
+field enemy gflag u32 0xCFC
+field enemy link  u32 0x4E4
+field enemy h30   u64 0x30
+hook cam 0x71015D3CC0
+field cam pos_x  f32 0x230
+field cam pos_y  f32 0x234
+field cam left   f32 @0x7102C55080>0x88>0x0c
+field cam bottom f32 @0x7102C55080>0x88>0x10
+field cam right  f32 @0x7102C55080>0x88>0x14
+field cam top    f32 @0x7102C55080>0x88>0x18
+""",
     "plant": """\
 hook plant 0x710128A2D0
 field plant pos_x   f32 0x230
