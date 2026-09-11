@@ -182,12 +182,19 @@ field calc a70   u32 0xA70
     # The note timeline: which block sounded on which frame. A block's state
     # word +0x478 going 0 -> 2 is the delivery frame (note-block.md, measured
     # live), so reading it for every actor through the manager's own walk
+    # +0x30 is the actor's handle, and it is what names a block across
+    # frames. Without it a reader has to follow blocks by proximity, and in
+    # a music section they converge: on The Lost Woods three blocks that
+    # start a screen apart end up in one pile, where a proximity tracker
+    # hands all of their notes to whichever track it matched first. The
+    # aggregate stayed honest; the per-block counts did not.
     # catches static blocks and blocks on tracks alike -- the rail applier
     # only ever sees the ones on rails. Each row carries the block's position,
     # which is what names it.
     "notetime": """\
 hook calc 0x71008D7C70 callers=1
 field calc id    u32 0x40
+field calc h30   u64 0x30
 field calc pos_x f32 0x230
 field calc pos_y f32 0x234
 field calc state u32 0x478
