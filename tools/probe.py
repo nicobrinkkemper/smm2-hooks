@@ -378,6 +378,41 @@ field cam bottom f32 @0x7102C55080>0x88>0x10
 field cam right  f32 @0x7102C55080>0x88>0x14
 field cam top    f32 @0x7102C55080>0x88>0x18
 """,
+    # The load/unload box margins and whatever lives beside them. The twelve
+    # known ones sit at 0x7102A68F68..0x7102A68F94 (activation.md: box 0
+    # spawn -47/+47/-31/+31, box 1 the view itself, box 2 retry +-48) and are
+    # read by both the spawner sub_7100E40D80 and its counterpart
+    # sub_7100E3F9A0. Nobody has looked past +0x94. A stack survives 1568
+    # units (98 tiles) past the view, which is none of the twelve, so this
+    # reads 40 floats from the block's start to see whether a second set of
+    # margins lives behind the first.
+    "margins": """\
+hook marg 0x71015D3CC0
+field marg m00 f32 @0x7102A68F68
+field marg m01 f32 @0x7102A68F6C
+field marg m02 f32 @0x7102A68F70
+field marg m03 f32 @0x7102A68F74
+field marg m04 f32 @0x7102A68F78
+field marg m05 f32 @0x7102A68F7C
+field marg m06 f32 @0x7102A68F80
+field marg m07 f32 @0x7102A68F84
+field marg m08 f32 @0x7102A68F88
+field marg m09 f32 @0x7102A68F8C
+field marg m10 f32 @0x7102A68F90
+field marg m11 f32 @0x7102A68F94
+field marg m12 f32 @0x7102A68F98
+field marg m13 f32 @0x7102A68F9C
+field marg m14 f32 @0x7102A68FA0
+field marg m15 f32 @0x7102A68FA4
+field marg m16 f32 @0x7102A68FA8
+field marg m17 f32 @0x7102A68FAC
+field marg m18 f32 @0x7102A68FB0
+field marg m19 f32 @0x7102A68FB4
+field marg m20 f32 @0x7102A68FB8
+field marg m21 f32 @0x7102A68FBC
+field marg m22 f32 @0x7102A68FC0
+field marg m23 f32 @0x7102A68FC4
+""",
     "plant": """\
 hook plant 0x710128A2D0
 field plant pos_x   f32 0x230
