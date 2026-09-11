@@ -17,7 +17,8 @@ SD and `load` directories and the GDB stub setting, and derives everything else
 | mode | meaning |
 |------|---------|
 | `off` | no eden.exe |
-| `launching_or_frozen` | process up, no fresh `status.bin` |
+| `eden_ui_no_game` | Eden up in its own game-selection UI, no game booted this run |
+| `launching_or_frozen` | process up, a game ran this process but no fresh `status.bin` |
 | `waiting_for_debugger_or_paused` | stub enabled and listening, no fresh status: attach GDB and continue |
 | `title` / `editor` / `editor_play` / `coursebot_play` / `loading` | from `status.bin` `scene_mode` |
 

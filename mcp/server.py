@@ -36,7 +36,8 @@ os.environ.setdefault("EDEN_EXE", P.exe)
 
 mcp = FastMCP("smm2-hooks", instructions=(
     "Super Mario Maker 2 in the Eden emulator, with the smm2-hooks mod. Call eden_state first; "
-    "its `mode` is the truth (off, launching_or_frozen, waiting_for_debugger_or_paused, title, "
+    "its `mode` is the truth (off, eden_ui_no_game, launching_or_frozen, "
+    "waiting_for_debugger_or_paused, title, "
     "editor, editor_play, coursebot_play, loading). edit_time = the Course Maker editor; run_time = "
     "editor_play or coursebot_play, the only modes where actors update and a player exists. "
     "GDB: hardware breakpoints/watchpoints only; the target must be stopped to send commands."
