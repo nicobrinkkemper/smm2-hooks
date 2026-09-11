@@ -209,6 +209,14 @@ class LevelBuilder:
         self.theme_id = THEMES[theme]
         self.objects: List[dict] = []
         self.width = AREA_WIDTH   # tiles; goal_x and the area size derive from it
+        # A vertical area: orientation byte (area+0x03) 1, and the area's own
+        # height instead of the 27 rows a horizontal area gets. The camera
+        # scrolls up the column, and the spawner stops widening the view's
+        # top and bottom by +-1000 (sub_7100E40D80: that widening is the
+        # `if (!vertical)` branch), so what is loaded above and below is the
+        # view itself rather than the whole column.
+        self.vertical = False
+        self.height = 27          # tiles
         self.ground_tiles: List[Tuple[int, int, int]] = []
         self.start_y = 5  # tiles
         self.goal_y = None  # auto-calculated if None
@@ -483,8 +491,9 @@ class LevelBuilder:
         # Area header
         area = 0x200
         data[area + 0x00] = self.theme_id
+        data[area + 0x03] = 1 if self.vertical else 0
         struct.pack_into('<i', data, area + 0x08, self.width * 16)
-        struct.pack_into('<i', data, area + 0x0C, 27 * 16)
+        struct.pack_into('<i', data, area + 0x0C, self.height * 16)
         
         # NOTE: Do NOT add goal object - game auto-generates from header goal_x/goal_y
         
@@ -1809,6 +1818,49 @@ def level_empty() -> LevelBuilder:
     # Don't place any ground - start/goal areas are auto-generated
     b.start_y = 5
     b.goal_y = 5
+    return b
+
+
+@test_level(65, "Stack Drop")
+def level_stack_drop() -> LevelBuilder:
+    """How far below the camera a stack of enemies stays loaded, in a vertical
+    area.
+
+    A stack is held by its own container (`game::GameEnemyTowerManager`), and
+    its spawn/despawn is believed to follow its members rather than its own
+    position. In a vertical area that appears to stop somewhere around seven
+    screens below the camera -- a rough figure from play, measured from the
+    camera, and the one load distance the community's table does not cover
+    (docs/re-notes/globality.md in smm2-decomp).
+
+    The rig: two Bowsers stacked on a note block at the top of a tall
+    vertical column, and nothing else in the column. The player drops down
+    the column; the bosses keep landing on the block, so the block keeps
+    sounding, and the frame the sound stops is the frame the stack unloaded.
+    Read the distance off the camera, not off the player.
+
+    Each Bowser is two tiles tall (spawn_rects.csv type 62: off_y 16,
+    half_h 16), so they stack at +1 and +3 above the block.
+
+    Vertical areas only widen what loads by the view itself -- the spawner's
+    +-1000 top/bottom widening is the `if (!vertical)` branch of
+    sub_7100E40D80 -- which is why nothing like this shows up horizontally.
+    """
+    b = LevelBuilder("Stack Drop", "SMB1", "Ground")
+    b.vertical = True
+    # The Lost Woods subworld's own size (48 x 168 tiles): known-good numbers
+    # for a tall vertical area rather than invented ones.
+    b.width = 48
+    b.height = 168
+    col = 12
+    top = b.height - 8
+    b.start_y = top - 6          # the player starts beside the stack and drops
+    b.goal_y = 5
+    b.add_ground_block(7, 24, y_surface=4, height=5)     # a floor to land on
+    b.add_platform(col - 1, top, width=3)                # the block's perch
+    b.add_note_block(col, top + 1)
+    b.add_actor(62, col, top + 2)                        # Bowser, 2 tiles tall
+    b.add_actor(62, col, top + 4)                        # the second, stacked
     return b
 
 
