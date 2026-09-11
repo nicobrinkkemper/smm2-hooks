@@ -1923,6 +1923,44 @@ def level_stack_drop() -> LevelBuilder:
     return b
 
 
+@test_level(66, "Detached Block")
+def level_detached_block() -> LevelBuilder:
+    """The "broken track" glitch: a music block whose rail is not under it.
+
+    The undo-dog glitch leaves, in the file, a rider that still carries the
+    on-track flag and a link id, while the piece it names is gone -- so the
+    lid resolves to some unrelated record elsewhere and nothing holds the
+    block (smm2-decomp docs/re-notes/track-linkage.md). The Lost Woods has one
+    at tile 111.5, 15.5 whose lid points at a piece a hundred tiles away, and
+    Coursebot accepts the course, so the shape is legal to save.
+
+    In the real game such a block **launches upward, away from the track it
+    spawns on** rather than sitting where its record puts it. That launch is
+    the thing this level exists to measure: nothing we hold records it, since
+    the overworld recording stops well short of Lost Woods' corner.
+
+    Two blocks, so one run gives both sides:
+      A (col 11) a normal block on its own capped piece -- the control.
+      B (col 20) the same record, on-track and linked to A's piece, but placed
+                 nine tiles away over open ground with no rail under it.
+
+    Record with the `rail` preset and compare B's first frames against A's.
+    """
+    b = LevelBuilder("Detached Block", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    # A: a two-piece capped rail with a block riding it
+    first = b.add_track(10, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, 0x0070))
+    b.add_track(12, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0071, 0x0104))
+    b.add_note_block_on_track(first, travel_left=False)
+    # B: the detached one. Same flags as a rider, linked to A's piece, but its
+    # own position is bare ground -- the state the glitch leaves behind.
+    b.objects.append({'id': OBJ_NOTE_BLOCK, 'x': 20, 'y': 8,
+                      'flags': 0x06000040 | FLAG_ON_TRACK, 'lid': first,
+                      '_half_tile_offset': True})
+    return b
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════════════════════════
