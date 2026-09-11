@@ -100,7 +100,12 @@ OBJ_MUSHROOM = 20
 OBJ_SLOPE_GENTLE = 44  # Gentle slope
 OBJ_SLOPE_STEEP = 45   # Steep slope
 OBJ_NOTE_BLOCK = 23    # Note block (music block is the same id with a flag)
-OBJ_DOOR = 55          # Door; doors pair 2k with 2k+1 through flag bits 20-23
+OBJ_DOOR = 55          # Door; doors pair 2k with 2k+1 WITHIN one area
+OBJ_PIPE = 9           # Warp pipe; pipes pair by link (bits 20-23) and are
+                       # what crosses between the overworld and the subworld.
+                       # Flag words copied off The Lost Woods' own linked pair:
+PIPE_UP_LINK1 = 0x6140040     # mouth up (bits 5-6 = 2), link 1
+PIPE_RIGHT_LINK1 = 0x6140000  # mouth right (bits 5-6 = 0), link 1
 
 # Object flags (community BCD sheet, "Flags for Objects"). 0x40 and 0x6000000
 # are set on every object; the generator's default 0x06000040 is exactly that.
@@ -1857,15 +1862,21 @@ def level_stack_drop() -> LevelBuilder:
 
     The rig: two Bowsers stacked on a note block near the top of a tall
     vertical subworld, nothing else in the column, and a floor far below. The
-    player takes the door down, lands beside the stack and drops; the bosses
-    keep landing on the block so it keeps sounding, and the frame the sound
-    stops is the frame the stack unloaded. Read the distance off the camera,
-    not off the player.
+    player takes the pipe down, is spat out beside the stack with nothing
+    underneath, and falls the length of the column; the bosses keep landing on
+    the block so it keeps sounding, and the frame the sound stops is the frame
+    the stack unloaded. Read the distance off the camera, not off the player.
 
-    A vertical area is always the SUBWORLD: it has no goal of its own, the
-    overworld carries it, so the overworld here is a short strip with the
-    goal and a door. Doors pair 2k with 2k+1 through flag bits 20-23, so the
-    overworld's is link 0 and the column's link 1.
+    A vertical area is always the SUBWORLD -- it has no goal of its own, the
+    overworld carries it -- so the overworld here is a short strip with the
+    goal and the entry pipe.
+
+    **Pipes, not doors.** A door pairs 2k with 2k+1 inside one area; crossing
+    between the overworld and the subworld is what a pipe is for. The Lost
+    Woods does exactly this (its doors pair within the subworld, its pipe
+    link 1 crosses to the overworld), and both flag words here are copied off
+    that pair: mouth up to enter, mouth right to be spat out. An unlinked
+    pipe (link 0) leads nowhere, so the link is 1 on both sides.
 
     Autoscroll is left off (`sub_autoscroll = 0`). A vertical area scrolls
     UPWARD when it is on, which carries the spawn window with it and would
@@ -1877,11 +1888,13 @@ def level_stack_drop() -> LevelBuilder:
     """
     b = LevelBuilder("Stack Drop", "SMB1", "Ground")
 
-    # Overworld: the goal, and the door down. Kept clear of the goal area.
+    # Overworld: the goal, and the pipe down. A mouth-up pipe at (10, 5)
+    # stands two tiles out of the ground; the player walks on top and presses
+    # down. Kept well clear of the goal area.
     b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_y = 5
-    b.objects.append({'id': OBJ_DOOR, 'x': 10, 'y': 5,
-                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.objects.append({'id': OBJ_PIPE, 'x': 10, 'y': 5, 'width': 2, 'height': 2,
+                      'flags': PIPE_UP_LINK1})
 
     # Subworld: the column. Lost Woods' own subworld size (48 x 168 tiles),
     # so the dimensions are known-good rather than invented.
@@ -1892,8 +1905,13 @@ def level_stack_drop() -> LevelBuilder:
     top = b.sub_height - 8
     for x in range(col - 4, col + 5):
         b.sub_ground_tiles.append((x, 4, GROUND_FILL))          # the floor, far below
-    b.sub_objects.append({'id': OBJ_DOOR, 'x': col + 4, 'y': top - 5,
-                          'flags': 0x06100040, '_half_tile_offset': True})  # link 1
+    # The exit, mouth right, LEVEL with the stack and over open air: the player
+    # is spat out sideways with the stack beside them, so it is inside the
+    # view on arrival and spawns, then recedes above as they fall. Put the
+    # exit below the stack instead and the bosses start off-screen, which
+    # measures when they first spawn rather than when they unload.
+    b.sub_objects.append({'id': OBJ_PIPE, 'x': col + 4, 'y': top + 4,
+                          'width': 2, 'height': 2, 'flags': PIPE_RIGHT_LINK1})
     for dx in (-1, 0, 1):                                        # the block's perch
         b.sub_objects.append({'id': OBJ_HARD_BLOCK, 'x': col + dx, 'y': top,
                               'width': 1, 'height': 1, '_half_tile_offset': True})
