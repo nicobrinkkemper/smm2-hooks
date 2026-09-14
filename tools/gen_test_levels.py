@@ -223,6 +223,10 @@ class LevelBuilder:
         # view itself rather than the whole column.
         self.vertical = False
         self.height = 27          # tiles
+        # The overworld's liquid (area+0x04..0x07: end height, mode, speed,
+        # start height in rows; liquid.md). None leaves the header's zeros,
+        # no liquid. A still pool: start == end, mode 0.
+        self.liquid = None        # (end_row, mode, speed, start_row)
         # The subworld (area 1). A vertical area has no goal of its own -- the
         # goal lives in the overworld -- so a vertical column is always built
         # here and reached through a door or pipe.
@@ -512,6 +516,8 @@ class LevelBuilder:
         data[area + 0x03] = 1 if self.vertical else 0
         struct.pack_into('<i', data, area + 0x08, self.width * 16)
         struct.pack_into('<i', data, area + 0x0C, self.height * 16)
+        if self.liquid is not None:
+            data[area + 0x04], data[area + 0x05], data[area + 0x06], data[area + 0x07] = self.liquid
         
         # NOTE: Do NOT add goal object - game auto-generates from header goal_x/goal_y
         
@@ -1881,6 +1887,22 @@ def level_empty() -> LevelBuilder:
     # Don't place any ground - start/goal areas are auto-generated
     b.start_y = 5
     b.goal_y = 5
+    return b
+
+
+@test_level(69, "Swim Pool")
+def level_swim_pool() -> LevelBuilder:
+    """A forest pool for the swim reads (docs/re-notes/swim.md): still water
+    with its surface at row 5 (y 92) over a flat floor, and two ledges to
+    climb out onto, their tops 4 and 20 units above the surface. The player
+    starts on the floor under the water; strokes, the rise cap and the launch
+    out are what the recording is for."""
+    b = LevelBuilder("Swim Pool", "SMB1", "Forest")
+    b.liquid = (5, 0, 0, 5)
+    b.add_ground_block(7, 24, y_surface=1, height=1)
+    b.add_ground_block(13, 15, y_surface=6, height=5)    # top 96: 4 above the water
+    b.add_ground_block(19, 23, y_surface=7, height=6)    # top 112: 20 above it
+    b.goal_y = 1
     return b
 
 

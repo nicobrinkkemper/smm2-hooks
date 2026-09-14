@@ -480,6 +480,10 @@ field player grav  f32 0x640
 field player state  u32 0x3F8
 field player stfr   u32 0x3FC
 field player prev   u32 0x400
+# The collision pass's water word and the surface it measured (swim.md):
+# water & 1 = the body is under the surface, & 0x80 = a ceiling over the head.
+field player water u32 0x230C
+field player surf  f32 0x2338
 # The pad object at player+0x550 (the gravity selector reads +22/+30 to
 # pick the held table): a spread of its bytes around those flags.
 field player pad14 u8 0x550>0x14
