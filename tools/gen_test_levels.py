@@ -1906,6 +1906,32 @@ def level_swim_pool() -> LevelBuilder:
     return b
 
 
+@test_level(70, "Belt Jump")
+def level_belt_jump() -> LevelBuilder:
+    """Conveyors on the floor to jump off: what the belt's carry does to a
+    jump's speed. Flat SMB1 ground, an 8-wide fast belt running right from
+    tile 10 and a 7-wide normal one right after it, room to land past them.
+
+    Both belts are object 53; flag bit 0x40000 makes it the fast one (the
+    Lost Woods' flat belts are all 53, 0x6040048 fast and 0x6000048 normal).
+    Object 94 is the sloped belt (its records are 3x2, 4x3, 7x6 boxes) and a
+    flat 94 is a course Coursebot deletes, 2026-09-15."""
+    b = LevelBuilder("Belt Jump", "SMB1", "Ground")
+    # A wider area keeps the goal zone clear of the second belt.
+    b.width = 48
+    # The floor is row 1 (top 32); the belts take that row from tile 10 to
+    # 24 so the player walks straight onto them (a belt a row higher is a
+    # wall), with ground on both sides.
+    b.add_ground_block(7, 9, y_surface=1, height=1)
+    b.add_ground_block(25, 34, y_surface=1, height=1)
+    b.objects.append({'id': 53, 'x': 10, 'y': 1, 'width': 8, 'height': 1,
+                      'flags': 0x06040048, '_half_tile_offset': True})
+    b.objects.append({'id': 53, 'x': 18, 'y': 1, 'width': 7, 'height': 1,
+                      'flags': 0x06000048, '_half_tile_offset': True})
+    b.goal_y = 1
+    return b
+
+
 @test_level(65, "Stack Drop")
 def level_stack_drop() -> LevelBuilder:
     """How far below the camera a stack of enemies stays loaded, in a vertical
