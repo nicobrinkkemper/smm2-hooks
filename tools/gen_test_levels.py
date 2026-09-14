@@ -1673,6 +1673,42 @@ def level_surface_kinds() -> LevelBuilder:
     return b
 
 
+@test_level(67, "Switch Gallery")
+def level_switch_gallery() -> LevelBuilder:
+    """The blocks a switch flips, one of each look in a row, for reading their
+    in-game sprites: dotted-line block (100) plain and alt, P-block (79) plain
+    and alt, ON/OFF block (99) plain and alt. `alt` is flag 0x4 in the record,
+    the editor's second form. Nothing moves, so a play screenshot shows each
+    block in its initial look.
+    """
+    b = LevelBuilder("Switch Gallery", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    for x, oid, flags in [(9, 100, 0x06000040), (11, 100, 0x06000044), (13, 79, 0x06000040),
+                          (15, 79, 0x06000044), (17, 99, 0x06000040), (19, 99, 0x06000044)]:
+        b.objects.append({'id': oid, 'x': x, 'y': 6, 'width': 1, 'height': 1, 'flags': flags,
+                          '_half_tile_offset': True})
+    return b
+
+
+@test_level(68, "Hidden Block Row")
+def level_hidden_block_row() -> LevelBuilder:
+    """A row of hidden blocks (29) two tiles above the floor across the start
+    area, so a jump in place from the spawn hits one, for reading the spent
+    block's sprite after the hit; a question block (5) further on for the
+    same spent look from the other block.
+    """
+    b = LevelBuilder("Hidden Block Row", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    for x in range(7, 13):
+        b.objects.append({'id': 29, 'x': x, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000040,
+                          '_half_tile_offset': True})
+    b.objects.append({'id': 5, 'x': 15, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000040,
+                      '_half_tile_offset': True})
+    return b
+
+
 @test_level(64, "Note Pitch")
 def level_note_pitch() -> LevelBuilder:
     """A height sweep of note blocks, for the pitch reading. One free-standing
