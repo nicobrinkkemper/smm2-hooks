@@ -37,7 +37,20 @@ it is cheap enough to poll every few seconds.
 GDB rules enforced by the server: no software breakpoints (`break` is refused),
 no `handle SIGTRAP ... pass`, one session, commands only while stopped.
 
-Register in a Claude Code project `.mcp.json`:
+Register it for Claude Code on the machine that has Eden and the game (local
+scope: this project on this machine, not the project's shared `.mcp.json`):
 
-    "smm2-hooks": { "command": "/home/nico/code/smm2-hooks/mcp/.venv/bin/python",
-                    "args": ["/home/nico/code/smm2-hooks/mcp/server.py"] }
+    claude mcp add -s local smm2-hooks -- "$PWD/mcp/.venv/bin/python" "$PWD/mcp/server.py"
+
+## The panel
+
+`mcp/panel.py` serves `mcp/panel.html`, the same tools as buttons: launch or
+kill the emulator, the live mode, install and restore Coursebot slots, boot a
+slot, record a play session, export a slot to the sim app. Every button runs
+one tool through `ctl.py`, so the page and the agent see one truth.
+
+    mcp/.venv/bin/python mcp/panel.py --port 5199      # http://127.0.0.1:5199/
+
+Export writes into `$SMM2_SIM_DIR`, else the sibling `../smm2-sim`. A dashboard
+that embeds pages (mission-control's Shells rail) points at the URL and uses
+that command line to start it.

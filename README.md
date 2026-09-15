@@ -60,7 +60,8 @@ Output: `build/smm2-hooks.nso` → install as ExeFS `subsdk4`.
   truthful emulator state (`eden_state`: mode, real config, `status.bin`, mods,
   log), launches/kills Eden, installs generated levels, navigates the game,
   takes screenshots, and owns a single GDB session with hardware
-  breakpoints/watchpoints only.
+  breakpoints/watchpoints only. `mcp/ctl.py` runs one tool from a shell;
+  `mcp/panel.py` serves the same tools as a web page of buttons.
 - `.claude/skills/eden-debug/` — the procedure around those tools: what each
   mode means (edit-time vs run-time), when to attach GDB, how to find the
   ASLR base, teardown.
