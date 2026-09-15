@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMM2</title>
+<style>
+  :root { color-scheme: light dark; --border: #8884; --muted: #888; --bad: #d33; font: 14px system-ui, sans-serif; }
+  body { margin: 0; padding: 16px; max-width: 900px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .card { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+  .card h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+  button, select, input { font: inherit; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: inherit; }
+  button { cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.go { border-color: #2a4; }
+  button.bad { border-color: var(--bad); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .badge { padding: 2px 10px; border-radius: 10px; font-weight: 600; background: #8883; }
+  .badge[data-mode=title] { background: #36c4; }
+  .badge[data-mode=editor] { background: #83c4; }
+  .badge[data-mode=editor_play], .badge[data-mode=coursebot_play] { background: #2a44; }
+  .badge[data-mode=loading], .badge[data-mode=launching_or_frozen] { background: #e844; }
+  .badge[data-mode=waiting_for_debugger_or_paused] { background: #ee44; }
+  .err { color: var(--bad); font-size: 13px; }
+  pre { font-size: 12px; white-space: pre-wrap; max-height: 14rem; overflow: auto; margin: 0; }
+  pre.bad { color: var(--bad); }
+  .slots > div { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+  .slots span { min-width: 14rem; }
+  .slots button { padding: 2px 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>SMM2</h1>
+
+<div class="card">
+  <h2>Emulator</h2>
+  <div class="row">
+    <select id="emu" aria-label="emulator"><option value="eden">Eden</option><option value="ryujinx">Ryujinx</option></select>
+    <button id="launch" class="go">Launch</button>
+    <button id="launchGdb">Launch with GDB</button>
+    <button id="unpause">Unpause</button>
+    <button id="kill" class="bad">Kill</button>
+    <button id="refresh" aria-label="refresh state">&#x21bb;</button>
+  </div>
+  <div id="ryuNote" class="muted" hidden>Ryujinx has only launch and kill here (tools/emu_session.py); the state, levels and GDB below are Eden's.</div>
+</div>
+
+<div class="card">
+  <h2>State</h2>
+  <div class="row">
+    <span id="mode" class="badge">…</span>
+    <span id="proc" class="muted"></span>
+    <span id="scene" class="muted"></span>
+    <span id="gdb" class="muted"></span>
+    <button id="gdbToggle" hidden></button>
+  </div>
+  <div id="stateErr" class="err"></div>
+  <div class="muted">The stub on means the game waits for a debugger at launch; Unpause attaches, continues and detaches.</div>
+</div>
+
+<div class="card">
+  <h2>Levels (Coursebot slots)</h2>
+  <div class="row">
+    <select id="level" aria-label="generated level"></select>
+    <select id="slot" aria-label="coursebot slot"></select>
+    <button id="install">Install into slot</button>
+    <button id="restore">Restore slot</button>
+  </div>
+  <div class="row">
+    <span class="muted">From the title screen:</span>
+    <button id="bootCoursebot">Play slot (Coursebot)</button>
+    <button id="bootEditor">Editor</button>
+    <button id="bootEditorPlay">Editor test-play</button>
+  </div>
+  <div class="row">
+    <span class="muted">Slots by name:</span>
+    <input id="filter" placeholder="filter, e.g. packed" aria-label="slot filter" size="18">
+  </div>
+  <div id="slots" class="slots"></div>
+  <div id="levelsErr" class="err"></div>
+  <div class="muted">Install writes the generated course into the slot and registers it in save.dat (backups as .orig; Restore puts them back). Restart the game to see it.</div>
+</div>
+
+<div class="card">
+  <h2>Record a play session</h2>
+  <div class="muted">Start arms the probe (the player, the rail note blocks and your pad, one row per frame) and relaunches Eden, since the probe is read at boot. Play the course, then Stop: the log becomes a fixture and an input script in smm2-decomp's src-sim/test/fixtures, replayable in the sim and in the emulator.</div>
+  <div class="row">
+    <input id="recName" value="lost-woods" placeholder="recording name" aria-label="recording name">
+    <button id="recStart" class="bad">&#x25cf; Start recording</button>
+    <button id="recStop">&#x25a0; Stop &amp; save</button>
+  </div>
+  <div class="row">
+    <input id="markLabel" value="reached door A" placeholder="milestone label" aria-label="milestone label">
+    <button id="mark">Mark milestone</button>
+    <span class="muted">Stamps the game's current frame with the label; messed up? re-enter the level in game and keep going, the trace is cut at the last course start.</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2 id="lastTitle">Last result</h2>
+  <pre id="last">Nothing run yet.</pre>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const POLL_MS = 4000;
+let state = { ok: false, data: {} };
+let levels = { ok: false, data: {} };
+let busy = null;
+let inflight = false;
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  return r.json();
+}
+const call = (tool, args = {}) => post("/api/tool", { tool, args });
+
+async function refresh() {
+  if (inflight) return;
+  inflight = true;
+  try { state = await call("eden_state"); render(); } finally { inflight = false; }
+}
+
+// One action at a time: the tools are exclusive on the emulator side too.
+async function act(label, fn, reloadLevels = false) {
+  if (busy) return;
+  busy = label;
+  render();
+  try {
+    const r = await fn();
+    showLast(r);
+    if (reloadLevels) { levels = await call("levels_list"); fillSelects(); }
+    await refresh();
+  } finally {
+    busy = null;
+    render();
+  }
+}
+
+function showLast(r) {
+  $("last").className = r.ok ? "" : "bad";
+  $("last").textContent = `${r.tool} (${r.ms} ms)${r.error ? `: ${r.error}` : ""}\n` + JSON.stringify(r.data ?? null, null, 1).slice(0, 4000);
+}
+
+function render() {
+  const eden = state.data || {};
+  const mode = eden.mode ?? (state.ok ? "?" : "unreachable");
+  const isEden = $("emu").value === "eden";
+  const running = !!eden.process;
+  const lv = levels.data || {};
+  const slots = lv.slots || [];
+  const slot = Number($("slot").value || 0);
+
+  $("lastTitle").textContent = busy ? `Running: ${busy}…` : "Last result";
+  $("ryuNote").hidden = isEden;
+  $("launch").disabled = !!busy || (isEden && running);
+  $("launchGdb").hidden = !isEden; $("launchGdb").disabled = !!busy || running;
+  $("unpause").hidden = !isEden; $("unpause").disabled = !!busy || mode !== "waiting_for_debugger_or_paused";
+  $("kill").disabled = !!busy || (isEden && !running);
+  $("refresh").disabled = !!busy;
+
+  $("mode").textContent = mode; $("mode").dataset.mode = mode;
+  $("proc").textContent = eden.process ? `pid ${eden.process.pid} · ${eden.process.mem_mb} MB · since ${(eden.process.started || "").slice(11, 19)}` : "";
+  const st = eden.status;
+  $("scene").textContent = st ? `scene ${st.scene} · frame ${st.frame}${st.has_player ? " · player" : ""}${st.fresh === false ? " · stale" : ""}` : "";
+  $("gdb").textContent = eden.gdb ? `GDB stub ${eden.gdb.use_gdbstub ? "on" : "off"}${eden.gdb.stub_listening ? " (listening)" : ""}` : "";
+  $("gdbToggle").hidden = !eden.gdb;
+  $("gdbToggle").textContent = eden.gdb && eden.gdb.use_gdbstub ? "turn off" : "turn on";
+  $("gdbToggle").disabled = !!busy;
+  $("stateErr").textContent = state.ok ? "" : (state.error || "");
+
+  for (const b of ["install", "restore"]) $(b).disabled = !!busy;
+  $("install").disabled = !!busy || !$("level").value;
+  for (const b of ["bootCoursebot", "bootEditor", "bootEditorPlay"]) $(b).disabled = !!busy || !running;
+  $("bootCoursebot").textContent = `Play slot ${slot} (Coursebot)`;
+  $("levelsErr").textContent = levels.ok ? "" : (levels.error || "");
+
+  const filter = $("filter").value.toLowerCase();
+  const list = $("slots");
+  list.replaceChildren(...slots.filter((s) => s.name && (!filter || s.name.toLowerCase().includes(filter))).map((s) => {
+    const row = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = `slot ${s.slot} · ${s.name}${s.style ? ` · ${s.style}` : ""}${s.registered ? "" : " (not listed)"}`;
+    const play = document.createElement("button");
+    play.textContent = "▶ Play"; play.disabled = !!busy || !s.registered;
+    play.onclick = () => act(`play slot ${s.slot}`, () => post("/api/play-slot", { slot: s.slot }));
+    const exp = document.createElement("button");
+    exp.textContent = "Export to sim"; exp.disabled = !!busy;
+    exp.onclick = () => act(`export slot ${s.slot}`, () => post("/api/export-slot", { slot: s.slot }));
+    row.append(label, play, exp);
+    return row;
+  }));
+
+  $("recStart").disabled = !!busy || !$("recName").value.trim();
+  $("recStop").disabled = !!busy;
+  $("mark").disabled = !!busy;
+}
+
+function fillSelects() {
+  const lv = levels.data || {};
+  const gens = Object.values(lv.generators || {});
+  const keep = $("level").value;
+  $("level").replaceChildren(...gens.map((g) => new Option(g, g)));
+  if (gens.includes(keep)) $("level").value = keep;
+  const slot = $("slot").value;
+  $("slot").replaceChildren(...(lv.slots || []).map((s) =>
+    new Option(`slot ${s.slot}${s.registered ? "" : " (not listed)"}${s.name ? ` · ${s.name}` : ""}`, String(s.slot))));
+  if (slot) $("slot").value = slot;
+}
+
+const emu = () => $("emu").value;
+const slotNo = () => Number($("slot").value || 0);
+$("emu").onchange = render;
+$("launch").onclick = () => act("launch", () => post("/api/emulator", { emulator: emu(), action: "launch", gdb: false }));
+$("launchGdb").onclick = () => act("launch gdb", () => post("/api/emulator", { emulator: "eden", action: "launch", gdb: true }));
+$("unpause").onclick = () => act("unpause", () => call("eden_unpause"));
+$("kill").onclick = () => act("kill", () => post("/api/emulator", { emulator: emu(), action: "kill" }));
+$("refresh").onclick = () => refresh();
+$("gdbToggle").onclick = () => act("gdb stub", () => call("eden_set_gdbstub", { enabled: !(state.data && state.data.gdb && state.data.gdb.use_gdbstub) }));
+$("install").onclick = () => act("install", () => call("level_install", { slot: slotNo(), level: $("level").value }), true);
+$("restore").onclick = () => act("restore", () => call("level_restore", { slot: slotNo() }), true);
+$("bootCoursebot").onclick = () => act("boot coursebot", () => call("game_boot", { target: "coursebot", slot: slotNo() }));
+$("bootEditor").onclick = () => act("boot editor", () => call("game_boot", { target: "editor" }));
+$("bootEditorPlay").onclick = () => act("boot editor play", () => call("game_boot", { target: "editor_play" }));
+$("slot").onchange = render;
+$("filter").oninput = render;
+$("recName").oninput = render;
+$("recStart").onclick = () => act("record start", () => call("trace_record", { action: "start", name: $("recName").value.trim() }));
+$("recStop").onclick = () => act("record stop", () => call("trace_record", { action: "stop", name: $("recName").value.trim() }));
+$("mark").onclick = () => act("record mark", () => call("trace_record", { action: "mark", name: $("markLabel").value.trim() }));
+
+(async () => {
+  [state, levels] = await Promise.all([call("eden_state"), call("levels_list")]);
+  fillSelects();
+  render();
+  setInterval(refresh, POLL_MS);
+})();
+</script>
+</body>
+</html>
