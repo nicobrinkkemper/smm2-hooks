@@ -37,22 +37,48 @@ config/           - LibHakkun build config
 sys/              - LibHakkun (submodule)
 ```
 
+## Download
+
+Prebuilt files are on the [Releases](https://github.com/nicobrinkkemper/smm2-hooks/releases)
+page: `exefs/subsdk4` and `exefs/main.npdm` for SMM2 v3.0.3, with an
+`INSTALL.txt` that gives the Eden and Atmosphere paths. Each release also
+carries the stdlib archive it was built with, for building from source.
+
 ## Build
 
-Requires `clang`, `lld`, and `llvm-ar` (cross-compiles to AArch64 natively — no devkitPro needed).
+Requires `clang`, `lld`, `llvm-ar`, `cmake`, `ninja` and `python3`
+(cross-compiles to AArch64 natively — no devkitPro needed).
 
 On Ubuntu/WSL:
 ```bash
-sudo apt install clang lld llvm ninja-build cmake
+sudo apt install clang lld llvm ninja-build cmake python3
 ```
 
+Once per checkout: the submodule, the AArch64 musl + libc++ that LibHakkun
+links against (extracts into `lib/std/`), and sail, the tool that parses
+`syms/*.sym`:
 ```bash
 git submodule update --init --recursive
+curl -L https://github.com/fruityloops1/LibHakkun/releases/download/stdlib-19.1.0-2/stdlib-19.1.0_clang_19.1.7.tar.xz | tar -xz
+python3 sys/tools/setup_sail.py
+```
+
+`sys/tools/setup_libcxx_prepackaged.py` would do that download, but the
+pinned LibHakkun asks for a release tag that does not exist
+(`stdlib-19.1.0-3`) and fails with "not an lzma file". The archive on
+`stdlib-19.1.0-2` is gzip despite its name, hence `tar -xz`. The stdlib
+attached to each release of this repo extracts the same way and is the one
+that release was built with.
+
+Then:
+```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release -GNinja
 ninja -C build
 ```
 
-Output: `build/smm2-hooks.nso` → install as ExeFS `subsdk4`.
+Output: `build/exefs/subsdk4` (the mod, also `build/smm2-hooks.nso`) and
+`build/exefs/main.npdm`. Install both as the game's ExeFS mod; see
+`INSTALL.txt` in a release for the paths.
 
 ## Driving the game from an agent
 
