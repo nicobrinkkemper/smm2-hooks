@@ -18,7 +18,9 @@ while NAND, SD and mods stay under `AppData/Roaming/eden` as named in that
 config. `emu_session.py` toggles the wrong ini; `eden_state`/`eden_launch`
 read and write the right one.
 
-**Modes** (from `eden_state`): `off`; `launching_or_frozen`;
+**Modes** (from `eden_state`): `off`; `eden_ui_no_game` (Eden sits in its
+own game-selection UI and no game has run this process: boot one, do not
+kill it); `launching_or_frozen`;
 `waiting_for_debugger_or_paused` (stub enabled and listening, no fresh
 status: attach and continue); `title`; `editor` (**edit-time**: the Course
 Maker, no actors run, `has_player` 0); `editor_play` and `coursebot_play`

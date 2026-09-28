@@ -2,3 +2,7 @@ mcp>=1.2,<2
 pexpect>=4.9
 pycryptodome>=3.20
 python-dotenv>=1.0
+
+# tools/piece_figures.py only (the guide's track-piece figures)
+pillow>=10
+numpy>=1.26

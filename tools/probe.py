@@ -126,12 +126,87 @@ field cam v38    f32 @0x7102C55080>0x88>0x38
 field cam v3c    f32 @0x7102C55080>0x88>0x3c
 field cam v40    f32 @0x7102C55080>0x88>0x40
 field cam act_l  f32 @0x7102C55080>0x88>0x54
+field cam act_b  f32 @0x7102C55080>0x88>0x58
 field cam act_r  f32 @0x7102C55080>0x88>0x5c
+field cam act_t  f32 @0x7102C55080>0x88>0x60
 """,
     # The note block's bound and rider record beside the player (the
     # centred-hit recording in smm2-decomp, docs/re-notes/note-block.md):
     # x0 = the block in the rail applier; the first machine's state word,
     # the bound mode/vy/displacement and the rider record at +0x550.
+    # The note a block will play. A block registers its sound once, at spawn
+    # (docs/re-notes/note-block.md): the 5-bit slot at actor+0x914 bits 27..31
+    # with the request type at +0x894, and the pitch record at +0x388
+    # ({target id, current, offset, extra}) whose current+extra lands in the
+    # actor's third position word +0x238 -- the block's pitch position, which
+    # indexes flt_71023C67C0. A static block overrides the plain per-frame, so
+    # this rides the manager's own walk (0x71008D7C70, the processing-order
+    # hook), which sees every actor.
+    "notepitch": """\
+hook calc 0x71008D7C70 callers=1
+field calc id    u32 0x40
+field calc pos_x f32 0x230
+field calc pos_y f32 0x234
+field calc pos_z f32 0x238
+field calc snd   u32 0x914
+field calc req   u32 0x894
+field calc rtgt  u32 0x388
+field calc rcur  f32 0x38C
+field calc roff  f32 0x390
+field calc rext  f32 0x394
+""",
+    # Who carries the note. The block holds nothing height-dependent (every
+    # block in the Note Pitch sweep reads snd 0x0810001B, req 6, pitch record
+    # zero), so the sound is either positional off the block's emitter or it
+    # belongs to the hitter. This reads the emitter request words on BOTH: the
+    # player's +0x894/+0x914 beside its movement step, and every actor's
+    # through the manager walk, so a hit frame shows which one changes.
+    "notesound": """\
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_y f32 0x240
+field player state u32 0x3F8
+field player p_req u32 0x894
+field player p_snd u32 0x914
+field player p_910 u32 0x910
+field player p_a70 u32 0xA70
+hook calc 0x71008D7C70 callers=1
+field calc id    u32 0x40
+field calc pos_x f32 0x230
+field calc pos_y f32 0x234
+field calc snd   u32 0x914
+field calc req   u32 0x894
+field calc a70   u32 0xA70
+""",
+    # The note timeline: which block sounded on which frame. A block's state
+    # word +0x478 going 0 -> 2 is the delivery frame (note-block.md, measured
+    # live), so reading it for every actor through the manager's own walk
+    # +0x30 is the actor's handle, and it is what names a block across
+    # frames. Without it a reader has to follow blocks by proximity, and in
+    # a music section they converge: on The Lost Woods three blocks that
+    # start a screen apart end up in one pile, where a proximity tracker
+    # hands all of their notes to whichever track it matched first. The
+    # aggregate stayed honest; the per-block counts did not.
+    # catches static blocks and blocks on tracks alike -- the rail applier
+    # only ever sees the ones on rails. Each row carries the block's position,
+    # which is what names it.
+    "notetime": """\
+hook calc 0x71008D7C70 callers=1
+field calc id    u32 0x40
+field calc h30   u64 0x30
+field calc pos_x f32 0x230
+field calc pos_y f32 0x234
+field calc state u32 0x478
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player st_e  u32 0x3F8
+field player left  f32 @0x7102C55080>0x88>0x0c
+field player bottom f32 @0x7102C55080>0x88>0x10
+""",
     "note": """\
 # Note block: the bound (+0x478 state, +0x4BC mode, +0x4C0 vy, +0x4CC displacement)
 # and the rider record (+0x550: phase, countdown, hit masks, player slot 0)
@@ -226,13 +301,6 @@ field lift pos_y   f32 0x234
 field lift id      u32 0x40
 field lift h48     u64 0x30
 """,
-    # A plain piranha plant (GameEnemyPakkun, an EnemyUber): x0 = the actor
-    # at its per-frame. The Basic handler sits at actor+0x440 with its own
-    # machine at +0x20 (state id at +0x28: 0 None, 1 Wait, 2 Stick, 3 Jump,
-    # 4 Floating, 5 Fall, 6 Down, 7 OnpuJump, 8 TornadoFloat); the plant
-    # component is embedded at actor+0xD20 (+8 direction 0..3, +0x18 timer);
-    # speed +0x274, accel +0x280, wait timer +0x53C; the foot's chosen kind
-    # slot and owner handle from the bg-check object (surfaces.md).
     # The actor manager's per-frame walk (docs/re-notes/processing-order.md
     # in the decomp): Actor's slot-8 base sub_71008D7C70 runs once per actor
     # per frame in execution order (every class chains to it: the player's
@@ -254,6 +322,104 @@ field walk ysort u8  0x138
 field walk thr   u32 0x148
 field walk nring u32 0x160
 """,
+    # The placeholder (docs/re-notes/placeholder.md in the decomp): every
+    # enemy's per-frame with its activation flags (+0x52C: 0x20000 offscreen,
+    # 0x40000 activated), the ground-contact activation bit (+0x658 bit 29),
+    # its record link (+0x4E4) and the owner handle of the body under its
+    # foot; the lifts with their own link (+0x350); the surface walk that
+    # sets the activation bit, with who called it.
+    "placeholder": """\
+hook enemy 0x710128A2D0
+field enemy id    u32 0x40
+field enemy pos_x f32 0x230
+field enemy pos_y f32 0x234
+field enemy vel_y f32 0x240
+field enemy f52C  u32 0x52C
+field enemy f658  u64 0x658
+field enemy link  u32 0x4E4
+field enemy own   u32 0x350
+field enemy h30   u64 0x30
+field enemy bgown u64 0x650>0x358
+field enemy sysst u32 0x400
+hook lift 0x71008DB240
+field lift id    u32 0x40
+field lift pos_x f32 0x230
+field lift pos_y f32 0x234
+field lift own   u32 0x350
+field lift h30   u64 0x30
+hook activate 0x7100D81E60 callers=2
+field activate id    u32 0x40
+field activate pos_x f32 0x230
+field activate pos_y f32 0x234
+""",
+    # Who is still loaded, and where the camera is (docs/re-notes/globality.md
+    # in the decomp). Every enemy's per-frame (0x710128A2D0) carries its
+    # identity (+0x30 handle, +0x4E4 record link), its activation flags
+    # (+0x52C: 0x20000 offscreen, 0x40000 activated) and the globality word
+    # the surface chain marks (+0xCFC: 0x40000000 already-walked, 0x90000000
+    # set by sub_710107B990), beside the area's camera view read on the
+    # player's own step. An enemy that unloads simply stops appearing, so the
+    # last frame a handle is seen is the frame it despawned -- and the camera
+    # on that frame is the distance we are after.
+    "despawn": """\
+hook enemy 0x710128A2D0
+field enemy id    u32 0x40
+field enemy pos_x f32 0x230
+field enemy pos_y f32 0x234
+field enemy f52C  u32 0x52C
+field enemy gflag u32 0xCFC
+field enemy link  u32 0x4E4
+field enemy h30   u64 0x30
+hook cam 0x71015D3CC0
+field cam pos_x  f32 0x230
+field cam pos_y  f32 0x234
+field cam left   f32 @0x7102C55080>0x88>0x0c
+field cam bottom f32 @0x7102C55080>0x88>0x10
+field cam right  f32 @0x7102C55080>0x88>0x14
+field cam top    f32 @0x7102C55080>0x88>0x18
+""",
+    # The load/unload box margins and whatever lives beside them. The twelve
+    # known ones sit at 0x7102A68F68..0x7102A68F94 (activation.md: box 0
+    # spawn -47/+47/-31/+31, box 1 the view itself, box 2 retry +-48) and are
+    # read by both the spawner sub_7100E40D80 and its counterpart
+    # sub_7100E3F9A0. Nobody has looked past +0x94. A stack survives 1568
+    # units (98 tiles) past the view, which is none of the twelve, so this
+    # reads 40 floats from the block's start to see whether a second set of
+    # margins lives behind the first.
+    "margins": """\
+hook marg 0x71015D3CC0
+field marg m00 f32 @0x7102A68F68
+field marg m01 f32 @0x7102A68F6C
+field marg m02 f32 @0x7102A68F70
+field marg m03 f32 @0x7102A68F74
+field marg m04 f32 @0x7102A68F78
+field marg m05 f32 @0x7102A68F7C
+field marg m06 f32 @0x7102A68F80
+field marg m07 f32 @0x7102A68F84
+field marg m08 f32 @0x7102A68F88
+field marg m09 f32 @0x7102A68F8C
+field marg m10 f32 @0x7102A68F90
+field marg m11 f32 @0x7102A68F94
+field marg m12 f32 @0x7102A68F98
+field marg m13 f32 @0x7102A68F9C
+field marg m14 f32 @0x7102A68FA0
+field marg m15 f32 @0x7102A68FA4
+field marg m16 f32 @0x7102A68FA8
+field marg m17 f32 @0x7102A68FAC
+field marg m18 f32 @0x7102A68FB0
+field marg m19 f32 @0x7102A68FB4
+field marg m20 f32 @0x7102A68FB8
+field marg m21 f32 @0x7102A68FBC
+field marg m22 f32 @0x7102A68FC0
+field marg m23 f32 @0x7102A68FC4
+""",
+    # A plain piranha plant (GameEnemyPakkun, an EnemyUber): x0 = the actor
+    # at its per-frame. The Basic handler sits at actor+0x440 with its own
+    # machine at +0x20 (state id at +0x28: 0 None, 1 Wait, 2 Stick, 3 Jump,
+    # 4 Floating, 5 Fall, 6 Down, 7 OnpuJump, 8 TornadoFloat); the plant
+    # component is embedded at actor+0xD20 (+8 direction 0..3, +0x18 timer);
+    # speed +0x274, accel +0x280, wait timer +0x53C; the foot's chosen kind
+    # slot and owner handle from the bg-check object (surfaces.md).
     "plant": """\
 hook plant 0x710128A2D0
 field plant pos_x   f32 0x230
@@ -314,6 +480,10 @@ field player grav  f32 0x640
 field player state  u32 0x3F8
 field player stfr   u32 0x3FC
 field player prev   u32 0x400
+# The collision pass's water word and the surface it measured (swim.md):
+# water & 1 = the body is under the surface, & 0x80 = a ceiling over the head.
+field player water u32 0x230C
+field player surf  f32 0x2338
 # The pad object at player+0x550 (the gravity selector reads +22/+30 to
 # pick the held table): a spread of its bytes around those flags.
 field player pad14 u8 0x550>0x14

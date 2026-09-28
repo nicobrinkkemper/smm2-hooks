@@ -373,20 +373,25 @@ class Game:
             timeout=10
         ) is not None
 
-    def _coursebot_home(self, max_rows=16, gap=0.5):
+    def _coursebot_home(self, max_rows=24, gap=0.5, scroll_gap=1.2):
         """Put the Coursebot cursor on slot 0.
 
         The grid keeps its cursor between visits and nothing exposes it, so
         clamp instead: LEFT to column 0, UP past row 0 onto the "My Courses"
         tab (extra UPs stay there; never press LEFT/RIGHT on the tab, that
         switches tabs), then DOWN back into the grid, which lands on slot 0.
+        The grid is 4 wide and an UP from a scrolled row animates the
+        scroll, during which a press is dropped (a home from slot 70 with 16
+        quick UPs stopped short and the boot played slot 13, 2026-09-15), so
+        the UPs are one per row with a scroll's worth of spacing; 24 rows
+        cover every test level (slots below 96).
         """
         for _ in range(3):
             self.press('LEFT', 100)
             time.sleep(gap)
         for _ in range(max_rows):
             self.press('UP', 100)
-            time.sleep(gap)
+            time.sleep(scroll_gap)
         self.press('DOWN', 100)
         time.sleep(gap)
 
