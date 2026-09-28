@@ -67,8 +67,9 @@ python3 sys/tools/setup_sail.py
 pinned LibHakkun asks for a release tag that does not exist
 (`stdlib-19.1.0-3`) and fails with "not an lzma file". The archive on
 `stdlib-19.1.0-2` is gzip despite its name, hence `tar -xz`. The stdlib
-attached to each release of this repo extracts the same way and is the one
-that release was built with.
+attached to each release of this repo is the one that release was built
+with, and it really is xz: `tar -xJf stdlib-19.1.0_clang_19.1.7.tar.xz` at
+the repository root.
 
 Then:
 ```bash
