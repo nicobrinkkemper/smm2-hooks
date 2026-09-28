@@ -301,13 +301,6 @@ field lift pos_y   f32 0x234
 field lift id      u32 0x40
 field lift h48     u64 0x30
 """,
-    # A plain piranha plant (GameEnemyPakkun, an EnemyUber): x0 = the actor
-    # at its per-frame. The Basic handler sits at actor+0x440 with its own
-    # machine at +0x20 (state id at +0x28: 0 None, 1 Wait, 2 Stick, 3 Jump,
-    # 4 Floating, 5 Fall, 6 Down, 7 OnpuJump, 8 TornadoFloat); the plant
-    # component is embedded at actor+0xD20 (+8 direction 0..3, +0x18 timer);
-    # speed +0x274, accel +0x280, wait timer +0x53C; the foot's chosen kind
-    # slot and owner handle from the bg-check object (surfaces.md).
     # The actor manager's per-frame walk (docs/re-notes/processing-order.md
     # in the decomp): Actor's slot-8 base sub_71008D7C70 runs once per actor
     # per frame in execution order (every class chains to it: the player's
@@ -420,6 +413,13 @@ field marg m21 f32 @0x7102A68FBC
 field marg m22 f32 @0x7102A68FC0
 field marg m23 f32 @0x7102A68FC4
 """,
+    # A plain piranha plant (GameEnemyPakkun, an EnemyUber): x0 = the actor
+    # at its per-frame. The Basic handler sits at actor+0x440 with its own
+    # machine at +0x20 (state id at +0x28: 0 None, 1 Wait, 2 Stick, 3 Jump,
+    # 4 Floating, 5 Fall, 6 Down, 7 OnpuJump, 8 TornadoFloat); the plant
+    # component is embedded at actor+0xD20 (+8 direction 0..3, +0x18 timer);
+    # speed +0x274, accel +0x280, wait timer +0x53C; the foot's chosen kind
+    # slot and owner handle from the bg-check object (surfaces.md).
     "plant": """\
 hook plant 0x710128A2D0
 field plant pos_x   f32 0x230
