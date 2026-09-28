@@ -21,12 +21,15 @@ struct Row {
     uint16_t length, capacity, bytes;
     uint8_t encoding, flags, alpha, depth;
     uint32_t tick;                    // poll tick of the latest draw
+    uint32_t order;                   // TextBox draws before it in that tick: back to front
+    uintptr_t root;                   // topmost ancestor: one per layout instance
     char name[24];
     char path[MAX_DEPTH][24];         // parent (+0x18) names, nearest first
     uint8_t geom[GEOM_BYTES];
     uint8_t text[MAX_BYTES];
 };
 uint32_t tick = 0;
+uint32_t drawn = 0;                   // TextBox draws in the current tick
 
 bool plausible(uintptr_t p) { return p >= 0x8000000 && p < 0x8000000000 && !(p & 7); }
 Row rows[MAX_ROWS];
@@ -79,12 +82,16 @@ void observe(void* pane) {
     row.alpha = field<uint8_t>(pane, 0x5A);
     std::memcpy(row.name, static_cast<const char*>(pane) + 0xB0, sizeof(row.name));
     row.tick = __atomic_load_n(&tick, __ATOMIC_RELAXED);
+    row.order = drawn++;
+    row.root = address;
     std::memcpy(row.geom, static_cast<const char*>(pane) + 0x30, GEOM_BYTES);
     // Pane::AppendChild (0x71004B24D0) stores the parent at +0x18.
     row.depth = 0;
     for (auto up = field<uintptr_t>(pane, 0x18); row.depth < MAX_DEPTH && plausible(up);
-         up = field<uintptr_t>(reinterpret_cast<void*>(up), 0x18))
+         up = field<uintptr_t>(reinterpret_cast<void*>(up), 0x18)) {
         std::memcpy(row.path[row.depth++], reinterpret_cast<const char*>(up) + 0xB0, 24);
+        row.root = up;
+    }
     const unsigned bytes = length * (encoding ? 1u : 2u);
     row.bytes = bytes < MAX_BYTES ? bytes : MAX_BYTES;
     std::memcpy(row.text, text, row.bytes);
@@ -148,7 +155,7 @@ void init() {
         std::strcpy(expected, line+7);
     }
     logger.init("ui-probe.log");
-    logger.writef("UI_PROBE,2,303,draw_submission,mode=%s\n", printPane[0] ? "print" : "capture");
+    logger.writef("UI_PROBE,3,303,draw_submission,mode=%s\n", printPane[0] ? "print" : "capture");
     auto result = draw.installAtOffset(hk::ro::getMainModule(), 0x4C38B0);
     // Hakkun aborts on installation failure when requested; explicitly report it here.
     if (result.failed()) {
@@ -165,6 +172,7 @@ void poll() {
     if (!enabled) return;
     static unsigned polls = 0;
     __atomic_add_fetch(&tick, 1u, __ATOMIC_RELAXED);
+    __atomic_store_n(&drawn, 0u, __ATOMIC_RELAXED);
     if (__atomic_add_fetch(&polls, 1u, __ATOMIC_RELAXED) % 30 != 0) return;
     // poll may be reached via input and ordinary frame callbacks. Serialize
     // the consumer too; do not keep the row lock during filesystem calls.
@@ -190,7 +198,7 @@ void poll() {
         hex(r.name, sizeof(r.name));
         logger.write(",", 1);
         hex(r.text, r.bytes);
-        logger.writef(",%u,", r.tick);
+        logger.writef(",%u,%u,%llx,", r.tick, r.order, (unsigned long long)r.root);
         for (unsigned d = 0; d < r.depth; ++d) {
             if (d) logger.write("/", 1);
             hex(r.path[d], sizeof(r.path[d]));

@@ -10,13 +10,13 @@ from pathlib import Path
 import struct
 import time
 
-HEADER = "UI_PROBE,2,303,draw_submission,mode="
+HEADER = "UI_PROBE,3,303,draw_submission,mode="
 
 def decode_row(line):
     fields = line.split(",")
-    if len(fields) != 12 or fields[0] != "TEXT":
+    if len(fields) != 14 or fields[0] != "TEXT":
         raise ValueError("malformed TEXT row")
-    _, address, encoding, length, capacity, flags, alpha, name, text, tick, path, geom = fields
+    _, address, encoding, length, capacity, flags, alpha, name, text, tick, order, root, path, geom = fields
     encoding, length, capacity, flags, alpha = map(int, (encoding,length,capacity,flags,alpha))
     if encoding not in (0,1) or not 0 < length < capacity <= 65535 or not 0 <= flags <= 255 or not 0 <= alpha <= 255:
         raise ValueError("invalid text metadata")
@@ -40,7 +40,7 @@ def decode_row(line):
         "text":decoded, "encoding":codec, "length_units":length, "capacity_units":capacity,
         "raw_hex":raw.hex(), "truncated":len(raw)<length*width, "malformed":malformed,
         "contains_controls":any(ord(c)<32 and c not in "\n\t" for c in decoded),
-        "pane_flags":flags,"alpha":alpha,"tick":int(tick),
+        "pane_flags":flags,"alpha":alpha,"tick":int(tick),"order":int(order),"root":hex(int(root,16)),
         "path":"/".join(reversed(ancestors)),"geom":[round(f,3) for f in floats],"visibility":"draw-submitted; final visibility unknown",
         "focus":None,"enabled":None}
 
@@ -98,18 +98,27 @@ def screen(sample):
     global scale is above 1: the game's focus animation enlarges the focused
     control (1.03 dialog and details buttons, 1.05 course tiles, 1.08 main
     menu, measured 2026-09-28); nothing else on those screens was scaled up.
-    Panes under a modal are NOT removed yet (the grid keeps drawing behind
-    the details panel and a dialog).
+
+    Panes under a modal keep drawing (the grid behind the details panel, the
+    details behind a dialog). ui2d draws back to front, so the rows drawn
+    before the focused control's layout (its topmost ancestor) are marked
+    background; the rest are the active layer. Rows from an older tick than
+    the newest are dropped: they were not drawn in the latest frame.
     """
+    newest=max((r["tick"] for r in sample["rows"]),default=0)
     rows=[]
     for r in sample["rows"]:
         g=r["geom"]; x,y,sx=g[19],g[23],g[16]
-        if abs(x)>SCREEN_HALF_W or abs(y)>SCREEN_HALF_H: continue
-        rows.append({"layout":r["path"].split("/",1)[0],"path":r["path"]+"/"+r["pane_name"],
+        if abs(x)>SCREEN_HALF_W or abs(y)>SCREEN_HALF_H or r["tick"]!=newest: continue
+        rows.append({"root":r["root"],"order":r["order"],"path":r["path"]+"/"+r["pane_name"],
             "text":r["text"],"x":x,"y":y,"scale":sx,"focused":sx>1.001})
+    rows.sort(key=lambda r:r["order"])
     focused=[r for r in rows if r["focused"]]
-    return {"rows":rows,"focused":focused[0] if len(focused)==1 else None,
-        "focus_candidates":len(focused)}
+    focus=focused[0] if len(focused)==1 else None
+    start=min((r["order"] for r in rows if focus and r["root"]==focus["root"]),default=0)
+    for r in rows: r["background"]=r["order"]<start
+    return {"rows":rows,"focused":focus,"focus_candidates":len(focused),
+        "active":[r for r in rows if not r["background"]]}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -121,7 +130,8 @@ def main():
         view=screen(result["sample"])
         if args.json: print(json.dumps(view,ensure_ascii=False,indent=2)); return
         for r in view["rows"]:
-            print(("> " if r["focused"] else "  ")+f"{r['text']!r}  [{r['path']}]")
+            mark=">" if r["focused"] else "." if r["background"] else " "
+            print(f"{mark} {r['text']!r}  [{r['path']}]")
         return
     if args.json: print(json.dumps(result,ensure_ascii=True,indent=2)); return
     print(result["status"]+": "+result.get("provenance",str(args.path)))
