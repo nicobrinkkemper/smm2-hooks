@@ -1679,6 +1679,30 @@ def level_plant_pipe_near() -> LevelBuilder:
     return b
 
 
+@test_level(61, "Order Column")
+def level_order_column() -> LevelBuilder:
+    """A column of movers for the `order` probe preset (the manager's
+    per-frame walk, docs/re-notes/processing-order.md in the decomp): two
+    3-wide blue lifts at rows 12 and 8 in column 12, the HIGHER one first in
+    the record order so the load walk's position order and the record order
+    disagree; a plain piranha plant (id 2) on the lower lift (row 9); a
+    3-wide conveyor (id 53) at row 6 in column 16 with a plant on it (row
+    7). The player starts on the floor and can stand under and beside the
+    column. Ground 7..24, width 35 as in the Plant Gallery.
+    """
+    b = LevelBuilder("Order Column", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def plant(x, y):
+        return {'id': 2, 'x': x, 'y': y, 'width': 1, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True}
+    b.objects.append({'id': OBJ_LIFT, 'x': 12, 'y': 12, 'width': 3, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True})
+    b.objects.append({'id': OBJ_LIFT, 'x': 12, 'y': 8, 'width': 3, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True})
+    b.objects.append(plant(12, 9))
+    b.objects.append({'id': 53, 'x': 16, 'y': 6, 'width': 3, 'height': 1, 'flags': 0x06000048, '_half_tile_offset': True})
+    b.objects.append(plant(16, 7))
+    return b
+
+
 @test_level(8, "Flat Ground (NSMBU)")
 def level_nsmbu_flat() -> LevelBuilder:
     """New Super Mario Bros U style flat ground."""
