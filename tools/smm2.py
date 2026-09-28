@@ -594,13 +594,21 @@ class Game:
         raises when the label is not on the active layer, is not unique, or
         the focus stops moving.
         """
+        revealed = False
         for _ in range(max_presses):
             view = self.ui(full=True)
+            if view and not view['focused'] and not revealed:
+                # A freshly opened menu (main menu, pause menu) shows no
+                # cursor; the first direction press puts it on the menu's
+                # first control without moving it.
+                self._press_and_observe('DOWN')
+                revealed = True
+                continue
             if not view or not view['focused']:
                 raise RuntimeError(f'no focused control on screen: {self.ui()}')
-            if view['focused']['text'] == text:
+            if text in (view['focused']['text'], view['focused']['readable']):
                 return self.ui()
-            targets = [r for r in view['active'] if r['text'] == text]
+            targets = [r for r in view['active'] if text in (r['text'], r['readable'])]
             if len(targets) != 1:
                 raise RuntimeError(f'{text!r} is on the active layer {len(targets)} times: {[r["text"] for r in view["active"]]}')
             dx = targets[0]['x'] - view['focused']['x']

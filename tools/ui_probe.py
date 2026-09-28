@@ -92,6 +92,17 @@ def read_log(path):
 
 SCREEN_HALF_W, SCREEN_HALF_H = 640, 360
 
+# Controller glyphs in the system font's private-use area. The block runs
+# A B X Y L R from U+E0E0; checked on screen: E0E3 = Y (pause menu "Mario's
+# Moves"), E0E4 = L and E0E5 = R (title "Press L + R"). Other private-use
+# characters stay as [U+XXXX] until a screen shows what they are.
+GLYPHS = {0xE0E0: "A", 0xE0E1: "B", 0xE0E2: "X", 0xE0E3: "Y", 0xE0E4: "L", 0xE0E5: "R"}
+
+def readable(text):
+    """Text with controller glyphs as [A], [L], ... and unknown ones as [U+XXXX]."""
+    return "".join(f"[{GLYPHS[ord(c)]}]" if ord(c) in GLYPHS
+                   else f"[U+{ord(c):04X}]" if 0xE000 <= ord(c) <= 0xF8FF else c for c in text)
+
 def screen(sample):
     """The rows a player can see, with the focused control marked.
 
@@ -128,14 +139,15 @@ def screen(sample):
     if m and sample.get("slots"):
         i=4*int(m.group(1))+int(m.group(2))
         if i<len(sample["slots"]) and sample["slots"][i]>=0: slot=sample["slots"][i]
+    for r in rows: r["readable"]=readable(r["text"])
     return {"course_slot":slot,"rows":rows,"focused":focus,"focus_candidates":len(focused),
         "active":[r for r in rows if not r["background"]]}
 
 def compact(view):
     """The active layer as an agent needs it: texts, the focused one, the slot."""
     f=view["focused"]
-    return {"focused":f["text"] if f else None,"focused_path":f["path"] if f else None,
-        "course_slot":view["course_slot"],"texts":[r["text"] for r in view["active"]],
+    return {"focused":readable(f["text"]) if f else None,"focused_path":f["path"] if f else None,
+        "course_slot":view["course_slot"],"texts":[readable(r["text"]) for r in view["active"]],
         "background_texts":sum(r["background"] for r in view["rows"])}
 
 def observe(path, after=None, timeout=2.0):

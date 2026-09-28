@@ -31,6 +31,10 @@ class UiProbeTests(unittest.TestCase):
         slots=list(range(100,120))
         self.assertEqual(screen({"rows":[r],"slots":slots})["course_slot"],109)
         self.assertIsNone(screen({"rows":[r]})["course_slot"])
+    def test_glyphs_are_readable(self):
+        from ui_probe import readable
+        self.assertEqual(readable("Press \ue0e4 + \ue0e5"),"Press [L] + [R]")
+        self.assertEqual(readable("\ue0ea Select"),"[U+E0EA] Select")
     def test_truncation(self):
         self.assertTrue(decode_row(row("A"*200))["truncated"])
     def test_tag_is_preserved_not_invented(self):
