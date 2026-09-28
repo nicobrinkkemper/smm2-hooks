@@ -662,10 +662,17 @@ class Game:
         """
         if not isinstance(slot, int) or not 0 <= slot < COURSEBOT_SLOTS:
             raise ValueError(f'slot {slot!r} is not a Coursebot slot (0..{COURSEBOT_SLOTS - 1})')
+        # The grid focuses its first tile only once its courses are loaded
+        # (over 3 s after A in Ryujinx), so give it time before giving up.
+        deadline = time.time() + 8.0
+        while self.ui().get('course_slot') is None:
+            if time.time() >= deadline:
+                raise RuntimeError(f'not on the Coursebot grid: {self.ui()}')
+            time.sleep(0.25)
         for _ in range(max_presses):
             cur = self.ui().get('course_slot')
             if cur is None:
-                raise RuntimeError(f'not on the Coursebot grid: {self.ui()}')
+                raise RuntimeError(f'the Coursebot grid lost focus: {self.ui()}')
             if cur == slot:
                 return self.ui()
             if cur % 4 != slot % 4:

@@ -38,6 +38,16 @@ class UiProbeTests(unittest.TestCase):
         focus={"tick":7,"path":"/L_CourseDataList_02/L_CourseBtn_01"}
         self.assertEqual(screen({"rows":[r],"focus":focus,"slots":list(range(100,120))})["course_slot"],109)
         self.assertIsNone(screen({"rows":[r],"focus":focus})["course_slot"])
+    def test_empty_tile_takes_its_slot_from_the_row(self):
+        f=[0.0]*24; f[16]=f[21]=1.0
+        r=dict(decode_row(row()),geom=f,order=0,root="0xa",
+               path="L_CourseDataList_02/N_All_00/N_Btn_00/L_CourseBtn_00/N_Cursor_00")
+        slots=[-1]*20; slots[8]=4
+        view=screen({"rows":[r],"focus":{"tick":7,"path":"/L_CourseDataList_02/L_CourseBtn_01"},"slots":slots})
+        self.assertIsNone(view["focused"])  # the empty tile draws no text
+        self.assertEqual((view["course_slot"],view["course_slot_source"]),(5,"row"))
+        gone=screen({"rows":[dict(r,path="RootPane/N_Pause_00")],"focus":{"tick":7,"path":"/L_CourseDataList_02/L_CourseBtn_01"},"slots":slots})
+        self.assertIsNone(gone["focus_path"])
     def test_truncation(self):
         self.assertTrue(decode_row(row("A"*200))["truncated"])
     def test_tag_is_preserved_not_invented(self):

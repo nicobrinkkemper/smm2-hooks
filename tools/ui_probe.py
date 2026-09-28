@@ -142,24 +142,39 @@ def screen(sample):
     for r in rows: r["focused"]=r is focus
     start=min((r["order"] for r in rows if focus and r["root"]==focus["root"]),default=0)
     for r in rows: r["background"]=r["order"]<start
+    # The recorded focus is live while its layout is drawn. An empty Coursebot
+    # tile draws no text, and a row of empty tiles none at all, so any drawn
+    # instance of the layout counts (L_CourseDataList_02 by L_CourseDataList_01).
+    live=False
+    if focus_path:
+        layout=re.sub(r"_\d+$","_",focus_path.strip("/").split("/")[0])
+        live=any(c.startswith(layout) for r in rows for c in r["path"].split("/"))
     # Coursebot tile "/L_CourseDataList_0R/L_CourseBtn_0C" is entry 4R+C of the
-    # game's tile table; the mod records the slot the game bound to each.
-    slot=None
-    m=focus and re.search(r"L_CourseDataList_0(\d)/.*L_CourseBtn_0(\d)/",focus["path"])
-    if m and sample.get("slots"):
-        i=4*int(m.group(1))+int(m.group(2))
-        if i<len(sample["slots"]) and sample["slots"][i]>=0: slot=sample["slots"][i]
+    # game's tile table; the mod records the slot the game bound to each (-1
+    # once the game empties the tile). An empty tile has no slot of its own:
+    # it is taken from a bound tile of the same row, a row being 4 slots.
+    # (The game binds empty slots too, so this is rarely needed.)
+    slot=slot_source=None
+    m=live and re.search(r"L_CourseDataList_0(\d)/L_CourseBtn_0(\d)",focus_path)
+    slots=sample.get("slots") or []
+    if m and len(slots)>=20:
+        row_,col=int(m.group(1)),int(m.group(2))
+        if slots[4*row_+col]>=0: slot,slot_source=slots[4*row_+col],"bound"
+        else:
+            bound=[(c,slots[4*row_+c]) for c in range(4) if slots[4*row_+c]>=0]
+            if bound: slot,slot_source=bound[0][1]-bound[0][0]+col,"row"
     for r in rows: r["readable"]=readable(r["text"])
-    return {"course_slot":slot,"rows":rows,"focused":focus,"focus_path":focus_path,
+    return {"course_slot":slot,"course_slot_source":slot_source,"rows":rows,"focused":focus,
+        "focus_path":focus_path if live else None,
         "active":[r for r in rows if not r["background"]]}
 
 def compact(view):
     """The active layer as an agent needs it: texts, the focused one, the slot."""
     f=view["focused"]
     return {"focused":readable(f["text"]) if f else None,"focused_path":f["path"] if f else None,
-        # the game's last focused button, when it is drawn on screen (a menu
+        # the game's last focused button while its layout is drawn (a menu
         # that just opened focuses nothing, and the path is then stale)
-        "focus_path":view["focus_path"] if f else None,
+        "focus_path":view["focus_path"],"course_slot_source":view["course_slot_source"],
         "course_slot":view["course_slot"],"texts":[readable(r["text"]) for r in view["active"]],
         "background_texts":sum(r["background"] for r in view["rows"])}
 

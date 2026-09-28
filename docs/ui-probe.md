@@ -26,16 +26,20 @@ press). Python: `Game.ui()`, `Game.focus(label)`, `Game.select_slot(n)`;
 | on screen | global matrix at +0x70 (x = f32 +0x7C, y = f32 +0x8C, 1280x720, origin at the centre); panes outside it are drawn but not visible (the course details panel waits below the screen) |
 | focus | the game's own focus change: `sub_7101B615E0(button, 0, ...)` runs on the button gaining focus (and `sub_7101B61810(button, 1, ...)` on the one losing it); the button's pane path, e.g. `/L_CourseDataList_01/L_CourseBtn_01`, is an inline string at `*(button+0x58)+0xA0`. The focused text is the drawn pane under that path |
 | active layer | ui2d draws back to front, so what was drawn before the focused control's layout is under it (the grid behind the details, the details behind a dialog) |
-| course slot | hook on `sub_7101897360(screen, tile, slot)`, which binds course `slot` to tile `tile` of the Coursebot table at 0x7102CC0E78; tile 4R+C is `/L_CourseDataList_0R/L_CourseBtn_0C` |
+| course slot | hook on `sub_7101897360(screen, tile, slot)`, which binds course `slot` to tile `tile` of the Coursebot table at 0x7102CC0E78 (empty slots too), and on `sub_7101897190(screen, tile)`, which empties a tile; tile 4R+C is `/L_CourseDataList_0R/L_CourseBtn_0C` |
 | glyphs | U+E0E0.. A B X Y L R (Y, L, R seen on screen); other private-use characters stay `[U+XXXX]` |
 
 ## Menus it was checked on
+
+Eden v0.2.0-rc1 and Ryujinx 1.3.3, SMM2 v3.0.3 in both.
 
 Main menu, Coursebot grid (scrolled both ways), course details and its
 tab bar, the upload dialog ("You need to clear your course before
 uploading it."), the Coursebot pause menu. The pause menu opens with
 nothing focused: the game makes no focus call until the first direction
-press, which lands on its first control; `focus()` makes that press.
+press, which lands on its first control; `focus()` makes that press. An
+empty Coursebot tile draws no text: the focus is still reported (with its
+slot) while any tile of the grid is drawn, and `focused` is then None.
 
 ## Log format
 

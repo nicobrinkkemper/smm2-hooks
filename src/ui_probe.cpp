@@ -118,6 +118,12 @@ void observe(void* pane) {
 constexpr unsigned TILES = 20;
 int32_t tileSlot[TILES];
 bool tilesSeen = false;
+// sub_7101897190(screen, tile) empties a tile (its slot becomes -1).
+HkTrampoline<void, void*, int> resetTile = hk::hook::trampoline(
+    [](void* screen, int tile) -> void {
+        resetTile.orig(screen, tile);
+        if (tile >= 0 && static_cast<unsigned>(tile) < TILES) tileSlot[tile] = -1;
+    });
 HkTrampoline<void, void*, int, int> bindTile = hk::hook::trampoline(
     [](void* screen, int tile, int slot) -> void {
         bindTile.orig(screen, tile, slot);
@@ -208,6 +214,8 @@ void init() {
     if (focusOn.installAtOffset(hk::ro::getMainModule(), 0x1B615E0).failed())
         logger.write("FOCUS_INSTALL_FAILED\n", 21);
     for (auto& t : tileSlot) t = -1;
+    if (resetTile.installAtOffset(hk::ro::getMainModule(), 0x1897190).failed())
+        logger.write("TILE_RESET_INSTALL_FAILED\n", 26);
     if (bindTile.installAtOffset(hk::ro::getMainModule(), 0x1897360).failed())
         logger.write("TILE_INSTALL_FAILED\n", 20);
     enabled = true;
