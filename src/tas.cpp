@@ -147,6 +147,8 @@ static void update_input() {
     }
 }
 
+static uint64_t s_seen_buttons = 0;  // what the game read last, injected input included
+
 static void inject_buttons(nn::hid::full_key_state* out, int written) {
     for (int i = 0; i < written; i++) {
         out[i].buttons |= cur_buttons;
@@ -161,12 +163,19 @@ static HkTrampoline<int, nn::hid::full_key_state*, int, const uint32_t&> npad_fu
         int written = npad_fullkey_hook.orig(out, count, id);
         update_input();
         inject_buttons(out, written);
-        if (written > 0) probe::log_pad(out[0].buttons, out[0].sl_x, out[0].sl_y);
+        if (written > 0) {
+            s_seen_buttons = out[0].buttons;
+            probe::log_pad(out[0].buttons, out[0].sl_x, out[0].sl_y);
+        }
         return written;
     });
 
 uint32_t input_poll_count() {
     return s_input_poll_count;
+}
+
+uint64_t seen_buttons() {
+    return s_seen_buttons;
 }
 
 void init() {

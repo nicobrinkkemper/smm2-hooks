@@ -1,144 +1,151 @@
 #include "smm2/ui_probe.h"
-#include "smm2/log.h"
+#include "smm2/tas.h"
 #include "hk/hook/Trampoline.h"
 #include "hk/ro/RoUtil.h"
 #include "nn/fs.h"
+#include <cstdarg>
 #include <cstdint>
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 
-// Contract and original-binary tests: smm2-decomp plans/ui-text-probe.md.
-// nn::ui2d::TextBox::DrawSelf, v3.0.3: 0x71004C38B0.
-// This observes draw submissions, NOT final pixels, active screens or focus.
+// What the menus show, which control has the focus and which state each
+// menu screen is in, rewritten to sd:/smm2-hooks/ui-screen.txt every
+// SAMPLE_FRAMES frames. docs/ui-probe.md has the format and the evidence
+// behind every address. v3.0.3 only.
 namespace smm2::ui_probe {
 namespace {
-constexpr unsigned MAX_ROWS = 128;
-constexpr unsigned MAX_BYTES = 256;
-constexpr unsigned MAX_DEPTH = 8;     // ancestors recorded above the TextBox
-constexpr unsigned GEOM_BYTES = 0x60; // pane+0x30..0x90: local SRT, size, flags, global matrix
-struct Row {
-    uintptr_t pane;
-    uint16_t length, capacity, bytes;
-    uint8_t encoding, flags, alpha, depth;
-    uint32_t tick;                    // poll tick of the latest draw
-    uint32_t order;                   // TextBox draws before it in that tick: back to front
-    uintptr_t root;                   // topmost ancestor: one per layout instance
-    char name[24];
-    char path[MAX_DEPTH][24];         // parent (+0x18) names, nearest first
-    uint8_t geom[GEOM_BYTES];
-    uint8_t text[MAX_BYTES];
-};
-uint32_t tick = 0;
-uint32_t drawn = 0;                   // TextBox draws in the current tick
+constexpr const char* CONFIG_PATH = "sd:/smm2-hooks/ui-probe.txt";
+constexpr const char* SCREEN_PATH = "sd:/smm2-hooks/ui-screen.txt";
+constexpr unsigned SAMPLE_FRAMES = 6;
 
-bool plausible(uintptr_t p) { return p >= 0x8000000 && p < 0x8000000000 && !(p & 7); }
-Row rows[MAX_ROWS];
-unsigned count = 0, dropped = 0, sequence = 0;
-unsigned char lock = 0;
+uint32_t tick = 0;  // poll() calls, one per frame
 bool enabled = false;
-char printPane[24] = {}, expected[128] = {};
-uintptr_t printed = 0;
-log::Logger logger;
-constexpr char16_t MARKER[] = u"UI PROBE OK";
-constexpr unsigned MARKER_LENGTH = sizeof(MARKER) / sizeof(char16_t) - 1;
 
-template<typename T> T field(const void* pane, unsigned offset) {
+template<typename T> T field(const void* base, unsigned offset) {
     T value;
-    std::memcpy(&value, static_cast<const char*>(pane) + offset, sizeof(value));
+    std::memcpy(&value, static_cast<const char*>(base) + offset, sizeof(value));
     return value;
 }
+template<typename T> T field(uintptr_t base, unsigned offset) {
+    return field<T>(reinterpret_cast<const void*>(base), offset);
+}
+bool plausible(uintptr_t p) { return p >= 0x8000000 && p < 0x8000000000 && !(p & 7); }
+bool inModule(uintptr_t p) {
+    const auto range = hk::ro::getMainModule()->range();
+    return p >= range.start() && p < range.start() + range.size();
+}
+void lock(unsigned char& flag) { while (__atomic_test_and_set(&flag, __ATOMIC_ACQUIRE)) {} }
+void unlock(unsigned char& flag) { __atomic_clear(&flag, __ATOMIC_RELEASE); }
+
+// -- text: every nn::ui2d::TextBox drawn (TextBox::DrawSelf, 0x71004C38B0) --
+constexpr unsigned MAX_ROWS = 128;
+constexpr unsigned MAX_TEXT = 256;   // bytes
+constexpr unsigned MAX_DEPTH = 8;    // ancestors
+constexpr unsigned NAME = 24;        // Pane name, char[24] at +0xB0
+struct Row {
+    uintptr_t pane, root;            // root = topmost ancestor: one per layout instance
+    uint32_t tick, order;            // order = TextBox draws before it in that tick
+    float x, y, scale;               // global matrix at +0x70: tx +0x7C, ty +0x8C, sx +0x70
+    uint16_t length, bytes;
+    uint8_t encoding, depth;
+    char name[NAME];
+    char path[MAX_DEPTH][NAME];      // parent (+0x18) names, nearest first
+    uint8_t text[MAX_TEXT];
+};
+Row rows[MAX_ROWS];
+unsigned rowCount = 0, dropped = 0, drawnThisTick = 0;
+unsigned char rowsLock = 0;
 
 void observe(void* pane) {
-    // Never wait on the render thread, and never write SD files here.
-    if (__atomic_test_and_set(&lock, __ATOMIC_ACQUIRE)) {
+    // The render thread never waits: a contended draw is counted and skipped.
+    if (__atomic_test_and_set(&rowsLock, __ATOMIC_ACQUIRE)) {
         __atomic_fetch_add(&dropped, 1u, __ATOMIC_RELAXED);
         return;
     }
-    // DrawSelf itself requires length, font and material before drawing.
+    // UTF-16 (or byte) text at +0xD8, capacity +0x110, length +0x112,
+    // encoding +0x117; DrawSelf itself needs the font (+0xF0) and material (+0x140).
     const auto length = field<uint16_t>(pane, 0x112);
     const auto capacity = field<uint16_t>(pane, 0x110);
     const auto text = field<const uint8_t*>(pane, 0xD8);
     const auto encoding = field<uint8_t>(pane, 0x117);
-    if (!length || !text || !field<uintptr_t>(pane, 0xF0) || !field<uintptr_t>(pane, 0x140)
-        || !capacity || length >= capacity || encoding > 1) {
-        __atomic_clear(&lock, __ATOMIC_RELEASE);
-        return;
-    }
-    unsigned slot = 0;
     const auto address = reinterpret_cast<uintptr_t>(pane);
-    while (slot < count && rows[slot].pane != address) ++slot;
-    if (slot == MAX_ROWS) {
-        __atomic_fetch_add(&dropped, 1u, __ATOMIC_RELAXED);
-        __atomic_clear(&lock, __ATOMIC_RELEASE);
+    unsigned slot = 0;
+    while (slot < rowCount && rows[slot].pane != address) ++slot;
+    if (!length || !text || !field<uintptr_t>(pane, 0xF0) || !field<uintptr_t>(pane, 0x140)
+        || length >= capacity || encoding > 1 || slot == MAX_ROWS) {
+        if (slot == MAX_ROWS) __atomic_fetch_add(&dropped, 1u, __ATOMIC_RELAXED);
+        unlock(rowsLock);
         return;
     }
-    if (slot == count) ++count;
+    if (slot == rowCount) ++rowCount;
     Row& row = rows[slot];
-    row.pane = address;
+    row.pane = row.root = address;
+    row.tick = tick;
+    row.order = drawnThisTick++;
+    row.x = field<float>(pane, 0x7C);
+    row.y = field<float>(pane, 0x8C);
+    row.scale = field<float>(pane, 0x70);
     row.length = length;
-    row.capacity = capacity;
     row.encoding = encoding;
-    row.flags = field<uint8_t>(pane, 0x58);
-    row.alpha = field<uint8_t>(pane, 0x5A);
-    std::memcpy(row.name, static_cast<const char*>(pane) + 0xB0, sizeof(row.name));
-    row.tick = __atomic_load_n(&tick, __ATOMIC_RELAXED);
-    row.order = drawn++;
-    row.root = address;
-    std::memcpy(row.geom, static_cast<const char*>(pane) + 0x30, GEOM_BYTES);
-    // Pane::AppendChild (0x71004B24D0) stores the parent at +0x18.
+    std::memcpy(row.name, static_cast<const char*>(pane) + 0xB0, NAME);
     row.depth = 0;
     for (auto up = field<uintptr_t>(pane, 0x18); row.depth < MAX_DEPTH && plausible(up);
-         up = field<uintptr_t>(reinterpret_cast<void*>(up), 0x18)) {
-        std::memcpy(row.path[row.depth++], reinterpret_cast<const char*>(up) + 0xB0, 24);
+         up = field<uintptr_t>(up, 0x18)) {
+        std::memcpy(row.path[row.depth++], reinterpret_cast<const char*>(up) + 0xB0, NAME);
         row.root = up;
     }
     const unsigned bytes = length * (encoding ? 1u : 2u);
-    row.bytes = bytes < MAX_BYTES ? bytes : MAX_BYTES;
+    row.bytes = bytes < MAX_TEXT ? bytes : MAX_TEXT;
     std::memcpy(row.text, text, row.bytes);
-    // An explicit pane name AND original ASCII string select one print test.
-    // No save/file resource is changed. A normal boot restores the label.
-    bool match = printPane[0] && !printed && encoding == 0
-        && capacity > MARKER_LENGTH && std::strncmp(row.name, printPane, sizeof(row.name)) == 0
-        && std::strlen(expected) == length;
-    for (unsigned i = 0; match && i < length; ++i)
-        match = text[2*i] == static_cast<uint8_t>(expected[i]) && text[2*i+1] == 0;
-    if (match) printed = address;
-    __atomic_clear(&lock, __ATOMIC_RELEASE);
-    if (match) {
-        using SetString = uint32_t (*)(void*, const char16_t*, uint16_t);
-        const auto base = hk::ro::getMainModule()->range().start();
-        // Original UTF-16 setter; the final argument is insertion offset, not length.
-        reinterpret_cast<SetString>(base + 0x4C3BB0)(pane, MARKER, 0);
-    }
+    unlock(rowsLock);
 }
-
-// Coursebot list: sub_7101897360(screen, tile, slot) binds course `slot` to
-// tile `tile` of the table at 0x7102CC0E78, whose entry 4R+C (R < 5, C < 4)
-// is "/L_CourseDataList_0R/L_CourseBtn_0C"; it stores the slot at tile+0x68C.
-constexpr unsigned TILES = 20;
-int32_t tileSlot[TILES];
-bool tilesSeen = false;
-// sub_7101897190(screen, tile) empties a tile (its slot becomes -1).
-HkTrampoline<void, void*, int> resetTile = hk::hook::trampoline(
-    [](void* screen, int tile) -> void {
-        resetTile.orig(screen, tile);
-        if (tile >= 0 && static_cast<unsigned>(tile) < TILES) tileSlot[tile] = -1;
-    });
-HkTrampoline<void, void*, int, int> bindTile = hk::hook::trampoline(
-    [](void* screen, int tile, int slot) -> void {
-        bindTile.orig(screen, tile, slot);
-        if (tile >= 0 && static_cast<unsigned>(tile) < TILES) { tileSlot[tile] = slot; tilesSeen = true; }
+HkTrampoline<void, void*, void*, void*> draw = hk::hook::trampoline(
+    [](void* pane, void* drawInfo, void* commandBuffer) -> void {
+        draw.orig(pane, drawInfo, commandBuffer);
+        observe(pane);
     });
 
-// Menu focus. The game's buttons change focus through two methods of one
-// class: sub_7101B61810(button, 1, ...) on the button losing it and
-// sub_7101B615E0(button, 0, ...) on the one gaining it (every cursor move in
-// the main menu, Coursebot grid, course details, tabs and dialogs). The
-// button's pane path, e.g. "/L_CourseDataList_01/L_CourseBtn_01", is an
-// inline string at *(button+0x58)+0xA0.
-constexpr unsigned FOCUS_BYTES = 64;
-char focusPath[FOCUS_BYTES] = {};
-uint32_t focusTick = 0;
+// Input per button. A screen switches its buttons' input on and off with
+// sub_7100761190(button, player, on): the main menu's Disp state turns it on
+// two frames in, so a screen can be in Disp and still ignore a press. This
+// remembers the last switch for player 1 (index 0) of the buttons it saw.
+constexpr unsigned BUTTONS = 128;
+struct ButtonInput { uintptr_t button; bool on; };
+ButtonInput buttonInput[BUTTONS];
+unsigned buttonNext = 0;
+uint32_t inputOnTick = 0, inputOffTick = 0;  // the last switch either way, any button
+// The byte itself: player 1's handler in the list at button+0x228 (count
+// +0x1FC) has it at +0x3A. Read only inside the game's calls on the button.
+int readInput(uintptr_t b) {
+    const auto list = field<uintptr_t>(b, 0x228);
+    const auto count = field<int32_t>(b, 0x1FC);
+    for (int32_t i = 0; plausible(list) && i < count && i < 64; ++i) {
+        const auto handler = field<uintptr_t>(list + 8 * i, 0);
+        if (plausible(handler) && field<uint32_t>(handler, 0x20) == 0) return field<uint8_t>(handler, 0x3A) & 1;
+    }
+    return -1;
+}
+void rememberInput(uintptr_t b, bool on) {
+    for (auto& e : buttonInput)
+        if (e.button == b) { e.on = on; return; }
+    buttonInput[buttonNext++ % BUTTONS] = {b, on};
+}
+HkTrampoline<void, void*, unsigned, bool> setInput = hk::hook::trampoline(
+    [](void* button, unsigned player, bool on) -> void {
+        setInput.orig(button, player, on);
+        if (player != 0) return;
+        (on ? inputOnTick : inputOffTick) = tick;
+        rememberInput(reinterpret_cast<uintptr_t>(button), on);
+    });
+// -- focus ----------------------------------------------------------------
+// The game's buttons change focus through two methods of one class:
+// sub_7101B61810(button, 1, ...) on the button losing it and
+// sub_7101B615E0(button, 0, ...) on the one gaining it. The button's pane
+// path, e.g. "/L_CourseDataList_01/L_CourseBtn_01", is an inline string at
+// *(button+0x58)+0xA0.
+constexpr unsigned FOCUS = 64;
+char focusPath[FOCUS] = {};
+uintptr_t focusButton = 0;
 HkTrampoline<void, void*, unsigned, unsigned, unsigned, unsigned, void*> focusOn = hk::hook::trampoline(
     [](void* button, unsigned action, unsigned state, unsigned a4, unsigned a5, void* a6) -> void {
         focusOn.orig(button, action, state, a4, a5, a6);
@@ -146,52 +153,69 @@ HkTrampoline<void, void*, unsigned, unsigned, unsigned, unsigned, void*> focusOn
         if (!plausible(holder)) return;
         const auto* path = reinterpret_cast<const char*>(holder + 0xA0);
         unsigned n = 0;
-        while (n < FOCUS_BYTES - 1 && path[n] >= 0x20 && path[n] < 0x7F) ++n;
+        while (n < FOCUS - 1 && path[n] > 0x20 && path[n] < 0x7F && path[n] != ',') ++n;
         std::memcpy(focusPath, path, n);
         focusPath[n] = 0;
-        focusTick = __atomic_load_n(&tick, __ATOMIC_RELAXED);
+        focusButton = reinterpret_cast<uintptr_t>(button);
+        // A button at a freed one's address must not inherit its input state.
+        const int on = readInput(focusButton);
+        if (on >= 0) rememberInput(focusButton, on);
     });
 
-// Screen state. The menus run Lp::Utl::StateMachine, like the actors: the
-// Coursebot screens register Init, Idle, Appear, Disp, Open*/Disp*/Close*
-// (dialogs), To* and Disappear (sub_71018801C0). changeState (0x71008B9320)
-// stores the new state at machine+0x08 and counts frames in it at +0x0C;
-// the state names sit in an array at machine+0x40 (16 bytes each, char* at
-// +8, count at +0x38). The probe keeps the machines that changed state most
-// recently.
+// 1 on, 0 off, -1 never switched since boot.
+int focusInput() {
+    for (const auto& e : buttonInput)
+        if (focusButton && e.button == focusButton) return e.on;
+    return -1;
+}
+
+// -- Coursebot slots --------------------------------------------------------
+// sub_7101897360(screen, tile, slot) binds course `slot` to entry `tile` of
+// the Coursebot list's table at 0x7102CC0E78 (entry 4R+C is
+// "/L_CourseDataList_0R/L_CourseBtn_0C"; the game keeps the slot at
+// tile+0x68C), empty slots included; sub_7101897190(screen, tile) empties one.
+constexpr unsigned TILES = 20;
+int32_t tileSlot[TILES];
+bool tilesSeen = false;
+HkTrampoline<void, void*, int, int> bindTile = hk::hook::trampoline(
+    [](void* screen, int tile, int slot) -> void {
+        bindTile.orig(screen, tile, slot);
+        if (tile >= 0 && static_cast<unsigned>(tile) < TILES) { tileSlot[tile] = slot; tilesSeen = true; }
+    });
+HkTrampoline<void, void*, int> resetTile = hk::hook::trampoline(
+    [](void* screen, int tile) -> void {
+        resetTile.orig(screen, tile);
+        if (tile >= 0 && static_cast<unsigned>(tile) < TILES) tileSlot[tile] = -1;
+    });
+
+// -- screen state -----------------------------------------------------------
+// The menus run Lp::Utl::StateMachine like the actors. A machine keeps its
+// state at +0x08 and the frames spent in it at +0x0C; the state names (the
+// part after "::", e.g. "cDisp") sit in an array at +0x40, 16 bytes each
+// with the char* at +8, count at +0x38. Everything is read inside the
+// game's own calls on the machine (change, execute, finalize): a screen
+// torn down between samples must not be read after it is freed.
 constexpr unsigned MACHINES = 32;
 constexpr int32_t MAX_STATES = 96;
-// Everything read from a machine is read inside the game's own calls on it
-// (change, execute, finalize): a screen torn down between two samples would
-// otherwise be read after it was freed, which crashed Ryujinx.
 struct Machine {
     uintptr_t machine;
     uint32_t changed, executed;   // ticks
-    uint32_t caller;              // module offset of the changeState call
-    int32_t state, frames;
-    const char* name;             // static string in the game binary
-    int32_t count;
-    const char* names[MAX_STATES];
-    bool described;
+    int32_t state, frames, count;
+    const char* names[MAX_STATES];  // static strings in the game binary
 };
 Machine machines[MACHINES];
 unsigned char machinesLock = 0;
 
-bool inModule(uintptr_t p) {
-    const auto range = hk::ro::getMainModule()->range();
-    return p >= range.start() && p < range.start() + range.size();
-}
 const char* stateName(uintptr_t m, int32_t state) {
-    const auto count = field<int32_t>(reinterpret_cast<void*>(m), 0x38);
-    const auto names = field<uintptr_t>(reinterpret_cast<void*>(m), 0x40);
-    if (state < 0 || state >= count || !plausible(names)) return nullptr;
-    const auto name = field<uintptr_t>(reinterpret_cast<void*>(names + 16 * state), 8);
+    const auto names = field<uintptr_t>(m, 0x40);
+    if (state < 0 || state >= field<int32_t>(m, 0x38) || !plausible(names)) return nullptr;
+    const auto name = field<uintptr_t>(names + 16 * state, 8);
     return inModule(name) ? reinterpret_cast<const char*>(name) : nullptr;
 }
 // Menu screens and their loaders, not actors: a machine with an Appear,
 // Disp or LoadEnd state (actor machines name theirs cState_*).
 bool menuMachine(uintptr_t m) {
-    const auto count = field<int32_t>(reinterpret_cast<void*>(m), 0x38);
+    const auto count = field<int32_t>(m, 0x38);
     for (int32_t i = 0; i < count && i < MAX_STATES; ++i) {
         const char* name = stateName(m, i);
         if (name && (!std::strcmp(name, "cAppear") || !std::strcmp(name, "cDisp") || !std::strcmp(name, "cLoadEnd")))
@@ -203,200 +227,185 @@ Machine* tracked(uintptr_t m) {
     for (auto& e : machines) if (e.machine == m) return &e;
     return nullptr;
 }
+// Lp::Utl::StateMachine::changeState (0x71008B9320)
 HkTrampoline<void, void*, int> changeState = hk::hook::trampoline(
     [](void* machine, int state) -> void {
         changeState.orig(machine, state);
         const auto m = reinterpret_cast<uintptr_t>(machine);
-        const auto now = __atomic_load_n(&tick, __ATOMIC_RELAXED);
-        if (__atomic_test_and_set(&machinesLock, __ATOMIC_ACQUIRE)) return;
+        lock(machinesLock);
         Machine* e = tracked(m);
         if (!e && menuMachine(m)) {
             e = &machines[0];
             for (auto& c : machines) if (c.changed < e->changed) e = &c;
             e->machine = m;
-            e->count = field<int32_t>(machine, 0x38);
-            if (e->count > MAX_STATES) e->count = MAX_STATES;
+            e->count = field<int32_t>(m, 0x38) < MAX_STATES ? field<int32_t>(m, 0x38) : MAX_STATES;
             for (int32_t i = 0; i < e->count; ++i) e->names[i] = stateName(m, i);
-            e->described = false;
         }
         if (e) {
-            const auto lr = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
-            e->changed = e->executed = now;
-            e->caller = static_cast<uint32_t>(lr - hk::ro::getMainModule()->range().start());
-            e->state = field<int32_t>(machine, 0x08);
-            e->frames = field<int32_t>(machine, 0x0C);
-            e->name = stateName(m, e->state);
+            e->changed = e->executed = tick;
+            e->state = field<int32_t>(m, 0x08);
+            e->frames = field<int32_t>(m, 0x0C);
         }
-        __atomic_clear(&machinesLock, __ATOMIC_RELEASE);
+        unlock(machinesLock);
     });
-// sub_71008B9490 runs the current state once a frame: frames in state.
+// sub_71008B9490 runs the current state once a frame.
 HkTrampoline<void, void*> executeState = hk::hook::trampoline(
     [](void* machine) -> void {
         const auto m = reinterpret_cast<uintptr_t>(machine);
-        if (!__atomic_test_and_set(&machinesLock, __ATOMIC_ACQUIRE)) {
-            if (Machine* e = tracked(m)) {
-                e->executed = __atomic_load_n(&tick, __ATOMIC_RELAXED);
-                e->frames = field<int32_t>(machine, 0x0C);
-            }
-            __atomic_clear(&machinesLock, __ATOMIC_RELEASE);
+        lock(machinesLock);
+        if (Machine* e = tracked(m)) {
+            e->executed = tick;
+            e->frames = field<int32_t>(m, 0x0C);
         }
+        unlock(machinesLock);
         executeState.orig(machine);
     });
-// StateMachine::finalize (0x71008B8F40): the machine is going away.
+// Lp::Utl::StateMachine::finalize (0x71008B8F40): the machine goes away.
 HkTrampoline<void, void*> finalizeMachine = hk::hook::trampoline(
     [](void* machine) -> void {
-        const auto m = reinterpret_cast<uintptr_t>(machine);
-        while (__atomic_test_and_set(&machinesLock, __ATOMIC_ACQUIRE)) {}
-        if (Machine* e = tracked(m)) e->machine = 0;
-        __atomic_clear(&machinesLock, __ATOMIC_RELEASE);
+        lock(machinesLock);
+        if (Machine* e = tracked(reinterpret_cast<uintptr_t>(machine))) e->machine = 0;
+        unlock(machinesLock);
         finalizeMachine.orig(machine);
     });
 
-HkTrampoline<void, void*, void*, void*> draw = hk::hook::trampoline(
-    [](void* pane, void* drawInfo, void* commandBuffer) -> void {
-        draw.orig(pane, drawInfo, commandBuffer);
-        observe(pane);
-    });
-
-void hex(const void* src, unsigned n) {
+// -- the snapshot file --------------------------------------------------------
+char out[128 * 1024];
+unsigned outLength = 0;
+void put(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+void put(const char* fmt, ...) {
+    if (outLength >= sizeof(out)) return;
+    va_list args;
+    va_start(args, fmt);
+    const int n = std::vsnprintf(out + outLength, sizeof(out) - outLength, fmt, args);
+    va_end(args);
+    if (n > 0) outLength = outLength + n < sizeof(out) ? outLength + n : sizeof(out);
+}
+void putHex(const uint8_t* bytes, unsigned n) {
     constexpr char digits[] = "0123456789abcdef";
-    char out[MAX_BYTES * 2];
-    const auto* bytes = static_cast<const uint8_t*>(src);
-    for (unsigned i = 0; i < n; ++i) { out[2*i] = digits[bytes[i] >> 4]; out[2*i+1] = digits[bytes[i] & 15]; }
-    logger.write(out, n * 2);
+    for (unsigned i = 0; i < n && outLength + 2 < sizeof(out); ++i) {
+        out[outLength++] = digits[bytes[i] >> 4];
+        out[outLength++] = digits[bytes[i] & 15];
+    }
 }
+// Pane names are identifiers; anything else becomes '?' so it cannot break a line.
+void putName(const char* name) {
+    for (unsigned i = 0; i < NAME && name[i] && outLength < sizeof(out); ++i) {
+        const char c = name[i];
+        const bool ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+        out[outLength++] = ok ? c : '?';
+    }
 }
+// Rewritten in place, like status.bin; BEGIN and END carry the same sequence
+// so a reader can tell a torn read.
+void writeScreen() {
+    nn::fs::FileHandle file;
+    if (nn::fs::OpenFile(&file, SCREEN_PATH, nn::fs::MODE_WRITE) != 0) return;
+    nn::fs::SetFileSize(file, outLength);
+    nn::fs::WriteOption option = {.flags = nn::fs::WRITE_OPTION_FLUSH};
+    nn::fs::WriteFile(file, 0, out, outLength, option);
+    nn::fs::CloseFile(file);
+}
+void fail(const char* why) {
+    outLength = 0;
+    put("ERROR,%s\n", why);
+    writeScreen();
+}
+}  // namespace
 
 void init() {
-    // Missing config means zero hooks installed and no rendering changes.
-    // The log is created once: a second delete+create of the same file right
-    // after the first can fail on Eden's host-backed SD card, and then every
-    // later write is lost (seen 2026-09-28).
+    // No config file: nothing is hooked.
     nn::fs::FileHandle file;
-    const auto openResult = nn::fs::OpenFile(&file, "sd:/smm2-hooks/ui-probe.txt", nn::fs::MODE_READ);
-    if (openResult != 0) return;
-    char config[256] = {};
+    if (nn::fs::OpenFile(&file, CONFIG_PATH, nn::fs::MODE_READ) != 0) return;
+    char config[64] = {};
     size_t size = 0;
-    const auto rc = nn::fs::ReadFile(&size, file, 0, config, sizeof(config)-1);
+    const auto rc = nn::fs::ReadFile(&size, file, 0, config, sizeof(config) - 1);
     nn::fs::CloseFile(file);
-    logger.init("ui-probe.log");
-    auto bad = [](const char* why) { logger.writef("CONFIG_ERROR,%s\n", why); logger.flush(); };
-    if (rc != 0 || !size || size >= sizeof(config)-1) return bad("read");
-    // Eden can fill the buffer past the bytes it reports read (a "capture\n"
-    // config failed the comparison on some boots), so end the string there.
+    nn::fs::DeleteFile(SCREEN_PATH);
+    nn::fs::CreateFile(SCREEN_PATH, 0);
+    // Eden can fill the buffer past the bytes it reports read, so the
+    // string ends at `size`.
+    if (rc != 0 || size >= sizeof(config)) return fail("config read");
     config[size] = 0;
-    while (size && (config[size-1] == '\n' || config[size-1] == '\r')) config[--size] = 0;
-    if (std::strcmp(config, "capture") != 0) {
-        char* line = std::strchr(config, '\n');
-        if (!line || std::strncmp(config, "print=", 6) != 0) {
-            logger.write("CONFIG_BYTES,", 13);
-            hex(config, size < 16 ? size : 16);
-            logger.write("\n", 1);
-            return bad("mode");
-        }
-        *line++ = 0;
-        if (std::strncmp(line, "expect=", 7) != 0) return bad("expect");
-        char* end = std::strchr(line, '\n');
-        if (end) *end = 0;
-        if (!config[6] || std::strlen(config+6) >= sizeof(printPane)
-            || !line[7] || std::strlen(line+7) >= sizeof(expected)) return bad("length");
-        std::strcpy(printPane, config+6);
-        std::strcpy(expected, line+7);
-    }
-    logger.writef("UI_PROBE,6,303,draw_submission,mode=%s\n", printPane[0] ? "print" : "capture");
-    auto result = draw.installAtOffset(hk::ro::getMainModule(), 0x4C38B0);
-    // Hakkun aborts on installation failure when requested; explicitly report it here.
-    if (result.failed()) {
-        logger.write("INSTALL_FAILED\n", 15);
-        logger.flush();
-        return;
-    }
-    if (focusOn.installAtOffset(hk::ro::getMainModule(), 0x1B615E0).failed())
-        logger.write("FOCUS_INSTALL_FAILED\n", 21);
-    if (changeState.installAtOffset(hk::ro::getMainModule(), 0x8B9320).failed()
-        || executeState.installAtOffset(hk::ro::getMainModule(), 0x8B9490).failed()
-        || finalizeMachine.installAtOffset(hk::ro::getMainModule(), 0x8B8F40).failed())
-        logger.write("STATE_INSTALL_FAILED\n", 21);
-    for (auto& t : tileSlot) t = -1;
-    if (resetTile.installAtOffset(hk::ro::getMainModule(), 0x1897190).failed())
-        logger.write("TILE_RESET_INSTALL_FAILED\n", 26);
-    if (bindTile.installAtOffset(hk::ro::getMainModule(), 0x1897360).failed())
-        logger.write("TILE_INSTALL_FAILED\n", 20);
+    while (size && (config[size - 1] == '\n' || config[size - 1] == '\r')) config[--size] = 0;
+    if (std::strcmp(config, "capture") != 0) return fail("config is not 'capture'");
+
+    const auto* module = hk::ro::getMainModule();
+    if (draw.installAtOffset(module, 0x4C38B0).failed()
+        || focusOn.installAtOffset(module, 0x1B615E0).failed()
+        || setInput.installAtOffset(module, 0x761190).failed()
+        || bindTile.installAtOffset(module, 0x1897360).failed()
+        || resetTile.installAtOffset(module, 0x1897190).failed()
+        || changeState.installAtOffset(module, 0x8B9320).failed()
+        || executeState.installAtOffset(module, 0x8B9490).failed()
+        || finalizeMachine.installAtOffset(module, 0x8B8F40).failed())
+        return fail("hook install");
+    for (auto& slot : tileSlot) slot = -1;
     enabled = true;
-    logger.write("INSTALLED\n", 10);
-    logger.flush();
 }
 
 void poll() {
     if (!enabled) return;
-    static unsigned polls = 0;
-    __atomic_add_fetch(&tick, 1u, __ATOMIC_RELAXED);
-    __atomic_store_n(&drawn, 0u, __ATOMIC_RELAXED);
-    if (__atomic_add_fetch(&polls, 1u, __ATOMIC_RELAXED) % 30 != 0) return;
-    // poll may be reached via input and ordinary frame callbacks. Serialize
-    // the consumer too; do not keep the row lock during filesystem calls.
-    static unsigned char consumer = 0;
-    if (__atomic_test_and_set(&consumer, __ATOMIC_ACQUIRE)) return;
+    // poll() is reached from both the frame and the input-poll callbacks.
+    static unsigned char polling = 0;
+    if (__atomic_test_and_set(&polling, __ATOMIC_ACQUIRE)) return;
+    ++tick;
+    // The last frame the game read a button held: a press's answer is timed from it.
+    static uint32_t buttonsTick = 0;
+    if (tas::seen_buttons()) buttonsTick = tick;
+    lock(rowsLock);
+    drawnThisTick = 0;
+    unlock(rowsLock);
+    if (tick % SAMPLE_FRAMES != 0) return unlock(polling);
+
     static Row batch[MAX_ROWS];
-    if (__atomic_test_and_set(&lock, __ATOMIC_ACQUIRE)) {
-        __atomic_clear(&consumer, __ATOMIC_RELEASE);
-        return;
-    }
-    const unsigned n = count;
+    static Machine states[MACHINES];
+    static unsigned sequence = 0;
+    lock(rowsLock);
+    const unsigned n = rowCount;
     const unsigned lost = __atomic_exchange_n(&dropped, 0u, __ATOMIC_RELAXED);
-    const auto markerPane = printed;
     std::memcpy(batch, rows, n * sizeof(Row));
-    count = 0;
-    __atomic_clear(&lock, __ATOMIC_RELEASE);
-    ++sequence;
-    logger.writef("BEGIN,%u,%u,%u,%llx,%u\n", sequence, n, lost, (unsigned long long)markerPane, tick);
+    rowCount = 0;
+    unlock(rowsLock);
+    lock(machinesLock);
+    std::memcpy(states, machines, sizeof(states));
+    unlock(machinesLock);
+
+    outLength = 0;
+    put("BEGIN,%u,%u,%u,%u\n", ++sequence, tick, n, lost);
     for (unsigned i = 0; i < n; ++i) {
         const Row& r = batch[i];
-        logger.writef("TEXT,%llx,%u,%u,%u,%u,%u,", (unsigned long long)r.pane,
-            r.encoding, r.length, r.capacity, r.flags, r.alpha);
-        hex(r.name, sizeof(r.name));
-        logger.write(",", 1);
-        hex(r.text, r.bytes);
-        logger.writef(",%u,%u,%llx,", r.tick, r.order, (unsigned long long)r.root);
-        for (unsigned d = 0; d < r.depth; ++d) {
-            if (d) logger.write("/", 1);
-            hex(r.path[d], sizeof(r.path[d]));
+        put("TEXT,%u,%u,%llx,%.2f,%.2f,%.4f,%u,", r.tick, r.order, (unsigned long long)r.root,
+            r.x, r.y, r.scale, r.encoding);
+        putName(r.name);
+        put(",");
+        for (unsigned d = r.depth; d-- > 0;) {  // root first
+            putName(r.path[d]);
+            put("/");
         }
-        logger.write(",", 1);
-        hex(r.geom, GEOM_BYTES);
-        logger.write("\n", 1);
+        put(",");
+        putHex(r.text, r.bytes);
+        put(",%u\n", r.length);
     }
-    if (focusPath[0]) logger.writef("FOCUS,%u,%s\n", focusTick, focusPath);
-    // A copy under the lock: the render and game threads write the table.
-    static Machine copy[MACHINES];
-    while (__atomic_test_and_set(&machinesLock, __ATOMIC_ACQUIRE)) {}
-    std::memcpy(copy, machines, sizeof(copy));
-    // Names again every 16 samples: the reader only scans the log's tail.
-    const bool again = sequence % 16 == 0;
-    for (auto& m : copy) if (again) m.described = false;
-    for (auto& m : machines) if (m.machine) m.described = true;
-    __atomic_clear(&machinesLock, __ATOMIC_RELEASE);
-    for (const auto& m : copy) {
+    if (focusPath[0]) put("FOCUS,%s,%d\n", focusPath, focusInput());
+    put("INPUT,%u,%u\n", inputOnTick, inputOffTick);
+    put("PAD,%llx,%u\n", (unsigned long long)tas::seen_buttons(), buttonsTick);
+    for (const auto& m : states) {
         if (!m.machine) continue;
-        if (!m.described) {
-            // Once per machine: every state name, which says what screen it is.
-            logger.writef("MACHINE,%llx,%d,", (unsigned long long)m.machine, m.count);
-            for (int32_t i = 0; i < m.count; ++i) {
-                if (i) logger.write("|", 1);
-                if (m.names[i]) logger.write(m.names[i], strnlen(m.names[i], 48));
-            }
-            logger.write("\n", 1);
-        }
-        logger.writef("STATE,%llx,%u,%x,%d,%d,%.40s,%u\n", (unsigned long long)m.machine, m.changed,
-            m.caller, m.state, m.frames, m.name ? m.name : "", m.executed);
+        const char* name = m.state >= 0 && m.state < m.count ? m.names[m.state] : nullptr;
+        put("STATE,%llx,%u,%u,%d,%.48s,", (unsigned long long)m.machine, m.executed, m.changed,
+            m.frames, name ? name : "");
+        // All its state names, which say what screen it is.
+        for (int32_t i = 0; i < m.count; ++i) put(i ? "|%.48s" : "%.48s", m.names[i] ? m.names[i] : "");
+        put("\n");
     }
     if (tilesSeen) {
-        logger.write("SLOTS", 5);
-        for (unsigned i = 0; i < TILES; ++i) logger.writef(",%d", tileSlot[i]);
-        logger.write("\n", 1);
+        put("SLOTS");
+        for (auto slot : tileSlot) put(",%d", slot);
+        put("\n");
     }
-    logger.writef("END,%u\n", sequence);
-    logger.flush();
-    __atomic_clear(&consumer, __ATOMIC_RELEASE);
+    put("END,%u\n", sequence);
+    writeScreen();
+    unlock(polling);
 }
-}
+}  // namespace smm2::ui_probe

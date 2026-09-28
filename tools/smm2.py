@@ -419,22 +419,27 @@ class Game:
         elif not self.to_editor():
             return False
 
-        if not on_grid:
-            # Clear any focus
-            self.press('B', 100)
-            time.sleep(0.3)
-
         if not on_grid and self._ui_observed():
             # Editor -> main menu -> Coursebot, each step on the game's word.
-            self._press('PLUS', focus=False)
+            # The main menu may be open already (status.bin still says editor).
+            if not any(s.startswith('main_menu:') for s in self.ui().get('screens') or []):
+                self.press('B', 100)  # drop whatever the editor has in hand
+                self.wait_until(focus=False, what='the editor')
+                self._press('PLUS', focus=False)
             # The Coursebot button draws its label only while focused, so it
             # cannot be steered to by text; it sits right of Course Maker.
-            v = self._press('RIGHT')
-            if v.get('focus_path') != '/L_LclBtn_00':
+            v = self.wait_until(what='the main menu')
+            if v.get('focus') != '/L_LclBtn_00':
+                v = self._press('RIGHT')
+            if v.get('focus') != '/L_LclBtn_00':
                 raise RuntimeError(f'main menu: RIGHT did not focus Coursebot: {v}')
             self._press('A')
             start_count = self._coursebot_play_observed(slot)
         elif not on_grid:
+            # Clear any focus
+            self.press('B', 100)
+            time.sleep(0.3)
+
             # PLUS -> Main Menu
             self.press('PLUS', 150)
             time.sleep(1.5)  # wait for menu animation
@@ -568,16 +573,17 @@ class Game:
     # -- menus, driven by what the game draws (tools/ui_probe.py) -----------
 
     def ui(self, full=False):
-        """The active menu layer: texts, focused control, Coursebot course_slot.
+        """The menus now: active texts, focused control, ready, Coursebot course_slot.
 
-        Needs sd:/smm2-hooks/ui-probe.txt = 'capture' at boot. full=True
-        keeps the rows with their screen positions (x right, y up).
+        Needs sd:/smm2-hooks/ui-probe.txt = 'capture' at boot (docs/ui-probe.md).
+        full=True returns ui_probe.screen(): every visible row with its position
+        (x right, y up) and layer.
         """
         import ui_probe
-        path = Path(self.sd) / 'ui-probe.log'
+        path = Path(self.sd) / 'ui-screen.txt'
         if not full:
-            return ui_probe.observe(path, timeout=0)
-        sample = ui_probe.read_log(path).get('sample')
+            return ui_probe.observe(path)
+        sample = ui_probe.read(path).get('sample')
         return ui_probe.screen(sample) if sample else None
 
     def wait_until(self, condition=lambda v: True, what='the menus to settle', focus=True,
@@ -587,55 +593,63 @@ class Game:
         Ready is the game's own screen state (ui_probe.menu_state): a screen in
         a Disp* state and none appearing, disappearing, opening, closing,
         leaving or loading. focus=True also waits for the game to focus a
-        control. `after` skips samples up to that sequence. `hang` only guards
-        against a game that never gets there; it raises with the screens and
-        transitions it was stuck in.
+        control and switch that control's input on. `after` skips snapshots up to that game tick. `hang` only
+        guards against a game that never gets there; it raises with the
+        screens and transitions it was stuck in.
         """
         deadline = time.time() + hang
         while True:
             v = self.ui()
-            fresh = after is None or (v.get('sequence') or 0) > after
-            if fresh and v.get('ready') and (not focus or v.get('focus_path')) and condition(v):
+            fresh = after is None or (v.get('tick') or 0) > after
+            takes_input = v.get('focus') and v.get('input') is not False
+            if fresh and v.get('ready') and (not focus or takes_input) and condition(v):
                 return v
             if time.time() >= deadline:
                 raise RuntimeError(f'waited {hang:.0f} s for {what}: screens {v.get("screens")}, '
                                    f'transitions {v.get("transitions")}, focus {v.get("focused")!r}')
-            time.sleep(0.1)
+            time.sleep(0.05)
+
+    # Frames of settled menus after a press with nothing changed: the game ignored it.
+    IGNORED_AFTER_FRAMES = 30
 
     def _press(self, button, focus=True):
         """Press once the menus take input, and return the game's answer.
 
-        Returns when a sample after the press shows the focus or the slot
-        moved and the menus settled again, or when two samples (60 frames)
-        after the press show them settled and unchanged: the game ignored it.
+        The answer is the first settled snapshot after the game read the button
+        that shows the focus or the slot moved, or, when nothing moves, the
+        one IGNORED_AFTER_FRAMES game frames after that read: the game ignored
+        the press. (Injected input reaches the game some frames after it is
+        written; the mod reports the last frame the game read a button held.)
         """
         before = self.wait_until(focus=focus, what=f'input before {button}')
         self.press(button, 100)
-        seq = before['sequence']
-        moved = lambda v: (v.get('focus_path'), v.get('course_slot')) != (before.get('focus_path'), before.get('course_slot'))
-        return self.wait_until(lambda v: moved(v) or v['sequence'] >= seq + 3, focus=focus,
-                               after=seq + 1, what=f'the game to answer {button}')
+        key = lambda v: (v.get('focus'), v.get('course_slot'))
+        seen = lambda v: v.get('buttons_tick', 0) > before['tick']
+        return self.wait_until(
+            lambda v: seen(v) and (key(v) != key(before) or v['tick'] >= v['buttons_tick'] + self.IGNORED_AFTER_FRAMES),
+            focus=focus, after=before['tick'], what=f'the game to answer {button}')
 
     def focus(self, text, max_presses=12):
         """Move the menu focus onto the active control labelled `text`.
 
         Steps toward the target's drawn position, one press at a time, and
-        checks the game's focus after each. Returns the final ui() view, or
-        raises when the label is not on the active layer, is not unique, or
-        the focus stops moving.
+        checks the game's focus after each; a press the game ignored (a
+        button still animating its last focus change does) is pressed again.
+        Returns the final ui() view, or raises when the label is not on the
+        active layer, is not unique, or is not reached within max_presses.
         """
-        revealed = False
         for _ in range(max_presses):
             view = self.ui(full=True)
-            if view and not view['focused'] and not revealed:
+            if view is None:
+                raise RuntimeError(f'no UI snapshot: {self.ui()}')
+            if not view['focused']:
                 # A freshly opened menu such as the pause menu focuses
                 # nothing: the game makes no focus call until the first
                 # direction press, which lands on the menu's first control.
+                # That press counts once the screen has switched its input on.
+                self.wait_until(lambda v: v.get('screen_input'), focus=False, what='the menu to take input')
                 self._press('DOWN', focus=False)
-                revealed = True
                 continue
-            if not view or not view['focused']:
-                raise RuntimeError(f'no focused control on screen: {self.ui()}')
             if text in (view['focused']['text'], view['focused']['readable']):
                 return self.ui()
             targets = [r for r in view['active'] if text in (r['text'], r['readable'])]
@@ -643,14 +657,11 @@ class Game:
                 raise RuntimeError(f'{text!r} is on the active layer {len(targets)} times: {[r["text"] for r in view["active"]]}')
             dx = targets[0]['x'] - view['focused']['x']
             dy = targets[0]['y'] - view['focused']['y']
-            button = ('RIGHT' if dx > 0 else 'LEFT') if abs(dx) > abs(dy) else ('UP' if dy > 0 else 'DOWN')
-            after = self._press(button)
-            if after.get('focused_path') == view['focused']['path']:
-                raise RuntimeError(f'{button} did not move the focus off {view["focused"]["text"]!r}')
-        raise RuntimeError(f'focus did not reach {text!r} in {max_presses} presses')
+            self._press(('RIGHT' if dx > 0 else 'LEFT') if abs(dx) > abs(dy) else ('UP' if dy > 0 else 'DOWN'))
+        raise RuntimeError(f'focus did not reach {text!r} in {max_presses} presses: {self.ui()}')
 
     def _ui_observed(self, timeout=5.0):
-        """True when the UI probe is writing fresh samples (the mod read ui-probe.txt at boot)."""
+        """True when the UI probe is writing fresh snapshots (the mod read ui-probe.txt at boot)."""
         deadline = time.time() + timeout
         while True:
             if self.ui().get('status') == 'observed':
