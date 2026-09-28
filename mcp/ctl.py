@@ -26,7 +26,7 @@ import server  # noqa: E402  (imports eden, the tools and FastMCP; does not serv
 
 TOOLS = {
     "eden_state", "eden_launch", "eden_kill", "eden_set_gdbstub", "eden_log",
-    "game_status", "game_boot", "game_input", "levels_list", "level_install", "level_restore",
+    "game_status", "game_boot", "game_input", "ui_screen", "levels_list", "level_install", "level_restore",
     "trace_record",
 }
 

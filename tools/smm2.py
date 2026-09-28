@@ -418,7 +418,8 @@ class Game:
             raise ValueError(f"slot {slot!r} is not a Coursebot slot (0..{COURSEBOT_SLOTS - 1})")
         # Already on the Coursebot grid (status.bin says scene 0 there, so
         # to_editor cannot start from it): only the UI probe can tell.
-        on_grid = self.ui().get('course_slot') is not None
+        now = self.ui()
+        on_grid = now.get('status') == 'observed' and now.get('course_slot') is not None
         if on_grid:
             start_count = self._coursebot_play_observed(slot)
         elif not self.to_editor():
@@ -605,7 +606,8 @@ class Game:
         deadline = time.time() + hang
         while True:
             v = self.ui()
-            fresh = after is None or (v.get('tick') or 0) > after
+            # A stale snapshot is an old screen (the game is gone or the mod did not load).
+            fresh = v.get('status') == 'observed' and (after is None or (v.get('tick') or 0) > after)
             takes_input = v.get('focus') and v.get('input') is not False
             if fresh and v.get('ready') and (not focus or takes_input) and condition(v):
                 return v
