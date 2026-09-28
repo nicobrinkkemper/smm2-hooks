@@ -131,6 +131,30 @@ def screen(sample):
     return {"course_slot":slot,"rows":rows,"focused":focus,"focus_candidates":len(focused),
         "active":[r for r in rows if not r["background"]]}
 
+def compact(view):
+    """The active layer as an agent needs it: texts, the focused one, the slot."""
+    f=view["focused"]
+    return {"focused":f["text"] if f else None,"focused_path":f["path"] if f else None,
+        "course_slot":view["course_slot"],"texts":[r["text"] for r in view["active"]],
+        "background_texts":sum(r["background"] for r in view["rows"])}
+
+def observe(path, after=None, timeout=2.0):
+    """The newest complete sample, waiting for one written after sample `after`.
+
+    A press shows up in the next sample at the earliest (the mod writes one
+    every 30 frames), so callers pass the sequence they saw before pressing.
+    """
+    deadline=time.time()+timeout
+    while True:
+        result=read_log(path); sample=result.get("sample")
+        fresh=sample and (after is None or sample["sequence"]>after+1)
+        if fresh or time.time()>=deadline:
+            if not sample: return {"status":result["status"],"path":str(path)}
+            out=compact(screen(sample)); out.update(status=result["status"] if fresh else "not-updated",
+                sequence=sample["sequence"])
+            return out
+        time.sleep(0.1)
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path",type=Path,help="SD smm2-hooks/ui-probe.log")

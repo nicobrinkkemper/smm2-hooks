@@ -549,6 +549,81 @@ class Game:
         )
         return result.returncode == 0
 
+    # -- menus, driven by what the game draws (tools/ui_probe.py) -----------
+
+    def ui(self, full=False):
+        """The active menu layer: texts, focused control, Coursebot course_slot.
+
+        Needs sd:/smm2-hooks/ui-probe.txt = 'capture' at boot. full=True
+        keeps the rows with their screen positions (x right, y up).
+        """
+        import ui_probe
+        path = Path(self.sd) / 'ui-probe.log'
+        if not full:
+            return ui_probe.observe(path, timeout=0)
+        sample = ui_probe.read_log(path).get('sample')
+        return ui_probe.screen(sample) if sample else None
+
+    def _press_and_observe(self, button, timeout=2.5):
+        """Press, then wait until a sample written after the press shows a change of focus."""
+        import ui_probe
+        path = Path(self.sd) / 'ui-probe.log'
+        before = ui_probe.observe(path, timeout=0)
+        self.press(button, 100)
+        deadline = time.time() + timeout
+        seen = before
+        while time.time() < deadline:
+            seen = ui_probe.observe(path, after=before.get('sequence'), timeout=1.0)
+            if seen.get('focused_path') != before.get('focused_path') or seen.get('course_slot') != before.get('course_slot'):
+                return seen
+        return seen
+
+    def focus(self, text, max_presses=12):
+        """Move the menu focus onto the active control labelled `text`.
+
+        Steps toward the target's drawn position, one press at a time, and
+        checks the game's focus after each. Returns the final ui() view, or
+        raises when the label is not on the active layer, is not unique, or
+        the focus stops moving.
+        """
+        for _ in range(max_presses):
+            view = self.ui(full=True)
+            if not view or not view['focused']:
+                raise RuntimeError(f'no focused control on screen: {self.ui()}')
+            if view['focused']['text'] == text:
+                return self.ui()
+            targets = [r for r in view['active'] if r['text'] == text]
+            if len(targets) != 1:
+                raise RuntimeError(f'{text!r} is on the active layer {len(targets)} times: {[r["text"] for r in view["active"]]}')
+            dx = targets[0]['x'] - view['focused']['x']
+            dy = targets[0]['y'] - view['focused']['y']
+            button = ('RIGHT' if dx > 0 else 'LEFT') if abs(dx) > abs(dy) else ('UP' if dy > 0 else 'DOWN')
+            after = self._press_and_observe(button)
+            if after.get('focused_path') == view['focused']['path']:
+                raise RuntimeError(f'{button} did not move the focus off {view["focused"]["text"]!r}')
+        raise RuntimeError(f'focus did not reach {text!r} in {max_presses} presses')
+
+    def select_slot(self, slot, max_presses=60):
+        """On the Coursebot grid, move the focus to course `slot` (4 per row).
+
+        Reads the slot the game bound to the focused tile after every press,
+        so a press eaten by the scroll animation is simply retried.
+        """
+        if not isinstance(slot, int) or not 0 <= slot < COURSEBOT_SLOTS:
+            raise ValueError(f'slot {slot!r} is not a Coursebot slot (0..{COURSEBOT_SLOTS - 1})')
+        for _ in range(max_presses):
+            cur = self.ui().get('course_slot')
+            if cur is None:
+                raise RuntimeError(f'not on the Coursebot grid: {self.ui()}')
+            if cur == slot:
+                return self.ui()
+            if cur % 4 != slot % 4:
+                button = 'RIGHT' if slot % 4 > cur % 4 else 'LEFT'
+            else:
+                button = 'DOWN' if slot > cur else 'UP'
+            self._press_and_observe(button)
+        raise RuntimeError(f'slot {slot} not reached in {max_presses} presses')
+
     def screenshot(self, out_path='/mnt/c/temp/smm2_debug/capture.png'):
         """Take screenshot of emulator window."""
         tools_dir = Path(__file__).parent

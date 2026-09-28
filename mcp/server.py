@@ -150,12 +150,37 @@ def game_status() -> dict:
     return out
 
 
+def _ui_log() -> Path:
+    return Path(P.sd_hooks_dir) / "ui-probe.log"
+
+
+@tool()
+def ui_screen(full: bool = False) -> dict:
+    """What the menus show now, read from the game's own text panes (needs sd:/smm2-hooks/ui-probe.txt = 'capture' at boot).
+
+    Returns the active layer's texts in draw order, the focused control (the one the game's focus
+    animation enlarges), and course_slot when the focus is a Coursebot tile. Panes drawn off-screen
+    or under a modal (the grid behind course details, the details behind a dialog) are left out.
+    full=True adds every on-screen row with its pane path, position and layer."""
+    import ui_probe  # noqa: WPS433
+    if not full:
+        return ui_probe.observe(_ui_log(), timeout=0)
+    result = ui_probe.read_log(_ui_log())
+    if not result.get("sample"):
+        return result
+    view = ui_probe.screen(result["sample"])
+    return {**ui_probe.compact(view), "status": result["status"], "rows": view["rows"]}
+
+
 @tool(exclusive=True)
 def game_input(buttons: str, ms: int = 120) -> dict:
-    """Press buttons through the hook mod, e.g. 'A', 'B', 'MINUS', 'L+R', 'RIGHT', 'B+MINUS'. Works in every scene."""
+    """Press buttons through the hook mod, e.g. 'A', 'B', 'MINUS', 'L+R', 'RIGHT', 'B+MINUS'. Works in every scene. 'ui' is ui_screen after the press (status 'not-updated' if no newer sample came in 2 s)."""
+    import ui_probe  # noqa: WPS433
+    before = ui_probe.read_log(_ui_log()).get("sample")
     g = _game()
     g.press(buttons, ms=ms)
-    return {"pressed": buttons, "ms": ms, "status": eden.read_status(P)}
+    ui = ui_probe.observe(_ui_log(), after=before["sequence"] if before else None) if before else None
+    return {"pressed": buttons, "ms": ms, "status": eden.read_status(P), "ui": ui}
 
 
 _NAV: dict = {}  # the navigation still running after game_boot returned pending, if any
