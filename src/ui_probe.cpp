@@ -124,6 +124,28 @@ HkTrampoline<void, void*, int, int> bindTile = hk::hook::trampoline(
         if (tile >= 0 && static_cast<unsigned>(tile) < TILES) { tileSlot[tile] = slot; tilesSeen = true; }
     });
 
+// Menu focus. The game's buttons change focus through two methods of one
+// class: sub_7101B61810(button, 1, ...) on the button losing it and
+// sub_7101B615E0(button, 0, ...) on the one gaining it (every cursor move in
+// the main menu, Coursebot grid, course details, tabs and dialogs). The
+// button's pane path, e.g. "/L_CourseDataList_01/L_CourseBtn_01", is an
+// inline string at *(button+0x58)+0xA0.
+constexpr unsigned FOCUS_BYTES = 64;
+char focusPath[FOCUS_BYTES] = {};
+uint32_t focusTick = 0;
+HkTrampoline<void, void*, unsigned, unsigned, unsigned, unsigned, void*> focusOn = hk::hook::trampoline(
+    [](void* button, unsigned action, unsigned state, unsigned a4, unsigned a5, void* a6) -> void {
+        focusOn.orig(button, action, state, a4, a5, a6);
+        const auto holder = field<uintptr_t>(button, 0x58);
+        if (!plausible(holder)) return;
+        const auto* path = reinterpret_cast<const char*>(holder + 0xA0);
+        unsigned n = 0;
+        while (n < FOCUS_BYTES - 1 && path[n] >= 0x20 && path[n] < 0x7F) ++n;
+        std::memcpy(focusPath, path, n);
+        focusPath[n] = 0;
+        focusTick = __atomic_load_n(&tick, __ATOMIC_RELAXED);
+    });
+
 HkTrampoline<void, void*, void*, void*> draw = hk::hook::trampoline(
     [](void* pane, void* drawInfo, void* commandBuffer) -> void {
         draw.orig(pane, drawInfo, commandBuffer);
@@ -154,9 +176,18 @@ void init() {
     logger.init("ui-probe.log");
     auto bad = [](const char* why) { logger.writef("CONFIG_ERROR,%s\n", why); logger.flush(); };
     if (rc != 0 || !size || size >= sizeof(config)-1) return bad("read");
-    if (std::strcmp(config, "capture\n") != 0 && std::strcmp(config, "capture") != 0) {
+    // Eden can fill the buffer past the bytes it reports read (a "capture\n"
+    // config failed the comparison on some boots), so end the string there.
+    config[size] = 0;
+    while (size && (config[size-1] == '\n' || config[size-1] == '\r')) config[--size] = 0;
+    if (std::strcmp(config, "capture") != 0) {
         char* line = std::strchr(config, '\n');
-        if (!line || std::strncmp(config, "print=", 6) != 0) return bad("mode");
+        if (!line || std::strncmp(config, "print=", 6) != 0) {
+            logger.write("CONFIG_BYTES,", 13);
+            hex(config, size < 16 ? size : 16);
+            logger.write("\n", 1);
+            return bad("mode");
+        }
         *line++ = 0;
         if (std::strncmp(line, "expect=", 7) != 0) return bad("expect");
         char* end = std::strchr(line, '\n');
@@ -166,7 +197,7 @@ void init() {
         std::strcpy(printPane, config+6);
         std::strcpy(expected, line+7);
     }
-    logger.writef("UI_PROBE,3,303,draw_submission,mode=%s\n", printPane[0] ? "print" : "capture");
+    logger.writef("UI_PROBE,4,303,draw_submission,mode=%s\n", printPane[0] ? "print" : "capture");
     auto result = draw.installAtOffset(hk::ro::getMainModule(), 0x4C38B0);
     // Hakkun aborts on installation failure when requested; explicitly report it here.
     if (result.failed()) {
@@ -174,6 +205,8 @@ void init() {
         logger.flush();
         return;
     }
+    if (focusOn.installAtOffset(hk::ro::getMainModule(), 0x1B615E0).failed())
+        logger.write("FOCUS_INSTALL_FAILED\n", 21);
     for (auto& t : tileSlot) t = -1;
     if (bindTile.installAtOffset(hk::ro::getMainModule(), 0x1897360).failed())
         logger.write("TILE_INSTALL_FAILED\n", 20);
@@ -221,6 +254,7 @@ void poll() {
         hex(r.geom, GEOM_BYTES);
         logger.write("\n", 1);
     }
+    if (focusPath[0]) logger.writef("FOCUS,%u,%s\n", focusTick, focusPath);
     if (tilesSeen) {
         logger.write("SLOTS", 5);
         for (unsigned i = 0; i < TILES; ++i) logger.writef(",%d", tileSlot[i]);

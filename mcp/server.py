@@ -158,8 +158,8 @@ def _ui_log() -> Path:
 def ui_screen(full: bool = False) -> dict:
     """What the menus show now, read from the game's own text panes (needs sd:/smm2-hooks/ui-probe.txt = 'capture' at boot).
 
-    Returns the active layer's texts in draw order, the focused control (the one the game's focus
-    animation enlarges), and course_slot when the focus is a Coursebot tile. Panes drawn off-screen
+    Returns the active layer's texts in draw order, the focused control (the button the game last
+    focused, when it is drawn), and course_slot when the focus is a Coursebot tile. Panes drawn off-screen
     or under a modal (the grid behind course details, the details behind a dialog) are left out.
     full=True adds every on-screen row with its pane path, position and layer."""
     import ui_probe  # noqa: WPS433

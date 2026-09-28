@@ -11,7 +11,7 @@ import re
 import struct
 import time
 
-HEADER = "UI_PROBE,3,303,draw_submission,mode="
+HEADER = "UI_PROBE,4,303,draw_submission,mode="
 
 def decode_row(line):
     fields = line.split(",")
@@ -60,6 +60,9 @@ def parse_samples(text):
                 current["rows"].append(decode_row(line))
                 if len(current["rows"])>current["expected_rows"]: raise ValueError("too many rows")
             except ValueError as e: current=None; errors.append(str(e))
+        elif line.startswith("FOCUS,") and current is not None:
+            _,focus_tick,focus_path=line.split(",",2)
+            current["focus"]={"tick":int(focus_tick),"path":focus_path}
         elif line.startswith("SLOTS,") and current is not None:
             try: current["slots"]=[int(v) for v in line.split(",")[1:]]
             except ValueError as e: current=None; errors.append(str(e))
@@ -103,33 +106,40 @@ def readable(text):
     return "".join(f"[{GLYPHS[ord(c)]}]" if ord(c) in GLYPHS
                    else f"[U+{ord(c):04X}]" if 0xE000 <= ord(c) <= 0xF8FF else c for c in text)
 
+def under(path, focus_path):
+    """True when the pane path runs through every component of the focus path, in order."""
+    parts=iter(path.split("/"))
+    return all(any(p==want for p in parts) for want in focus_path.strip("/").split("/"))
+
 def screen(sample):
     """The rows a player can see, with the focused control marked.
 
     Global position is the pane's global matrix translation (pane+0x7C,
     +0x8C; 1280x720 with the origin at the centre). Panes outside that box
     were still drawn (the Coursebot details panel draws below the screen
-    before it slides in), so they are dropped. Focus is the button whose
-    global scale is above 1: the game's focus animation enlarges the focused
-    control (1.03 dialog and details buttons, 1.05 course tiles, 1.08 main
-    menu, measured 2026-09-28); nothing else on those screens was scaled up.
+    before it slides in), so they are dropped.
 
-    Panes under a modal keep drawing (the grid behind the details panel, the
-    details behind a dialog). ui2d draws back to front, so the rows drawn
-    before the focused control's layout (its topmost ancestor) are marked
-    background; the rest are the active layer. Rows from an older tick than
-    the newest are dropped: they were not drawn in the latest frame.
+    Focus is the game's: the mod records the pane path of the last button
+    the game focused (sub_7101B615E0), and the focused rows are the text
+    panes drawn under that path; with repeats, the last drawn (topmost).
+    ui2d draws back to front, so the rows drawn before the focused
+    control's layout (its topmost ancestor) are marked background. Rows from
+    an older tick than the newest are dropped: they were not drawn in the
+    latest frame.
     """
     newest=max((r["tick"] for r in sample["rows"]),default=0)
+    focus_path=(sample.get("focus") or {}).get("path")
     rows=[]
     for r in sample["rows"]:
         g=r["geom"]; x,y,sx=g[19],g[23],g[16]
         if abs(x)>SCREEN_HALF_W or abs(y)>SCREEN_HALF_H or r["tick"]!=newest: continue
-        rows.append({"root":r["root"],"order":r["order"],"path":r["path"]+"/"+r["pane_name"],
-            "text":r["text"],"x":x,"y":y,"scale":sx,"focused":sx>1.001})
+        path=r["path"]+"/"+r["pane_name"]
+        rows.append({"root":r["root"],"order":r["order"],"path":path,"text":r["text"],"x":x,"y":y,
+            "scale":sx,"focused":bool(focus_path) and under(path,focus_path)})
     rows.sort(key=lambda r:r["order"])
     focused=[r for r in rows if r["focused"]]
-    focus=focused[0] if len(focused)==1 else None
+    focus=focused[-1] if focused else None
+    for r in rows: r["focused"]=r is focus
     start=min((r["order"] for r in rows if focus and r["root"]==focus["root"]),default=0)
     for r in rows: r["background"]=r["order"]<start
     # Coursebot tile "/L_CourseDataList_0R/L_CourseBtn_0C" is entry 4R+C of the
@@ -140,13 +150,16 @@ def screen(sample):
         i=4*int(m.group(1))+int(m.group(2))
         if i<len(sample["slots"]) and sample["slots"][i]>=0: slot=sample["slots"][i]
     for r in rows: r["readable"]=readable(r["text"])
-    return {"course_slot":slot,"rows":rows,"focused":focus,"focus_candidates":len(focused),
+    return {"course_slot":slot,"rows":rows,"focused":focus,"focus_path":focus_path,
         "active":[r for r in rows if not r["background"]]}
 
 def compact(view):
     """The active layer as an agent needs it: texts, the focused one, the slot."""
     f=view["focused"]
     return {"focused":readable(f["text"]) if f else None,"focused_path":f["path"] if f else None,
+        # the game's last focused button, when it is drawn on screen (a menu
+        # that just opened focuses nothing, and the path is then stale)
+        "focus_path":view["focus_path"] if f else None,
         "course_slot":view["course_slot"],"texts":[readable(r["text"]) for r in view["active"]],
         "background_texts":sum(r["background"] for r in view["rows"])}
 

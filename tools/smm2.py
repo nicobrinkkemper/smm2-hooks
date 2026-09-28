@@ -598,9 +598,9 @@ class Game:
         for _ in range(max_presses):
             view = self.ui(full=True)
             if view and not view['focused'] and not revealed:
-                # A freshly opened menu (main menu, pause menu) shows no
-                # cursor; the first direction press puts it on the menu's
-                # first control without moving it.
+                # A freshly opened menu such as the pause menu focuses
+                # nothing: the game makes no focus call until the first
+                # direction press, which lands on the menu's first control.
                 self._press_and_observe('DOWN')
                 revealed = True
                 continue
