@@ -549,8 +549,10 @@ def trace_record(action: str = "status", name: str = "", presets: str = "player,
         except SystemExit as e:
             return {"error": str(e), "recording": state}
         status = eden.read_status(P)
-        meta = {**state, "stopped": time.strftime("%Y-%m-%d %H:%M:%S"), "decoded": decoded,
-                "status_at_stop": status, "files": {"fixture": fixture, "inputs": inputs}}
+        # The sidecar is committed next to its CSVs: names only, no paths from this machine.
+        recorded = {k: v for k, v in state.items() if k != "out_dir"}
+        meta = {**recorded, "stopped": time.strftime("%Y-%m-%d %H:%M:%S"), "decoded": decoded,
+                "status_at_stop": status, "files": {"fixture": Path(fixture).name, "inputs": Path(inputs).name}}
         Path(sidecar).write_text(json.dumps(meta, indent=1))
         rec.unlink()
         return {"saved": {"fixture": fixture, "inputs": inputs, "sidecar": sidecar}, "decoded": decoded, "status_at_stop": status}
