@@ -95,7 +95,7 @@ extern "C" void hkMain() {
     smm2::frame::init(on_frame);
 
     // Init plugins - ALL ENABLED
-    smm2::ui_probe::init();        // opt-in UI text/print experiment
+    smm2::ui_probe::init();         // opt-in: menus to ui-screen.txt when ui-probe.txt says capture
     smm2::tas::init();              // input.bin live mode (FullKey = Pro Controller; Eden maps keyboard to it)
     smm2::status::init();           // writes status.bin, hooks PlayerObject_changeState
     smm2::game_phase::init();       // reads GamePhaseManager
