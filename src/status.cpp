@@ -1,4 +1,5 @@
 #include "smm2/status.h"
+#include "smm2/ui_probe.h"
 #include "smm2/player.h"
 #include "smm2/tas.h"
 #include "smm2/game_phase.h"
@@ -78,6 +79,7 @@ void update_from_input_poll() {
 }
 
 void update(uint32_t frame) {
+    ui_probe::poll();
     s_last_procframe = frame;
     
     // Dump OpenFile log once after system is stable (frame 100)

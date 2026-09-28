@@ -51,6 +51,7 @@ namespace btn {
 
 void init();
 uint32_t input_poll_count();
+uint64_t seen_buttons();  // the Pro Controller buttons the game read last, injected ones included
 
 } // namespace tas
 } // namespace smm2

@@ -46,6 +46,7 @@ TOOLS = {
     "game_status": 15,
     "game_boot": 200,
     "game_input": 20,
+    "ui_screen": 15,
     "levels_list": 30,
     "level_install": 30,
     "level_restore": 15,

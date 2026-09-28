@@ -416,54 +416,76 @@ class Game:
         """
         if not isinstance(slot, int) or not 0 <= slot < COURSEBOT_SLOTS:
             raise ValueError(f"slot {slot!r} is not a Coursebot slot (0..{COURSEBOT_SLOTS - 1})")
-        # First get to editor
-        if not self.to_editor():
+        # Already on the Coursebot grid (status.bin says scene 0 there, so
+        # to_editor cannot start from it): only the UI probe can tell.
+        now = self.ui()
+        on_grid = now.get('status') == 'observed' and now.get('course_slot') is not None
+        if on_grid:
+            start_count = self._coursebot_play_observed(slot)
+        elif not self.to_editor():
             return False
 
-        # Clear any focus
-        self.press('B', 100)
-        time.sleep(0.3)
+        if not on_grid and self._ui_observed():
+            # Editor -> main menu -> Coursebot, each step on the game's word.
+            # The main menu may be open already (status.bin still says editor).
+            if not any(s.startswith('main_menu:') for s in self.ui().get('screens') or []):
+                self.press('B', 100)  # drop whatever the editor has in hand
+                self.wait_until(focus=False, what='the editor')
+                self._press('PLUS', focus=False)
+            # The Coursebot button draws its label only while focused, so it
+            # cannot be steered to by text; it sits right of Course Maker.
+            v = self.wait_until(what='the main menu')
+            if v.get('focus') != '/L_LclBtn_00':
+                v = self._press('RIGHT')
+            if v.get('focus') != '/L_LclBtn_00':
+                raise RuntimeError(f'main menu: RIGHT did not focus Coursebot: {v}')
+            self._press('A')
+            start_count = self._coursebot_play_observed(slot)
+        elif not on_grid:
+            # Clear any focus
+            self.press('B', 100)
+            time.sleep(0.3)
 
-        # PLUS -> Main Menu
-        self.press('PLUS', 150)
-        time.sleep(1.5)  # wait for menu animation
+            # PLUS -> Main Menu
+            self.press('PLUS', 150)
+            time.sleep(1.5)  # wait for menu animation
 
-        # RIGHT -> Coursebot icon
-        self.press('RIGHT', 100)
-        time.sleep(0.3)
-
-        # A -> Enter Coursebot
-        self.press('A', 100)
-        time.sleep(3.0)  # wait for coursebot to load courses
-
-        # The grid remembers its cursor across visits, so home it first.
-        self._coursebot_home()
-
-        # Navigate to slot. Presses during the scroll animation are dropped,
-        # hence the generous spacing.
-        row = slot // 4
-        col = slot % 4
-        for _ in range(col):
+            # RIGHT -> Coursebot icon
             self.press('RIGHT', 100)
-            time.sleep(0.5)
-        for i in range(row):
-            self.press('DOWN', 100)
-            # rows 0..3 are on screen; from row 3 on every DOWN scrolls the
-            # list and a press during that animation is dropped (slot 19
-            # landed on 15, 2026-09-09), so give the scroll time to finish
-            time.sleep(1.6 if i >= 2 else 0.5)
+            time.sleep(0.3)
 
-        # A -> course details; home the cursor on the tab bar, walk it to
-        # Play, A -> go. On an empty slot the same presses land on "Make New
-        # Course" (the only button), which the editor fallback below handles.
-        s = self.status()
-        start_count = s['scene_change_count'] if s else 0
-        self.press('A', 100)
-        time.sleep(2.0)
-        for button in ('UP', 'UP', 'UP', 'DOWN', 'DOWN', 'DOWN', 'RIGHT', 'DOWN'):
-            self.press(button, 100)
-            time.sleep(0.6)
-        self.press('A', 100)
+            # A -> Enter Coursebot
+            self.press('A', 100)
+            time.sleep(3.0)  # wait for coursebot to load courses
+
+            # The grid remembers its cursor across visits, so home it first.
+            self._coursebot_home()
+
+            # Navigate to slot. Presses during the scroll animation are dropped,
+            # hence the generous spacing.
+            row = slot // 4
+            col = slot % 4
+            for _ in range(col):
+                self.press('RIGHT', 100)
+                time.sleep(0.5)
+            for i in range(row):
+                self.press('DOWN', 100)
+                # rows 0..3 are on screen; from row 3 on every DOWN scrolls the
+                # list and a press during that animation is dropped (slot 19
+                # landed on 15, 2026-09-09), so give the scroll time to finish
+                time.sleep(1.6 if i >= 2 else 0.5)
+
+            # A -> course details; home the cursor on the tab bar, walk it to
+            # Play, A -> go. On an empty slot the same presses land on "Make New
+            # Course" (the only button), which the editor fallback below handles.
+            s = self.status()
+            start_count = s['scene_change_count'] if s else 0
+            self.press('A', 100)
+            time.sleep(2.0)
+            for button in ('UP', 'UP', 'UP', 'DOWN', 'DOWN', 'DOWN', 'RIGHT', 'DOWN'):
+                self.press(button, 100)
+                time.sleep(0.6)
+            self.press('A', 100)
 
         s = self.wait_for(
             lambda s: (s['scene_mode'] == SCENE_COURSEBOT and (s['has_player'] or s['state'] > 0))
@@ -553,6 +575,145 @@ class Game:
             capture_output=True, text=True, timeout=timeout
         )
         return result.returncode == 0
+
+    # -- menus, driven by what the game draws (tools/ui_probe.py) -----------
+
+    def ui(self, full=False):
+        """The menus now: active texts, focused control, ready, Coursebot course_slot.
+
+        Needs sd:/smm2-hooks/ui-probe.txt = 'capture' at boot (docs/ui-probe.md).
+        full=True returns ui_probe.screen(): every visible row with its position
+        (x right, y up) and layer.
+        """
+        import ui_probe
+        path = Path(self.sd) / 'ui-screen.txt'
+        if not full:
+            return ui_probe.observe(path)
+        sample = ui_probe.read(path).get('sample')
+        return ui_probe.screen(sample) if sample else None
+
+    def wait_until(self, condition=lambda v: True, what='the menus to settle', focus=True,
+                   after=None, hang=30.0):
+        """Wait for the game, not the clock: until the menus are ready and `condition` holds.
+
+        Ready is the game's own screen state (ui_probe.menu_state): a screen in
+        a Disp* state and none appearing, disappearing, opening, closing,
+        leaving or loading. focus=True also waits for the game to focus a
+        control and switch that control's input on. `after` skips snapshots up to that game tick. `hang` only
+        guards against a game that never gets there; it raises with the
+        screens and transitions it was stuck in.
+        """
+        deadline = time.time() + hang
+        while True:
+            v = self.ui()
+            # A stale snapshot is an old screen (the game is gone or the mod did not load).
+            fresh = v.get('status') == 'observed' and (after is None or (v.get('tick') or 0) > after)
+            takes_input = v.get('focus') and v.get('input') is not False
+            if fresh and v.get('ready') and (not focus or takes_input) and condition(v):
+                return v
+            if time.time() >= deadline:
+                raise RuntimeError(f'waited {hang:.0f} s for {what}: screens {v.get("screens")}, '
+                                   f'transitions {v.get("transitions")}, focus {v.get("focused")!r}')
+            time.sleep(0.05)
+
+    # Frames of settled menus after a press with nothing changed: the game ignored it.
+    IGNORED_AFTER_FRAMES = 30
+
+    def _press(self, button, focus=True):
+        """Press once the menus take input, and return the game's answer.
+
+        The answer is the first settled snapshot after the game read the button
+        that shows the focus or the slot moved, or, when nothing moves, the
+        one IGNORED_AFTER_FRAMES game frames after that read: the game ignored
+        the press. (Injected input reaches the game some frames after it is
+        written; the mod reports the last frame the game read a button held.)
+        """
+        before = self.wait_until(focus=focus, what=f'input before {button}')
+        self.press(button, 100)
+        key = lambda v: (v.get('focus'), v.get('course_slot'))
+        seen = lambda v: v.get('buttons_tick', 0) > before['tick']
+        return self.wait_until(
+            lambda v: seen(v) and (key(v) != key(before) or v['tick'] >= v['buttons_tick'] + self.IGNORED_AFTER_FRAMES),
+            focus=focus, after=before['tick'], what=f'the game to answer {button}')
+
+    def focus(self, text, max_presses=12):
+        """Move the menu focus onto the active control labelled `text`.
+
+        Steps toward the target's drawn position, one press at a time, and
+        checks the game's focus after each; a press the game ignored (a
+        button still animating its last focus change does) is pressed again.
+        Returns the final ui() view, or raises when the label is not on the
+        active layer, is not unique, or is not reached within max_presses.
+        """
+        for _ in range(max_presses):
+            view = self.ui(full=True)
+            if view is None:
+                raise RuntimeError(f'no UI snapshot: {self.ui()}')
+            if not view['focused']:
+                # A freshly opened menu such as the pause menu focuses
+                # nothing: the game makes no focus call until the first
+                # direction press, which lands on the menu's first control.
+                # That press counts once the screen has switched its input on.
+                self.wait_until(lambda v: v.get('screen_input'), focus=False, what='the menu to take input')
+                self._press('DOWN', focus=False)
+                continue
+            if text in (view['focused']['text'], view['focused']['readable']):
+                return self.ui()
+            targets = [r for r in view['active'] if text in (r['text'], r['readable'])]
+            if len(targets) != 1:
+                raise RuntimeError(f'{text!r} is on the active layer {len(targets)} times: {[r["text"] for r in view["active"]]}')
+            dx = targets[0]['x'] - view['focused']['x']
+            dy = targets[0]['y'] - view['focused']['y']
+            self._press(('RIGHT' if dx > 0 else 'LEFT') if abs(dx) > abs(dy) else ('UP' if dy > 0 else 'DOWN'))
+        raise RuntimeError(f'focus did not reach {text!r} in {max_presses} presses: {self.ui()}')
+
+    def _ui_observed(self, timeout=5.0):
+        """True when the UI probe is writing fresh snapshots (the mod read ui-probe.txt at boot)."""
+        deadline = time.time() + timeout
+        while True:
+            if self.ui().get('status') == 'observed':
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(0.25)
+
+    def _coursebot_play_observed(self, slot):
+        """Grid -> slot -> details -> Play by the game's own focus; returns the scene count before A."""
+        self.select_slot(slot)
+        s = self.status()
+        start_count = s['scene_change_count'] if s else 0
+        self.press('A', 100)
+        # A registered slot's details offer Play; an empty one only "Make New Course".
+        v = self.wait_until(lambda v: 'Play' in (v.get('texts') or [])
+                            or any(t.startswith('Make New') for t in v.get('texts') or []),
+                            what='the course details')
+        self.focus('Play' if 'Play' in v['texts'] else next(t for t in v['texts'] if t.startswith('Make New')))
+        self.wait_until(what='input before A')
+        self.press('A', 100)
+        return start_count
+
+    def select_slot(self, slot, max_presses=60):
+        """On the Coursebot grid, move the focus to course `slot` (4 per row).
+
+        Waits for the grid itself: its courses load (the loader machines
+        reach LoadEnd) and the game focuses a tile, which reports the slot the
+        game bound to it. Each move waits for the game's answer.
+        """
+        if not isinstance(slot, int) or not 0 <= slot < COURSEBOT_SLOTS:
+            raise ValueError(f'slot {slot!r} is not a Coursebot slot (0..{COURSEBOT_SLOTS - 1})')
+        v = self.wait_until(lambda v: v.get('course_slot') is not None, what='the Coursebot grid')
+        for _ in range(max_presses):
+            cur = v.get('course_slot')
+            if cur is None:
+                raise RuntimeError(f'the Coursebot grid lost focus: {v}')
+            if cur == slot:
+                return v
+            if cur % 4 != slot % 4:
+                button = 'RIGHT' if slot % 4 > cur % 4 else 'LEFT'
+            else:
+                button = 'DOWN' if slot > cur else 'UP'
+            v = self._press(button)
+        raise RuntimeError(f'slot {slot} not reached in {max_presses} presses')
 
     def screenshot(self, out_path='/mnt/c/temp/smm2_debug/capture.png'):
         """Take screenshot of emulator window."""

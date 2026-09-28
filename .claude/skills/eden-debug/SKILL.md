@@ -8,7 +8,7 @@ description: Drive a Super Mario Maker 2 debug session in the Eden emulator from
 Prefer the **smm2-hooks MCP tools** (server: `mcp/server.py`, registered in
 the agent's project `.mcp.json`, see `mcp/README.md`): `eden_state` is the truth about the emulator
 (mode, real config, status, mods, log), `eden_launch/eden_kill`, `game_boot`,
-`game_input`, `eden_screenshot`, `levels_list/level_install`, and the GDB tools
+`game_input`, `ui_screen`, `eden_screenshot`, `levels_list/level_install`, and the GDB tools
 (`gdb_attach`, `gdb_continue`, `gdb_interrupt`, `gdb_wait_stop`, `gdb_cmd`,
 `gdb_module_base`, `gdb_addr`, `gdb_detach`). The scripts below are what those
 tools wrap; use them directly only when the server is not loaded.
@@ -138,6 +138,16 @@ verify a generated level visually before doing anything with GDB.
 
 Do the navigation with GDB at `c` (running). Never leave GDB stopped during a
 scene change.
+
+**Menus**: with `capture` in `sd:/smm2-hooks/ui-probe.txt` (read at boot),
+`ui_screen` (MCP) or `Game.ui()` says what the menus show, which control the
+game focused, the Coursebot slot under it, and whether the menus take input
+(`ready`, from the screens' own state machines). `status.bin` reports scene 0
+on the Coursebot grid, details and dialogs alike, so tell menus apart here,
+not by `scene_mode`. Navigate with
+`Game.focus(label)`, `Game.select_slot(n)` and `Game.wait_until(...)`: they
+press only when the game takes input and wait for its answer, not for time.
+`docs/ui-probe.md` has the details.
 
 **Per-frame traces without GDB**: a probe (`docs/probe.md`) hooks a function
 named in `sd:/smm2-hooks/probe.txt` and logs its arguments plus fields behind
