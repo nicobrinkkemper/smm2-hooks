@@ -18,7 +18,8 @@ supported way to work with the emulator. `eden_state` returns the current
 | mode | meaning |
 |------|---------|
 | `off` | Eden not running |
-| `launching_or_frozen` | process up, no fresh `status.bin` yet |
+| `eden_ui_no_game` | Eden up in its own game-selection UI, no game booted this run |
+| `launching_or_frozen` | process up, a game ran this process but no fresh `status.bin` |
 | `waiting_for_debugger_or_paused` | GDB stub on and listening; attach + continue |
 | `title` | title screen / menus |
 | `editor` | **edit-time**: Course Maker; no actors run, no player |

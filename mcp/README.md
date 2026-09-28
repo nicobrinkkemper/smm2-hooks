@@ -17,7 +17,8 @@ SD and `load` directories and the GDB stub setting, and derives everything else
 | mode | meaning |
 |------|---------|
 | `off` | no eden.exe |
-| `launching_or_frozen` | process up, no fresh `status.bin` |
+| `eden_ui_no_game` | Eden up in its own game-selection UI, no game booted this run |
+| `launching_or_frozen` | process up, a game ran this process but no fresh `status.bin` |
 | `waiting_for_debugger_or_paused` | stub enabled and listening, no fresh status: attach GDB and continue |
 | `title` / `editor` / `editor_play` / `coursebot_play` / `loading` | from `status.bin` `scene_mode` |
 
@@ -37,7 +38,20 @@ it is cheap enough to poll every few seconds.
 GDB rules enforced by the server: no software breakpoints (`break` is refused),
 no `handle SIGTRAP ... pass`, one session, commands only while stopped.
 
-Register in a Claude Code project `.mcp.json`:
+Register it for Claude Code on the machine that has Eden and the game (local
+scope: this project on this machine, not the project's shared `.mcp.json`):
 
-    "smm2-hooks": { "command": "/home/nico/code/smm2-hooks/mcp/.venv/bin/python",
-                    "args": ["/home/nico/code/smm2-hooks/mcp/server.py"] }
+    claude mcp add -s local smm2-hooks -- "$PWD/mcp/.venv/bin/python" "$PWD/mcp/server.py"
+
+## The panel
+
+`mcp/panel.py` serves `mcp/panel.html`, the same tools as buttons: launch or
+kill the emulator, the live mode, install and restore Coursebot slots, boot a
+slot, record a play session, export a slot to the sim app. Every button runs
+one tool through `ctl.py`, so the page and the agent see one truth.
+
+    mcp/.venv/bin/python mcp/panel.py --port 5199      # http://127.0.0.1:5199/
+
+Export writes into `$SMM2_SIM_DIR`, else the sibling `../smm2-sim`. A dashboard
+that embeds pages (mission-control's Shells rail) points at the URL and uses
+that command line to start it.

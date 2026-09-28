@@ -325,6 +325,28 @@ def log_tail(p: EdenPaths, n: int = 12, grep: str | None = None) -> dict:
             "lines": [l[:200] for l in lines[-n:]]}
 
 
+def hooks_ran_this_process(p: EdenPaths, proc: dict | None) -> bool:
+    """Has the mod written status.bin since this Eden process started?
+
+    Eden is a general Switch emulator: with no game booted it sits in its own
+    game-selection UI, where no game code and so no hook runs. That looks the
+    same from outside as a game that launched and hung, and the two want
+    opposite responses (boot a game vs. kill Eden), so separate them by
+    whether status.bin has been touched during this process's lifetime.
+    """
+    started = (proc or {}).get("started")
+    if not started:
+        return False
+    f = Path(p.sd_hooks_dir) / "status.bin"
+    if not f.exists():
+        return False
+    try:
+        t0 = time.mktime(time.strptime(started, "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        return False
+    return f.stat().st_mtime >= t0
+
+
 # ── the one call ──────────────────────────────────────────────────────────
 
 def state(p: EdenPaths | None = None) -> dict:
@@ -339,6 +361,8 @@ def state(p: EdenPaths | None = None) -> dict:
         mode = st["scene"]
     elif cfg["use_gdbstub"] and listening:
         mode = "waiting_for_debugger_or_paused"
+    elif not hooks_ran_this_process(p, proc):
+        mode = "eden_ui_no_game"
     else:
         mode = "launching_or_frozen"
     return {

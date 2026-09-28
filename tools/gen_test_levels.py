@@ -100,6 +100,12 @@ OBJ_MUSHROOM = 20
 OBJ_SLOPE_GENTLE = 44  # Gentle slope
 OBJ_SLOPE_STEEP = 45   # Steep slope
 OBJ_NOTE_BLOCK = 23    # Note block (music block is the same id with a flag)
+OBJ_DOOR = 55          # Door; doors pair 2k with 2k+1 WITHIN one area
+OBJ_PIPE = 9           # Warp pipe; pipes pair by link (bits 20-23) and are
+                       # what crosses between the overworld and the subworld.
+                       # Flag words copied off The Lost Woods' own linked pair:
+PIPE_UP_LINK1 = 0x6140040     # mouth up (bits 5-6 = 2), link 1
+PIPE_RIGHT_LINK1 = 0x6140000  # mouth right (bits 5-6 = 0), link 1
 
 # Object flags (community BCD sheet, "Flags for Objects"). 0x40 and 0x6000000
 # are set on every object; the generator's default 0x06000040 is exactly that.
@@ -209,6 +215,30 @@ class LevelBuilder:
         self.theme_id = THEMES[theme]
         self.objects: List[dict] = []
         self.width = AREA_WIDTH   # tiles; goal_x and the area size derive from it
+        # A vertical area: orientation byte (area+0x03) 1, and the area's own
+        # height instead of the 27 rows a horizontal area gets. The camera
+        # scrolls up the column, and the spawner stops widening the view's
+        # top and bottom by +-1000 (sub_7100E40D80: that widening is the
+        # `if (!vertical)` branch), so what is loaded above and below is the
+        # view itself rather than the whole column.
+        self.vertical = False
+        self.height = 27          # tiles
+        # The overworld's liquid (area+0x04..0x07: end height, mode, speed,
+        # start height in rows; liquid.md). None leaves the header's zeros,
+        # no liquid. A still pool: start == end, mode 0.
+        self.liquid = None        # (end_row, mode, speed, start_row)
+        # The subworld (area 1). A vertical area has no goal of its own -- the
+        # goal lives in the overworld -- so a vertical column is always built
+        # here and reached through a door or pipe.
+        self.sub_vertical = False
+        self.sub_width = 84       # tiles
+        self.sub_height = 27
+        self.sub_theme = None     # None = the same theme as the overworld
+        self.sub_autoscroll = 0   # a vertical area scrolls UPWARD, and the
+                                  # scroll moves what is in spawn range with it
+        self.sub_objects: List[dict] = []
+        self.sub_ground_tiles: List[Tuple[int, int, int]] = []
+        self.sub_tracks: List[dict] = []
         self.ground_tiles: List[Tuple[int, int, int]] = []
         self.start_y = 5  # tiles
         self.goal_y = None  # auto-calculated if None
@@ -417,11 +447,37 @@ class LevelBuilder:
         })
     
     START_AREA_TILES = 7   # x 0..6 is the generated start area; Coursebot deletes a course with a track or object in it
+    # The goal area is the course's last tiles: the pole stands 9.5 tiles from
+    # the right edge and terrain reaching the tile under it or beyond gets
+    # the course deleted (2026-09-09: a ground block to column 30 at width
+    # 40, goal at 30.5, deleted; to column 26 at width 35, goal at 25.5,
+    # deleted; to column 24 accepted). Objects and tracks have been accepted
+    # up to column 27 at width 35 (the packed rows), so their bound is
+    # looser; either way nothing generated goes past these columns.
+    GOAL_AREA_TILES = 10          # terrain: column width - 10 and beyond
+    GOAL_AREA_OBJECT_TILES = 7    # objects and tracks: column width - 7 and beyond
+
+    def goal_area_start(self, objects: bool = False) -> int:
+        return self.width - (self.GOAL_AREA_OBJECT_TILES if objects else self.GOAL_AREA_TILES)
 
     def preflight(self):
         """Refuse what Coursebot is known to delete, before an Eden round trip:
-        a track piece (its 3x3 box) or an object inside the start area."""
+        a track piece (its 3x3 box) or an object inside the start area, and
+        any object, tile, slope or track reaching the goal area."""
         bad = []
+        g = self.goal_area_start()
+        go = self.goal_area_start(objects=True)
+        for t in getattr(self, 'tracks', []):
+            if t['x'] >= go:
+                bad.append(f"track ({t['x']}, {t['y']}) starts in the goal area (x >= {go})")
+        for o in self.objects:
+            right = o['x'] + max(1, int(o.get('width', 1))) - 1
+            if right >= go:
+                bad.append(f"object id {o['id']} at ({o['x']}, {o['y']}) w {o.get('width', 1)} reaches the goal area (x >= {go})")
+        for (x, y, tile_id) in self.ground_tiles:
+            if x >= g:
+                bad.append(f"tile {tile_id:#x} at ({x}, {y}) is in the goal area (x >= {g})")
+                break
         for t in getattr(self, 'tracks', []):
             if t['x'] < self.START_AREA_TILES:
                 bad.append(f"track ({t['x']}, {t['y']}) box reaches into the start area (x < {self.START_AREA_TILES})")
@@ -457,70 +513,34 @@ class LevelBuilder:
         # Area header
         area = 0x200
         data[area + 0x00] = self.theme_id
+        data[area + 0x03] = 1 if self.vertical else 0
         struct.pack_into('<i', data, area + 0x08, self.width * 16)
-        struct.pack_into('<i', data, area + 0x0C, 27 * 16)
+        struct.pack_into('<i', data, area + 0x0C, self.height * 16)
+        if self.liquid is not None:
+            data[area + 0x04], data[area + 0x05], data[area + 0x06], data[area + 0x07] = self.liquid
         
         # NOTE: Do NOT add goal object - game auto-generates from header goal_x/goal_y
         
-        # Write objects
-        obj_base = area + 0x48
-        for i, obj in enumerate(self.objects):
-            off = obj_base + i * 0x20
-            # Slopes need +0.5 tile offset (80 units) to align properly
-            offset = 80 if obj.get('_half_tile_offset') else 0
-            struct.pack_into('<i', data, off + 0x00, obj['x'] * TILE + offset)
-            struct.pack_into('<i', data, off + 0x04, obj['y'] * TILE + offset)
-            struct.pack_into('<H', data, off + 0x08, obj.get('res', 0))
-            data[off + 0x0A] = obj.get('width', 1)
-            data[off + 0x0B] = obj.get('height', 1)
-            struct.pack_into('<I', data, off + 0x0C, obj.get('flags', 0x06000040))
-            struct.pack_into('<I', data, off + 0x10, obj.get('cflags', 0x06000040))
-            struct.pack_into('<I', data, off + 0x14, obj.get('ex', 0))
-            struct.pack_into('<h', data, off + 0x18, obj['id'])
-            struct.pack_into('<h', data, off + 0x1A, obj.get('contents', -1))
-            struct.pack_into('<h', data, off + 0x1C, obj.get('lid', -1))
-            struct.pack_into('<h', data, off + 0x1E, -1)
-        
-        # Write ground tiles
-        ground_base = area + 0x247A4
-        for i, (x, y, tile_id) in enumerate(self.ground_tiles):
-            off = ground_base + i * 4
-            data[off + 0] = x
-            data[off + 1] = y
-            struct.pack_into('<H', data, off + 2, tile_id)
-        
-        # Write track records (see add_track)
-        tracks = getattr(self, 'tracks', [])
-        track_base = area + 0x28624
-        for i, tr in enumerate(tracks):
-            off = track_base + i * 12
-            struct.pack_into('<H', data, off + 0x0, 0)
-            data[off + 0x2] = 1 if tr['has_object'] else 0
-            data[off + 0x3] = tr['x']
-            data[off + 0x4] = tr['y']
-            data[off + 0x5] = tr['type']
-            struct.pack_into('<H', data, off + 0x6, tr['lid'])
-            struct.pack_into('<HH', data, off + 0x8, *tr['tail'])
+        _write_area(data, area, self.objects, self.ground_tiles,
+                    getattr(self, 'tracks', []))
 
-        # Set counts
-        struct.pack_into('<i', data, area + 0x1C, len(self.objects))
-        struct.pack_into('<i', data, area + 0x3C, len(self.ground_tiles))
-        struct.pack_into('<i', data, area + 0x40, len(tracks))
-        
-        # Initialize subworld (Area 1) header
+        # Area 1, the subworld. Vertical areas live here: a vertical area has
+        # no goal, the overworld does, so the column is always the sub-area
+        # and the player arrives through a door or pipe.
         area1 = 0x2E0E0
-        data[area1 + 0x00] = self.theme_id  # Same theme as main
-        data[area1 + 0x01] = 0  # Autoscroll
-        data[area1 + 0x02] = 1  # Boundary flags (from original)
-        data[area1 + 0x03] = 0  # Orientation
-        data[area1 + 0x04] = 1  # liquid_end_height
-        data[area1 + 0x05] = 0  # liquid_mode
-        data[area1 + 0x06] = 0  # liquid_speed
-        data[area1 + 0x07] = 1  # liquid_start_height (CRITICAL!)
-        struct.pack_into('<i', data, area1 + 0x08, 84 * 16)  # Width: 1344 (84 tiles)
-        struct.pack_into('<i', data, area1 + 0x0C, 27 * 16)  # Height: 432 (27 tiles)
-        # Object and ground counts stay 0 for empty subworld
-        
+        data[area1 + 0x00] = self.sub_theme if self.sub_theme is not None else self.theme_id
+        data[area1 + 0x01] = self.sub_autoscroll   # upward in a vertical area
+        data[area1 + 0x02] = 1                     # boundary flags (from original)
+        data[area1 + 0x03] = 1 if self.sub_vertical else 0
+        data[area1 + 0x04] = 1                     # liquid_end_height
+        data[area1 + 0x05] = 0                     # liquid_mode
+        data[area1 + 0x06] = 0                     # liquid_speed
+        data[area1 + 0x07] = 1                     # liquid_start_height (CRITICAL!)
+        struct.pack_into('<i', data, area1 + 0x08, self.sub_width * 16)
+        struct.pack_into('<i', data, area1 + 0x0C, self.sub_height * 16)
+        _write_area(data, area1, self.sub_objects, self.sub_ground_tiles,
+                    self.sub_tracks)
+
         return bytes(data)
 
 
@@ -529,6 +549,54 @@ class LevelBuilder:
 # ═══════════════════════════════════════════════════════════════════════════
 
 TEST_LEVELS = {}
+
+def _write_area(data: bytearray, area: int, objects: list, ground: list,
+                tracks: list) -> None:
+    """Objects, ground and track records into one area, and its three counts.
+
+    Both areas have the same layout, so the overworld and the subworld are
+    written by the same code; only the base offset differs.
+    """
+    obj_base = area + 0x48
+    for i, obj in enumerate(objects):
+        off = obj_base + i * 0x20
+        # Slopes need +0.5 tile offset (80 units) to align properly
+        offset = 80 if obj.get('_half_tile_offset') else 0
+        struct.pack_into('<i', data, off + 0x00, obj['x'] * TILE + offset)
+        struct.pack_into('<i', data, off + 0x04, obj['y'] * TILE + offset)
+        struct.pack_into('<H', data, off + 0x08, obj.get('res', 0))
+        data[off + 0x0A] = obj.get('width', 1)
+        data[off + 0x0B] = obj.get('height', 1)
+        struct.pack_into('<I', data, off + 0x0C, obj.get('flags', 0x06000040))
+        struct.pack_into('<I', data, off + 0x10, obj.get('cflags', 0x06000040))
+        struct.pack_into('<I', data, off + 0x14, obj.get('ex', 0))
+        struct.pack_into('<h', data, off + 0x18, obj['id'])
+        struct.pack_into('<h', data, off + 0x1A, obj.get('contents', -1))
+        struct.pack_into('<h', data, off + 0x1C, obj.get('lid', -1))
+        struct.pack_into('<h', data, off + 0x1E, -1)
+
+    ground_base = area + 0x247A4
+    for i, (x, y, tile_id) in enumerate(ground):
+        off = ground_base + i * 4
+        data[off + 0] = x
+        data[off + 1] = y
+        struct.pack_into('<H', data, off + 2, tile_id)
+
+    track_base = area + 0x28624
+    for i, tr in enumerate(tracks):
+        off = track_base + i * 12
+        struct.pack_into('<H', data, off + 0x0, 0)
+        data[off + 0x2] = 1 if tr['has_object'] else 0
+        data[off + 0x3] = tr['x']
+        data[off + 0x4] = tr['y']
+        data[off + 0x5] = tr['type']
+        struct.pack_into('<H', data, off + 0x6, tr['lid'])
+        struct.pack_into('<HH', data, off + 0x8, *tr['tail'])
+
+    struct.pack_into('<i', data, area + 0x1C, len(objects))
+    struct.pack_into('<i', data, area + 0x3C, len(ground))
+    struct.pack_into('<i', data, area + 0x40, len(tracks))
+
 
 def test_level(slot: int, name: str):
     """Decorator to register a test level."""
@@ -1596,7 +1664,7 @@ def level_surface_kinds() -> LevelBuilder:
     indexes the game's surface priority table (docs/re-notes/surfaces.md).
     """
     b = LevelBuilder("Surface Kinds", "SMB1", "Ground")
-    b.add_ground_block(7, 26, y_surface=4, height=5)
+    b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_y = 5
     cols = [(9, 23, 0x06000040), (12, 94, 0x06000040), (15, 21, 0x06000040), (18, 82, 0x06000040),
             (21, 74, 0x06000044)]
@@ -1605,9 +1673,201 @@ def level_surface_kinds() -> LevelBuilder:
                           '_half_tile_offset': True})
         b.objects.append({'id': OBJ_SPIKE_BALL, 'x': x, 'y': 9, 'width': 1, 'height': 1,
                           'flags': 0x06000044, '_half_tile_offset': True})
-    b.ground_tiles.append((24, 6, GROUND_FILL))
-    b.objects.append({'id': OBJ_SPIKE_BALL, 'x': 24, 'y': 9, 'width': 1, 'height': 1,
+    b.ground_tiles.append((23, 6, GROUND_FILL))
+    b.objects.append({'id': OBJ_SPIKE_BALL, 'x': 23, 'y': 9, 'width': 1, 'height': 1,
                       'flags': 0x06000044, '_half_tile_offset': True})
+    return b
+
+
+@test_level(67, "Switch Gallery")
+def level_switch_gallery() -> LevelBuilder:
+    """The blocks a switch flips, one of each look in a row, for reading their
+    in-game sprites: dotted-line block (100) plain and alt, P-block (79) plain
+    and alt, ON/OFF block (99) plain and alt. `alt` is flag 0x4 in the record,
+    the editor's second form. Nothing moves, so a play screenshot shows each
+    block in its initial look.
+    """
+    b = LevelBuilder("Switch Gallery", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    for x, oid, flags in [(9, 100, 0x06000040), (11, 100, 0x06000044), (13, 79, 0x06000040),
+                          (15, 79, 0x06000044), (17, 99, 0x06000040), (19, 99, 0x06000044)]:
+        b.objects.append({'id': oid, 'x': x, 'y': 6, 'width': 1, 'height': 1, 'flags': flags,
+                          '_half_tile_offset': True})
+    return b
+
+
+@test_level(68, "Hidden Block Row")
+def level_hidden_block_row() -> LevelBuilder:
+    """A row of hidden blocks (29) two tiles above the floor across the start
+    area, so a jump in place from the spawn hits one, for reading the spent
+    block's sprite after the hit; a question block (5) further on for the
+    same spent look from the other block.
+    """
+    b = LevelBuilder("Hidden Block Row", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    for x in range(7, 13):
+        b.objects.append({'id': 29, 'x': x, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000040,
+                          '_half_tile_offset': True})
+    b.objects.append({'id': 5, 'x': 15, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000040,
+                      '_half_tile_offset': True})
+    return b
+
+
+@test_level(64, "Note Pitch")
+def level_note_pitch() -> LevelBuilder:
+    """A height sweep of note blocks, for the pitch reading. One free-standing
+    block per column from 8 to 20, each a row higher than the last (rows 5 to
+    17), plus a second block at the SAME row as the first two columns further
+    on, so the reading says whether x matters. Every block is inside the
+    opening view, so all of them spawn at load and register their sound
+    there. The `notepitch` preset reads the 5-bit slot at actor+0x914 beside
+    the position, so the recording gives slot against spawn height directly.
+    """
+    b = LevelBuilder("Note Pitch", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def block(x, y):
+        return {'id': OBJ_NOTE_BLOCK, 'x': x, 'y': y, 'width': 1, 'height': 1, '_half_tile_offset': True}
+    for i, col in enumerate(range(8, 21)):
+        b.objects.append(block(col, 5 + i))
+    b.objects.append(block(22, 5))    # the same row as column 8: does x matter
+    b.objects.append(block(23, 6))    # and the same row as column 9
+    return b
+
+
+@test_level(63, "Note Ceiling")
+def level_note_ceiling() -> LevelBuilder:
+    """A note block's impulse thrown into a ceiling. Two columns, each a note
+    block at row 6 with a Goomba on it (row 7, its box top at 128, boxed in
+    by a hard block either side so it does not walk off) and a hard-block
+    ceiling over it: column 11 with its underside at 144, one tile of
+    headroom, and column 17 at 192, four. Jumping into each
+    block from below fires it; the `placeholder` preset's enemy hook reads
+    the Goomba's y and vel_y per frame, so the recording says whether the body
+    keeps any of its upward speed at the ceiling and where its top comes to
+    rest. The gaps differ so a stop that depends on the speed at contact
+    separates from one that does not.
+    """
+    b = LevelBuilder("Note Ceiling", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def block(x):
+        return {'id': OBJ_NOTE_BLOCK, 'x': x, 'y': 6, 'width': 1, 'height': 1, '_half_tile_offset': True}
+    def goomba(x):
+        return {'id': OBJ_GOOMBA, 'x': x, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True}
+    def hard(x, y):
+        return {'id': OBJ_HARD_BLOCK, 'x': x, 'y': y, 'width': 1, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True}
+    for col, ceil in ((11, 9), (17, 12)):
+        b.objects.append(block(col))
+        # Boxed in on the block's top: a walker left alone strolls off a
+        # one-tile block long before the player arrives.
+        b.objects.append(goomba(col))
+        b.objects.append(hard(col - 1, 7))
+        b.objects.append(hard(col + 1, 7))
+        for x in (col - 1, col, col + 1):
+            b.objects.append(hard(x, ceil))
+    return b
+
+
+@test_level(59, "Plant Gallery")
+def level_plant_gallery() -> LevelBuilder:
+    """Plain piranha plants (id 2, no flags) on every surface the guide's
+    contraptions put them on, one per column, for the `plant` probe preset:
+    on the ground (col 9), on a 3-wide blue lift (col 12, lift at row 8),
+    on a 3-wide conveyor (id 53, col 16, belt at row 6) and in an upward
+    pipe (2x2 at cols 20..21, row 5). A pipe's content is its own record
+    with the in-pipe bit 0x1, placed 80 right of and 240 above the pipe's
+    record point, sharing the pipe's link id, the pipe carrying flags
+    0x060400C0 (read off Eternal's pipes, 2026-09-09). The ground stays at
+    7..24 and the width at 35: a ground block reaching the goal area gets
+    the course deleted.
+    """
+    b = LevelBuilder("Plant Gallery", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def plant(x, y, flags=0x06000040, half=True, lid=-1):
+        return {'id': 2, 'x': x, 'y': y, 'width': 1, 'height': 1, 'flags': flags, 'lid': lid, '_half_tile_offset': half}
+    b.objects.append(plant(9, 5))
+    b.objects.append({'id': OBJ_LIFT, 'x': 12, 'y': 8, 'width': 3, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True})
+    b.objects.append(plant(12, 9))
+    b.objects.append({'id': 53, 'x': 16, 'y': 6, 'width': 3, 'height': 1, 'flags': 0x06000048, '_half_tile_offset': True})
+    b.objects.append(plant(16, 7))
+    b.objects.append({'id': 9, 'x': 20, 'y': 5, 'width': 2, 'height': 2, 'flags': 0x060400C0, 'lid': 1, '_half_tile_offset': True})
+    b.objects.append(plant(21, 7, 0x06000041, half=False, lid=1))
+    return b
+
+
+@test_level(60, "Plant Pipe Near")
+def level_plant_pipe_near() -> LevelBuilder:
+    """One upward pipe with a piranha plant five tiles from the start (cols
+    10..11, row 5) and nothing else, for the pipe plant's player-near rule
+    (smm2-decomp docs/re-notes/piranha-plant.md).
+    """
+    b = LevelBuilder("Plant Pipe Near", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    b.objects.append({'id': 9, 'x': 10, 'y': 5, 'width': 2, 'height': 2, 'flags': 0x060400C0, 'lid': 1, '_half_tile_offset': True})
+    b.objects.append({'id': 2, 'x': 11, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000041, 'lid': 1, '_half_tile_offset': False})
+    return b
+
+
+@test_level(61, "Order Column")
+def level_order_column() -> LevelBuilder:
+    """A column of movers for the `order` probe preset (the manager's
+    per-frame walk, docs/re-notes/processing-order.md in the decomp): two
+    3-wide blue lifts at rows 12 and 8 in column 12, the HIGHER one first in
+    the record order so the load walk's position order and the record order
+    disagree; a plain piranha plant (id 2) on the lower lift (row 9); a
+    3-wide conveyor (id 53) at row 6 in column 16 with a plant on it (row
+    7). The player starts on the floor and can stand under and beside the
+    column. Ground 7..24, width 35 as in the Plant Gallery.
+    """
+    b = LevelBuilder("Order Column", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def plant(x, y):
+        return {'id': 2, 'x': x, 'y': y, 'width': 1, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True}
+    b.objects.append({'id': OBJ_LIFT, 'x': 12, 'y': 12, 'width': 3, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True})
+    b.objects.append({'id': OBJ_LIFT, 'x': 12, 'y': 8, 'width': 3, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True})
+    b.objects.append(plant(12, 9))
+    b.objects.append({'id': 53, 'x': 16, 'y': 6, 'width': 3, 'height': 1, 'flags': 0x06000048, '_half_tile_offset': True})
+    b.objects.append(plant(16, 7))
+    return b
+
+
+@test_level(62, "Placeholder Clip")
+def level_placeholder_clip() -> LevelBuilder:
+    """The guide's 'Placeholder clipping', three variants stacked above the
+    view (the view's top is row 13.5, an actor activates when its box grown
+    by a tile overlaps the view, so everything from row 16 up spawns at load
+    as a placeholder; the player stands still on the floor). Each variant is
+    a free 3-wide blue lift (shuttling 3 tiles left and back) with a spike
+    ball resting on it. A record's link id is its track link (real courses:
+    a free lift, a ball and a Blaster all carry -1; a linked record with no
+    track gets the course deleted), so what rides a lift is a plain record
+    placed on it.
+    A (col 12, row 18): the lift and its ball alone.
+    B (col 20, row 18): a Bill Blaster on the same lift, beside the ball.
+    C (col 12, row 24): a Bill Blaster on a pillar of hard blocks at the
+       lift's left bound, so the ball meets a solid that is not on its lift.
+    """
+    b = LevelBuilder("Placeholder Clip", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    def lift(x, y):
+        return {'id': OBJ_LIFT, 'x': x, 'y': y, 'width': 3, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True}
+    def ball(x, y):
+        return {'id': OBJ_SPIKE_BALL, 'x': x, 'y': y, 'width': 1, 'height': 1, 'flags': 0x06000044, '_half_tile_offset': True}
+    def blaster(x, y):
+        return {'id': 13, 'x': x, 'y': y, 'width': 1, 'height': 2, 'flags': 0x06000040, '_half_tile_offset': True}
+    b.objects += [lift(12, 18), ball(12, 19)]
+    b.objects += [lift(20, 18), ball(20, 19), blaster(21, 19)]
+    b.objects += [lift(12, 24), ball(12, 25)]
+    for row in range(19, 25):
+        b.objects.append({'id': OBJ_HARD_BLOCK, 'x': 9, 'y': row, 'width': 1, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True})
+    b.objects.append(blaster(9, 25))
     return b
 
 
@@ -1627,6 +1887,161 @@ def level_empty() -> LevelBuilder:
     # Don't place any ground - start/goal areas are auto-generated
     b.start_y = 5
     b.goal_y = 5
+    return b
+
+
+@test_level(69, "Swim Pool")
+def level_swim_pool() -> LevelBuilder:
+    """A forest pool for the swim reads (docs/re-notes/swim.md): still water
+    with its surface at row 5 (y 92) over a flat floor, and two ledges to
+    climb out onto, their tops 4 and 20 units above the surface. The player
+    starts on the floor under the water; strokes, the rise cap and the launch
+    out are what the recording is for."""
+    b = LevelBuilder("Swim Pool", "SMB1", "Forest")
+    b.liquid = (5, 0, 0, 5)
+    b.add_ground_block(7, 24, y_surface=1, height=1)
+    b.add_ground_block(13, 15, y_surface=6, height=5)    # top 96: 4 above the water
+    b.add_ground_block(19, 23, y_surface=7, height=6)    # top 112: 20 above it
+    b.goal_y = 1
+    return b
+
+
+@test_level(70, "Belt Jump")
+def level_belt_jump() -> LevelBuilder:
+    """Conveyors on the floor to jump off: what the belt's carry does to a
+    jump's speed. Flat SMB1 ground, an 8-wide fast belt running right from
+    tile 10 and a 7-wide normal one right after it, room to land past them.
+
+    Both belts are object 53; flag bit 0x40000 makes it the fast one (the
+    Lost Woods' flat belts are all 53, 0x6040048 fast and 0x6000048 normal).
+    Object 94 is the sloped belt (its records are 3x2, 4x3, 7x6 boxes) and a
+    flat 94 is a course Coursebot deletes, 2026-09-15."""
+    b = LevelBuilder("Belt Jump", "SMB1", "Ground")
+    # A wider area keeps the goal zone clear of the second belt.
+    b.width = 48
+    # The floor is row 1 (top 32); the belts take that row from tile 10 to
+    # 24 so the player walks straight onto them (a belt a row higher is a
+    # wall), with ground on both sides.
+    b.add_ground_block(7, 9, y_surface=1, height=1)
+    b.add_ground_block(25, 34, y_surface=1, height=1)
+    b.objects.append({'id': 53, 'x': 10, 'y': 1, 'width': 8, 'height': 1,
+                      'flags': 0x06040048, '_half_tile_offset': True})
+    b.objects.append({'id': 53, 'x': 18, 'y': 1, 'width': 7, 'height': 1,
+                      'flags': 0x06000048, '_half_tile_offset': True})
+    b.goal_y = 1
+    return b
+
+
+@test_level(65, "Stack Drop")
+def level_stack_drop() -> LevelBuilder:
+    """How far below the camera a stack of enemies stays loaded, in a vertical
+    area.
+
+    A stack is held by its own container (`game::GameEnemyTowerManager`), and
+    its spawn/despawn is believed to follow its members rather than its own
+    position. In a vertical area that appears to stop somewhere around seven
+    screens below the camera -- a rough figure from play, measured from the
+    camera, and the one load distance the community's table does not cover
+    (docs/re-notes/globality.md in smm2-decomp).
+
+    The rig: two Bowsers stacked on a note block near the top of a tall
+    vertical subworld, nothing else in the column, and a floor far below. The
+    player takes the pipe down, is spat out beside the stack with nothing
+    underneath, and falls the length of the column; the bosses keep landing on
+    the block so it keeps sounding, and the frame the sound stops is the frame
+    the stack unloaded. Read the distance off the camera, not off the player.
+
+    A vertical area is always the SUBWORLD -- it has no goal of its own, the
+    overworld carries it -- so the overworld here is a short strip with the
+    goal and the entry pipe.
+
+    **Pipes, not doors.** A door pairs 2k with 2k+1 inside one area; crossing
+    between the overworld and the subworld is what a pipe is for. The Lost
+    Woods does exactly this (its doors pair within the subworld, its pipe
+    link 1 crosses to the overworld), and both flag words here are copied off
+    that pair: mouth up to enter, mouth right to be spat out. An unlinked
+    pipe (link 0) leads nowhere, so the link is 1 on both sides.
+
+    Autoscroll is left off (`sub_autoscroll = 0`). A vertical area scrolls
+    UPWARD when it is on, which carries the spawn window with it and would
+    confound a measurement of how far *behind* the camera a stack survives --
+    turn it on deliberately to measure the interaction, not by default.
+
+    Each Bowser is two tiles tall (spawn_rects.csv type 62: off_y 16,
+    half_h 16), so they stack at +1 and +3 above the block.
+    """
+    b = LevelBuilder("Stack Drop", "SMB1", "Ground")
+
+    # Overworld: the goal, and the pipe down. A mouth-up pipe at (10, 5)
+    # stands two tiles out of the ground; the player walks on top and presses
+    # down. Kept well clear of the goal area.
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    b.objects.append({'id': OBJ_PIPE, 'x': 10, 'y': 5, 'width': 2, 'height': 2,
+                      'flags': PIPE_UP_LINK1})
+
+    # Subworld: the column. Lost Woods' own subworld size (48 x 168 tiles),
+    # so the dimensions are known-good rather than invented.
+    b.sub_vertical = True
+    b.sub_width = 48
+    b.sub_height = 168
+    col = 12
+    top = b.sub_height - 8
+    for x in range(col - 4, col + 5):
+        b.sub_ground_tiles.append((x, 4, GROUND_FILL))          # the floor, far below
+    # The exit, mouth right, LEVEL with the stack and over open air: the player
+    # is spat out sideways with the stack beside them, so it is inside the
+    # view on arrival and spawns, then recedes above as they fall. Put the
+    # exit below the stack instead and the bosses start off-screen, which
+    # measures when they first spawn rather than when they unload.
+    b.sub_objects.append({'id': OBJ_PIPE, 'x': col + 4, 'y': top + 4,
+                          'width': 2, 'height': 2, 'flags': PIPE_RIGHT_LINK1})
+    for dx in (-1, 0, 1):                                        # the block's perch
+        b.sub_objects.append({'id': OBJ_HARD_BLOCK, 'x': col + dx, 'y': top,
+                              'width': 1, 'height': 1, '_half_tile_offset': True})
+    b.sub_objects.append({'id': OBJ_NOTE_BLOCK, 'x': col, 'y': top + 1,
+                          'flags': 0x06000040})
+    for dy in (2, 4):                                            # the two Bowsers
+        b.sub_objects.append({'id': 62, 'x': col, 'y': top + dy,
+                              'flags': 0x06000040, '_half_tile_offset': True})
+    return b
+
+
+@test_level(66, "Detached Block")
+def level_detached_block() -> LevelBuilder:
+    """The "broken track" glitch: a music block whose rail is not under it.
+
+    The undo-dog glitch leaves, in the file, a rider that still carries the
+    on-track flag and a link id, while the piece it names is gone -- so the
+    lid resolves to some unrelated record elsewhere and nothing holds the
+    block (smm2-decomp docs/re-notes/track-linkage.md). The Lost Woods has one
+    at tile 111.5, 15.5 whose lid points at a piece a hundred tiles away, and
+    Coursebot accepts the course, so the shape is legal to save.
+
+    In the real game such a block **launches upward, away from the track it
+    spawns on** rather than sitting where its record puts it. That launch is
+    the thing this level exists to measure: nothing we hold records it, since
+    the overworld recording stops well short of Lost Woods' corner.
+
+    Two blocks, so one run gives both sides:
+      A (col 11) a normal block on its own capped piece -- the control.
+      B (col 20) the same record, on-track and linked to A's piece, but placed
+                 nine tiles away over open ground with no rail under it.
+
+    Record with the `rail` preset and compare B's first frames against A's.
+    """
+    b = LevelBuilder("Detached Block", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    # A: a two-piece capped rail with a block riding it
+    first = b.add_track(10, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, 0x0070))
+    b.add_track(12, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0071, 0x0104))
+    b.add_note_block_on_track(first, travel_left=False)
+    # B: the detached one. Same flags as a rider, linked to A's piece, but its
+    # own position is bare ground -- the state the glitch leaves behind.
+    b.objects.append({'id': OBJ_NOTE_BLOCK, 'x': 20, 'y': 8,
+                      'flags': 0x06000040 | FLAG_ON_TRACK, 'lid': first,
+                      '_half_tile_offset': True})
     return b
 
 
