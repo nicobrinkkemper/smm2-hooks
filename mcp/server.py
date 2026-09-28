@@ -161,6 +161,8 @@ def ui_screen(full: bool = False) -> dict:
     Returns the active layer's texts in draw order, the focused control (the button the game last
     focused, when it is drawn), and course_slot when the focus is a Coursebot tile. Panes drawn off-screen
     or under a modal (the grid behind course details, the details behind a dialog) are left out.
+    ready / transitions / screens come from the menus' own state machines: ready means a screen
+    takes input (Disp*) and none is appearing, closing, leaving or loading.
     full=True adds every on-screen row with its pane path, position and layer."""
     import ui_probe  # noqa: WPS433
     if not full:

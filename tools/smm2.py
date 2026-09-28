@@ -424,6 +424,17 @@ class Game:
             self.press('B', 100)
             time.sleep(0.3)
 
+        if not on_grid and self._ui_observed():
+            # Editor -> main menu -> Coursebot, each step on the game's word.
+            self._press('PLUS', focus=False)
+            # The Coursebot button draws its label only while focused, so it
+            # cannot be steered to by text; it sits right of Course Maker.
+            v = self._press('RIGHT')
+            if v.get('focus_path') != '/L_LclBtn_00':
+                raise RuntimeError(f'main menu: RIGHT did not focus Coursebot: {v}')
+            self._press('A')
+            start_count = self._coursebot_play_observed(slot)
+        elif not on_grid:
             # PLUS -> Main Menu
             self.press('PLUS', 150)
             time.sleep(1.5)  # wait for menu animation
@@ -436,37 +447,34 @@ class Game:
             self.press('A', 100)
             time.sleep(3.0)  # wait for coursebot to load courses
 
-            if self._ui_observed():
-                start_count = self._coursebot_play_observed(slot)
-            else:
-                # The grid remembers its cursor across visits, so home it first.
-                self._coursebot_home()
+            # The grid remembers its cursor across visits, so home it first.
+            self._coursebot_home()
 
-                # Navigate to slot. Presses during the scroll animation are dropped,
-                # hence the generous spacing.
-                row = slot // 4
-                col = slot % 4
-                for _ in range(col):
-                    self.press('RIGHT', 100)
-                    time.sleep(0.5)
-                for i in range(row):
-                    self.press('DOWN', 100)
-                    # rows 0..3 are on screen; from row 3 on every DOWN scrolls the
-                    # list and a press during that animation is dropped (slot 19
-                    # landed on 15, 2026-09-09), so give the scroll time to finish
-                    time.sleep(1.6 if i >= 2 else 0.5)
+            # Navigate to slot. Presses during the scroll animation are dropped,
+            # hence the generous spacing.
+            row = slot // 4
+            col = slot % 4
+            for _ in range(col):
+                self.press('RIGHT', 100)
+                time.sleep(0.5)
+            for i in range(row):
+                self.press('DOWN', 100)
+                # rows 0..3 are on screen; from row 3 on every DOWN scrolls the
+                # list and a press during that animation is dropped (slot 19
+                # landed on 15, 2026-09-09), so give the scroll time to finish
+                time.sleep(1.6 if i >= 2 else 0.5)
 
-                # A -> course details; home the cursor on the tab bar, walk it to
-                # Play, A -> go. On an empty slot the same presses land on "Make New
-                # Course" (the only button), which the editor fallback below handles.
-                s = self.status()
-                start_count = s['scene_change_count'] if s else 0
-                self.press('A', 100)
-                time.sleep(2.0)
-                for button in ('UP', 'UP', 'UP', 'DOWN', 'DOWN', 'DOWN', 'RIGHT', 'DOWN'):
-                    self.press(button, 100)
-                    time.sleep(0.6)
-                self.press('A', 100)
+            # A -> course details; home the cursor on the tab bar, walk it to
+            # Play, A -> go. On an empty slot the same presses land on "Make New
+            # Course" (the only button), which the editor fallback below handles.
+            s = self.status()
+            start_count = s['scene_change_count'] if s else 0
+            self.press('A', 100)
+            time.sleep(2.0)
+            for button in ('UP', 'UP', 'UP', 'DOWN', 'DOWN', 'DOWN', 'RIGHT', 'DOWN'):
+                self.press(button, 100)
+                time.sleep(0.6)
+            self.press('A', 100)
 
         s = self.wait_for(
             lambda s: (s['scene_mode'] == SCENE_COURSEBOT and (s['has_player'] or s['state'] > 0))
@@ -572,19 +580,41 @@ class Game:
         sample = ui_probe.read_log(path).get('sample')
         return ui_probe.screen(sample) if sample else None
 
-    def _press_and_observe(self, button, timeout=2.5):
-        """Press, then wait until a sample written after the press shows a change of focus."""
-        import ui_probe
-        path = Path(self.sd) / 'ui-probe.log'
-        before = ui_probe.observe(path, timeout=0)
+    def wait_until(self, condition=lambda v: True, what='the menus to settle', focus=True,
+                   after=None, hang=30.0):
+        """Wait for the game, not the clock: until the menus are ready and `condition` holds.
+
+        Ready is the game's own screen state (ui_probe.menu_state): a screen in
+        a Disp* state and none appearing, disappearing, opening, closing,
+        leaving or loading. focus=True also waits for the game to focus a
+        control. `after` skips samples up to that sequence. `hang` only guards
+        against a game that never gets there; it raises with the screens and
+        transitions it was stuck in.
+        """
+        deadline = time.time() + hang
+        while True:
+            v = self.ui()
+            fresh = after is None or (v.get('sequence') or 0) > after
+            if fresh and v.get('ready') and (not focus or v.get('focus_path')) and condition(v):
+                return v
+            if time.time() >= deadline:
+                raise RuntimeError(f'waited {hang:.0f} s for {what}: screens {v.get("screens")}, '
+                                   f'transitions {v.get("transitions")}, focus {v.get("focused")!r}')
+            time.sleep(0.1)
+
+    def _press(self, button, focus=True):
+        """Press once the menus take input, and return the game's answer.
+
+        Returns when a sample after the press shows the focus or the slot
+        moved and the menus settled again, or when two samples (60 frames)
+        after the press show them settled and unchanged: the game ignored it.
+        """
+        before = self.wait_until(focus=focus, what=f'input before {button}')
         self.press(button, 100)
-        deadline = time.time() + timeout
-        seen = before
-        while time.time() < deadline:
-            seen = ui_probe.observe(path, after=before.get('sequence'), timeout=1.0)
-            if seen.get('focused_path') != before.get('focused_path') or seen.get('course_slot') != before.get('course_slot'):
-                return seen
-        return seen
+        seq = before['sequence']
+        moved = lambda v: (v.get('focus_path'), v.get('course_slot')) != (before.get('focus_path'), before.get('course_slot'))
+        return self.wait_until(lambda v: moved(v) or v['sequence'] >= seq + 3, focus=focus,
+                               after=seq + 1, what=f'the game to answer {button}')
 
     def focus(self, text, max_presses=12):
         """Move the menu focus onto the active control labelled `text`.
@@ -601,7 +631,7 @@ class Game:
                 # A freshly opened menu such as the pause menu focuses
                 # nothing: the game makes no focus call until the first
                 # direction press, which lands on the menu's first control.
-                self._press_and_observe('DOWN')
+                self._press('DOWN', focus=False)
                 revealed = True
                 continue
             if not view or not view['focused']:
@@ -614,7 +644,7 @@ class Game:
             dx = targets[0]['x'] - view['focused']['x']
             dy = targets[0]['y'] - view['focused']['y']
             button = ('RIGHT' if dx > 0 else 'LEFT') if abs(dx) > abs(dy) else ('UP' if dy > 0 else 'DOWN')
-            after = self._press_and_observe(button)
+            after = self._press(button)
             if after.get('focused_path') == view['focused']['path']:
                 raise RuntimeError(f'{button} did not move the focus off {view["focused"]["text"]!r}')
         raise RuntimeError(f'focus did not reach {text!r} in {max_presses} presses')
@@ -629,57 +659,42 @@ class Game:
                 return False
             time.sleep(0.25)
 
-    def _coursebot_play_observed(self, slot, timeout=8.0):
+    def _coursebot_play_observed(self, slot):
         """Grid -> slot -> details -> Play by the game's own focus; returns the scene count before A."""
-        deadline = time.time() + timeout
-        while self.ui().get('course_slot') is None:
-            if time.time() >= deadline:
-                raise RuntimeError(f'Coursebot grid did not appear: {self.ui()}')
-            time.sleep(0.25)
         self.select_slot(slot)
         s = self.status()
         start_count = s['scene_change_count'] if s else 0
         self.press('A', 100)
         # A registered slot's details offer Play; an empty one only "Make New Course".
-        deadline = time.time() + timeout
-        while True:
-            texts = self.ui().get('texts') or []
-            target = 'Play' if 'Play' in texts else next((t for t in texts if t.startswith('Make New')), None)
-            if target:
-                break
-            if time.time() >= deadline:
-                raise RuntimeError(f'course details did not appear: {self.ui()}')
-            time.sleep(0.25)
-        self.focus(target)
+        v = self.wait_until(lambda v: 'Play' in (v.get('texts') or [])
+                            or any(t.startswith('Make New') for t in v.get('texts') or []),
+                            what='the course details')
+        self.focus('Play' if 'Play' in v['texts'] else next(t for t in v['texts'] if t.startswith('Make New')))
+        self.wait_until(what='input before A')
         self.press('A', 100)
         return start_count
 
     def select_slot(self, slot, max_presses=60):
         """On the Coursebot grid, move the focus to course `slot` (4 per row).
 
-        Reads the slot the game bound to the focused tile after every press,
-        so a press eaten by the scroll animation is simply retried.
+        Waits for the grid itself: its courses load (the loader machines
+        reach LoadEnd) and the game focuses a tile, which reports the slot the
+        game bound to it. Each move waits for the game's answer.
         """
         if not isinstance(slot, int) or not 0 <= slot < COURSEBOT_SLOTS:
             raise ValueError(f'slot {slot!r} is not a Coursebot slot (0..{COURSEBOT_SLOTS - 1})')
-        # The grid focuses its first tile only once its courses are loaded
-        # (over 3 s after A in Ryujinx), so give it time before giving up.
-        deadline = time.time() + 8.0
-        while self.ui().get('course_slot') is None:
-            if time.time() >= deadline:
-                raise RuntimeError(f'not on the Coursebot grid: {self.ui()}')
-            time.sleep(0.25)
+        v = self.wait_until(lambda v: v.get('course_slot') is not None, what='the Coursebot grid')
         for _ in range(max_presses):
-            cur = self.ui().get('course_slot')
+            cur = v.get('course_slot')
             if cur is None:
-                raise RuntimeError(f'the Coursebot grid lost focus: {self.ui()}')
+                raise RuntimeError(f'the Coursebot grid lost focus: {v}')
             if cur == slot:
-                return self.ui()
+                return v
             if cur % 4 != slot % 4:
                 button = 'RIGHT' if slot % 4 > cur % 4 else 'LEFT'
             else:
                 button = 'DOWN' if slot > cur else 'UP'
-            self._press_and_observe(button)
+            v = self._press(button)
         raise RuntimeError(f'slot {slot} not reached in {max_presses} presses')
 
     def screenshot(self, out_path='/mnt/c/temp/smm2_debug/capture.png'):

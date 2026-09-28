@@ -48,6 +48,17 @@ class UiProbeTests(unittest.TestCase):
         self.assertEqual((view["course_slot"],view["course_slot_source"]),(5,"row"))
         gone=screen({"rows":[dict(r,path="RootPane/N_Pause_00")],"focus":{"tick":7,"path":"/L_CourseDataList_02/L_CourseBtn_01"},"slots":slots})
         self.assertIsNone(gone["focus_path"])
+    def test_menu_ready_follows_the_game_state_machines(self):
+        from ui_probe import menu_state
+        def st(m,name,frames,executed=195): return {"machine":m,"tick":100,"caller":"0x0","state":0,"frames":frames,"name":name,"executed":executed}
+        machines={"a":["cInit","cIdle","cAppear","cDisp","cOpenConfirmDelete","cDisappear"],"b":["cLoadWait","cLoad","cLoadEnd"]}
+        def menu(*states): return menu_state({"rows":[],"tick":200,"machines":machines,"states":list(states)})
+        v=menu(st("a","cDisp",40),st("b","cLoad",33))
+        self.assertFalse(v["ready"]); self.assertEqual(v["transitions"],["loader:Load"])
+        self.assertTrue(menu(st("a","cDisp",40),st("b","cLoadEnd",33))["ready"])
+        # a loader the game no longer runs does not hold the menus up
+        self.assertTrue(menu(st("a","cDisp",40),st("b","cLoad",3,executed=100))["ready"])
+        self.assertFalse(menu(st("a","cIdle",40))["ready"])
     def test_truncation(self):
         self.assertTrue(decode_row(row("A"*200))["truncated"])
     def test_tag_is_preserved_not_invented(self):

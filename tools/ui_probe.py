@@ -11,7 +11,7 @@ import re
 import struct
 import time
 
-HEADER = "UI_PROBE,4,303,draw_submission,mode="
+HEADER = "UI_PROBE,6,303,draw_submission,mode="
 
 def decode_row(line):
     fields = line.split(",")
@@ -45,7 +45,9 @@ def decode_row(line):
         "path":"/".join(reversed(ancestors)),"geom":[round(f,3) for f in floats],"visibility":"draw-submitted; final visibility unknown",
         "focus":None,"enabled":None}
 
-def parse_samples(text):
+def parse_samples(text, machines=None):
+    """Complete samples; MACHINE lines (each machine's state names) go into `machines`."""
+    machines={} if machines is None else machines
     samples=[]; current=None; errors=[]
     for line in text.splitlines():
         if line.startswith("BEGIN,"):
@@ -60,6 +62,15 @@ def parse_samples(text):
                 current["rows"].append(decode_row(line))
                 if len(current["rows"])>current["expected_rows"]: raise ValueError("too many rows")
             except ValueError as e: current=None; errors.append(str(e))
+        elif line.startswith("MACHINE,"):
+            _,machine,_count,names=line.split(",",3)
+            machines[machine]=names.split("|")
+        elif line.startswith("STATE,") and current is not None:
+            _,machine,tick,caller,state,frames,rest=line.split(",",6)
+            name,executed=rest.rsplit(",",1)
+            current.setdefault("states",[]).append({"machine":machine,"tick":int(tick),
+                "caller":"0x71%08x"%int(caller,16),"state":int(state),"frames":int(frames),"name":name,
+                "executed":int(executed)})
         elif line.startswith("FOCUS,") and current is not None:
             _,focus_tick,focus_path=line.split(",",2)
             current["focus"]={"tick":int(focus_tick),"path":focus_path}
@@ -87,11 +98,12 @@ def read_log(path):
             tail=file.read(2*1024*1024).decode("ascii",errors="replace")
         age=max(0,time.time()-path.stat().st_mtime)
     except FileNotFoundError: return {"status":"unavailable", "path":str(path)}
-    samples,errors,partial=parse_samples(tail)
+    machines={}
+    samples,errors,partial=parse_samples(tail,machines)
     return {"status":"stale" if age>3 else "observed" if samples else "waiting",
         "provenance":"experimental draw-call window; not a current-screen snapshot",
         "file_age_s":round(age,3), "partial_tail":partial,"decode_errors":errors,
-        "sample":samples[-1] if samples else None}
+        "sample":dict(samples[-1],machines=machines) if samples else None}
 
 SCREEN_HALF_W, SCREEN_HALF_H = 640, 360
 
@@ -164,9 +176,48 @@ def screen(sample):
             bound=[(c,slots[4*row_+c]) for c in range(4) if slots[4*row_+c]>=0]
             if bound: slot,slot_source=bound[0][1]-bound[0][0]+col,"row"
     for r in rows: r["readable"]=readable(r["text"])
-    return {"course_slot":slot,"course_slot_source":slot_source,"rows":rows,"focused":focus,
+    return {"menu":menu_state(sample),"course_slot":slot,"course_slot_source":slot_source,"rows":rows,"focused":focus,
         "focus_path":focus_path if live else None,
         "active":[r for r in rows if not r["background"]]}
+
+# A machine is named by a state only it has (the game's own names).
+MACHINE_LABELS = [("cTitleBack","main_menu"), ("cToCourseRobot","main_menu_flow"),
+    ("cOpenConfirmDelete","coursebot_list"), ("cConfirmClearCheck","coursebot_upload_flow"),
+    ("cConfirmFirstPlay","coursebot_play_flow"), ("cYesBtn","yes_no_dialog"),
+    ("cRetryCourse","pause_menu"), ("cPausePlay","play_scene"), ("cLoadEnd","loader"),
+    ("cDecodeEnd","decoder"), ("cDragScroll","scroll")]
+TRANSITIONS = ("cAppear","cReadyAppear","cDisappear","cDisapear","cDisappearWait","cActivate",
+    "cInactivate","cHalfwayReentry","cLoadWait","cLoad","cDecodeWait","cDecode")
+
+def label(names, machine):
+    for state,name in MACHINE_LABELS:
+        if state in names: return name
+    return "machine@"+machine[-6:]
+
+def menu_state(sample):
+    """The menu screens' own state machines: which are running, and whether input lands.
+
+    Each row is one Lp::Utl::StateMachine the mod saw change state, with the
+    state it is in and how long. A machine is running when the game executed
+    it in the last 30 frames (a dormant one keeps its last state).
+    `ready` is True when some running screen is in a Disp* state (the game
+    shows it and handles input) and none is in a transition (Appear,
+    Disappear, Open*, Close*, To*, a load or decode).
+    """
+    now=sample.get("tick",0)
+    machines=sample.get("machines") or {}
+    out=[]
+    for m in sample.get("states") or []:
+        running=now-m["executed"]<30
+        name=m["name"]
+        kind=("input" if name.startswith("cDisp") else
+              "transition" if name in TRANSITIONS or name.startswith(("cOpen","cClose","cTo")) else "other")
+        out.append({"screen":label(machines.get(m["machine"],[]),m["machine"]),"state":name[1:] if name.startswith("c") else name,
+            "frames":m["frames"],"running":running,"kind":kind,"machine":m["machine"]})
+    live=[m for m in out if m["running"]]
+    ready=any(m["kind"]=="input" for m in live) and not any(m["kind"]=="transition" for m in live)
+    return {"ready":ready,"screens":sorted(live,key=lambda m:m["frames"]),
+        "transitions":[f'{m["screen"]}:{m["state"]}' for m in live if m["kind"]=="transition"]}
 
 def compact(view):
     """The active layer as an agent needs it: texts, the focused one, the slot."""
@@ -175,6 +226,8 @@ def compact(view):
         # the game's last focused button while its layout is drawn (a menu
         # that just opened focuses nothing, and the path is then stale)
         "focus_path":view["focus_path"],"course_slot_source":view["course_slot_source"],
+        "ready":view["menu"]["ready"],"transitions":view["menu"]["transitions"],
+        "screens":[f'{m["screen"]}:{m["state"]}' for m in view["menu"]["screens"]],
         "course_slot":view["course_slot"],"texts":[readable(r["text"]) for r in view["active"]],
         "background_texts":sum(r["background"] for r in view["rows"])}
 

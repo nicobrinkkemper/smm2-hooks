@@ -152,6 +152,106 @@ HkTrampoline<void, void*, unsigned, unsigned, unsigned, unsigned, void*> focusOn
         focusTick = __atomic_load_n(&tick, __ATOMIC_RELAXED);
     });
 
+// Screen state. The menus run Lp::Utl::StateMachine, like the actors: the
+// Coursebot screens register Init, Idle, Appear, Disp, Open*/Disp*/Close*
+// (dialogs), To* and Disappear (sub_71018801C0). changeState (0x71008B9320)
+// stores the new state at machine+0x08 and counts frames in it at +0x0C;
+// the state names sit in an array at machine+0x40 (16 bytes each, char* at
+// +8, count at +0x38). The probe keeps the machines that changed state most
+// recently.
+constexpr unsigned MACHINES = 32;
+constexpr int32_t MAX_STATES = 96;
+// Everything read from a machine is read inside the game's own calls on it
+// (change, execute, finalize): a screen torn down between two samples would
+// otherwise be read after it was freed, which crashed Ryujinx.
+struct Machine {
+    uintptr_t machine;
+    uint32_t changed, executed;   // ticks
+    uint32_t caller;              // module offset of the changeState call
+    int32_t state, frames;
+    const char* name;             // static string in the game binary
+    int32_t count;
+    const char* names[MAX_STATES];
+    bool described;
+};
+Machine machines[MACHINES];
+unsigned char machinesLock = 0;
+
+bool inModule(uintptr_t p) {
+    const auto range = hk::ro::getMainModule()->range();
+    return p >= range.start() && p < range.start() + range.size();
+}
+const char* stateName(uintptr_t m, int32_t state) {
+    const auto count = field<int32_t>(reinterpret_cast<void*>(m), 0x38);
+    const auto names = field<uintptr_t>(reinterpret_cast<void*>(m), 0x40);
+    if (state < 0 || state >= count || !plausible(names)) return nullptr;
+    const auto name = field<uintptr_t>(reinterpret_cast<void*>(names + 16 * state), 8);
+    return inModule(name) ? reinterpret_cast<const char*>(name) : nullptr;
+}
+// Menu screens and their loaders, not actors: a machine with an Appear,
+// Disp or LoadEnd state (actor machines name theirs cState_*).
+bool menuMachine(uintptr_t m) {
+    const auto count = field<int32_t>(reinterpret_cast<void*>(m), 0x38);
+    for (int32_t i = 0; i < count && i < MAX_STATES; ++i) {
+        const char* name = stateName(m, i);
+        if (name && (!std::strcmp(name, "cAppear") || !std::strcmp(name, "cDisp") || !std::strcmp(name, "cLoadEnd")))
+            return true;
+    }
+    return false;
+}
+Machine* tracked(uintptr_t m) {
+    for (auto& e : machines) if (e.machine == m) return &e;
+    return nullptr;
+}
+HkTrampoline<void, void*, int> changeState = hk::hook::trampoline(
+    [](void* machine, int state) -> void {
+        changeState.orig(machine, state);
+        const auto m = reinterpret_cast<uintptr_t>(machine);
+        const auto now = __atomic_load_n(&tick, __ATOMIC_RELAXED);
+        if (__atomic_test_and_set(&machinesLock, __ATOMIC_ACQUIRE)) return;
+        Machine* e = tracked(m);
+        if (!e && menuMachine(m)) {
+            e = &machines[0];
+            for (auto& c : machines) if (c.changed < e->changed) e = &c;
+            e->machine = m;
+            e->count = field<int32_t>(machine, 0x38);
+            if (e->count > MAX_STATES) e->count = MAX_STATES;
+            for (int32_t i = 0; i < e->count; ++i) e->names[i] = stateName(m, i);
+            e->described = false;
+        }
+        if (e) {
+            const auto lr = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+            e->changed = e->executed = now;
+            e->caller = static_cast<uint32_t>(lr - hk::ro::getMainModule()->range().start());
+            e->state = field<int32_t>(machine, 0x08);
+            e->frames = field<int32_t>(machine, 0x0C);
+            e->name = stateName(m, e->state);
+        }
+        __atomic_clear(&machinesLock, __ATOMIC_RELEASE);
+    });
+// sub_71008B9490 runs the current state once a frame: frames in state.
+HkTrampoline<void, void*> executeState = hk::hook::trampoline(
+    [](void* machine) -> void {
+        const auto m = reinterpret_cast<uintptr_t>(machine);
+        if (!__atomic_test_and_set(&machinesLock, __ATOMIC_ACQUIRE)) {
+            if (Machine* e = tracked(m)) {
+                e->executed = __atomic_load_n(&tick, __ATOMIC_RELAXED);
+                e->frames = field<int32_t>(machine, 0x0C);
+            }
+            __atomic_clear(&machinesLock, __ATOMIC_RELEASE);
+        }
+        executeState.orig(machine);
+    });
+// StateMachine::finalize (0x71008B8F40): the machine is going away.
+HkTrampoline<void, void*> finalizeMachine = hk::hook::trampoline(
+    [](void* machine) -> void {
+        const auto m = reinterpret_cast<uintptr_t>(machine);
+        while (__atomic_test_and_set(&machinesLock, __ATOMIC_ACQUIRE)) {}
+        if (Machine* e = tracked(m)) e->machine = 0;
+        __atomic_clear(&machinesLock, __ATOMIC_RELEASE);
+        finalizeMachine.orig(machine);
+    });
+
 HkTrampoline<void, void*, void*, void*> draw = hk::hook::trampoline(
     [](void* pane, void* drawInfo, void* commandBuffer) -> void {
         draw.orig(pane, drawInfo, commandBuffer);
@@ -203,7 +303,7 @@ void init() {
         std::strcpy(printPane, config+6);
         std::strcpy(expected, line+7);
     }
-    logger.writef("UI_PROBE,4,303,draw_submission,mode=%s\n", printPane[0] ? "print" : "capture");
+    logger.writef("UI_PROBE,6,303,draw_submission,mode=%s\n", printPane[0] ? "print" : "capture");
     auto result = draw.installAtOffset(hk::ro::getMainModule(), 0x4C38B0);
     // Hakkun aborts on installation failure when requested; explicitly report it here.
     if (result.failed()) {
@@ -213,6 +313,10 @@ void init() {
     }
     if (focusOn.installAtOffset(hk::ro::getMainModule(), 0x1B615E0).failed())
         logger.write("FOCUS_INSTALL_FAILED\n", 21);
+    if (changeState.installAtOffset(hk::ro::getMainModule(), 0x8B9320).failed()
+        || executeState.installAtOffset(hk::ro::getMainModule(), 0x8B9490).failed()
+        || finalizeMachine.installAtOffset(hk::ro::getMainModule(), 0x8B8F40).failed())
+        logger.write("STATE_INSTALL_FAILED\n", 21);
     for (auto& t : tileSlot) t = -1;
     if (resetTile.installAtOffset(hk::ro::getMainModule(), 0x1897190).failed())
         logger.write("TILE_RESET_INSTALL_FAILED\n", 26);
@@ -263,6 +367,29 @@ void poll() {
         logger.write("\n", 1);
     }
     if (focusPath[0]) logger.writef("FOCUS,%u,%s\n", focusTick, focusPath);
+    // A copy under the lock: the render and game threads write the table.
+    static Machine copy[MACHINES];
+    while (__atomic_test_and_set(&machinesLock, __ATOMIC_ACQUIRE)) {}
+    std::memcpy(copy, machines, sizeof(copy));
+    // Names again every 16 samples: the reader only scans the log's tail.
+    const bool again = sequence % 16 == 0;
+    for (auto& m : copy) if (again) m.described = false;
+    for (auto& m : machines) if (m.machine) m.described = true;
+    __atomic_clear(&machinesLock, __ATOMIC_RELEASE);
+    for (const auto& m : copy) {
+        if (!m.machine) continue;
+        if (!m.described) {
+            // Once per machine: every state name, which says what screen it is.
+            logger.writef("MACHINE,%llx,%d,", (unsigned long long)m.machine, m.count);
+            for (int32_t i = 0; i < m.count; ++i) {
+                if (i) logger.write("|", 1);
+                if (m.names[i]) logger.write(m.names[i], strnlen(m.names[i], 48));
+            }
+            logger.write("\n", 1);
+        }
+        logger.writef("STATE,%llx,%u,%x,%d,%d,%.40s,%u\n", (unsigned long long)m.machine, m.changed,
+            m.caller, m.state, m.frames, m.name ? m.name : "", m.executed);
+    }
     if (tilesSeen) {
         logger.write("SLOTS", 5);
         for (unsigned i = 0; i < TILES; ++i) logger.writef(",%d", tileSlot[i]);
