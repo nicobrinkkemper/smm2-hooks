@@ -411,54 +411,62 @@ class Game:
         """
         if not isinstance(slot, int) or not 0 <= slot < COURSEBOT_SLOTS:
             raise ValueError(f"slot {slot!r} is not a Coursebot slot (0..{COURSEBOT_SLOTS - 1})")
-        # First get to editor
-        if not self.to_editor():
+        # Already on the Coursebot grid (status.bin says scene 0 there, so
+        # to_editor cannot start from it): only the UI probe can tell.
+        on_grid = self.ui().get('course_slot') is not None
+        if on_grid:
+            start_count = self._coursebot_play_observed(slot)
+        elif not self.to_editor():
             return False
 
-        # Clear any focus
-        self.press('B', 100)
-        time.sleep(0.3)
+        if not on_grid:
+            # Clear any focus
+            self.press('B', 100)
+            time.sleep(0.3)
 
-        # PLUS -> Main Menu
-        self.press('PLUS', 150)
-        time.sleep(1.5)  # wait for menu animation
+            # PLUS -> Main Menu
+            self.press('PLUS', 150)
+            time.sleep(1.5)  # wait for menu animation
 
-        # RIGHT -> Coursebot icon
-        self.press('RIGHT', 100)
-        time.sleep(0.3)
-
-        # A -> Enter Coursebot
-        self.press('A', 100)
-        time.sleep(3.0)  # wait for coursebot to load courses
-
-        # The grid remembers its cursor across visits, so home it first.
-        self._coursebot_home()
-
-        # Navigate to slot. Presses during the scroll animation are dropped,
-        # hence the generous spacing.
-        row = slot // 4
-        col = slot % 4
-        for _ in range(col):
+            # RIGHT -> Coursebot icon
             self.press('RIGHT', 100)
-            time.sleep(0.5)
-        for i in range(row):
-            self.press('DOWN', 100)
-            # rows 0..3 are on screen; from row 3 on every DOWN scrolls the
-            # list and a press during that animation is dropped (slot 19
-            # landed on 15, 2026-09-09), so give the scroll time to finish
-            time.sleep(1.6 if i >= 2 else 0.5)
+            time.sleep(0.3)
 
-        # A -> course details; home the cursor on the tab bar, walk it to
-        # Play, A -> go. On an empty slot the same presses land on "Make New
-        # Course" (the only button), which the editor fallback below handles.
-        s = self.status()
-        start_count = s['scene_change_count'] if s else 0
-        self.press('A', 100)
-        time.sleep(2.0)
-        for button in ('UP', 'UP', 'UP', 'DOWN', 'DOWN', 'DOWN', 'RIGHT', 'DOWN'):
-            self.press(button, 100)
-            time.sleep(0.6)
-        self.press('A', 100)
+            # A -> Enter Coursebot
+            self.press('A', 100)
+            time.sleep(3.0)  # wait for coursebot to load courses
+
+            if self._ui_observed():
+                start_count = self._coursebot_play_observed(slot)
+            else:
+                # The grid remembers its cursor across visits, so home it first.
+                self._coursebot_home()
+
+                # Navigate to slot. Presses during the scroll animation are dropped,
+                # hence the generous spacing.
+                row = slot // 4
+                col = slot % 4
+                for _ in range(col):
+                    self.press('RIGHT', 100)
+                    time.sleep(0.5)
+                for i in range(row):
+                    self.press('DOWN', 100)
+                    # rows 0..3 are on screen; from row 3 on every DOWN scrolls the
+                    # list and a press during that animation is dropped (slot 19
+                    # landed on 15, 2026-09-09), so give the scroll time to finish
+                    time.sleep(1.6 if i >= 2 else 0.5)
+
+                # A -> course details; home the cursor on the tab bar, walk it to
+                # Play, A -> go. On an empty slot the same presses land on "Make New
+                # Course" (the only button), which the editor fallback below handles.
+                s = self.status()
+                start_count = s['scene_change_count'] if s else 0
+                self.press('A', 100)
+                time.sleep(2.0)
+                for button in ('UP', 'UP', 'UP', 'DOWN', 'DOWN', 'DOWN', 'RIGHT', 'DOWN'):
+                    self.press(button, 100)
+                    time.sleep(0.6)
+                self.press('A', 100)
 
         s = self.wait_for(
             lambda s: (s['scene_mode'] == SCENE_COURSEBOT and (s['has_player'] or s['state'] > 0))
@@ -602,6 +610,41 @@ class Game:
             if after.get('focused_path') == view['focused']['path']:
                 raise RuntimeError(f'{button} did not move the focus off {view["focused"]["text"]!r}')
         raise RuntimeError(f'focus did not reach {text!r} in {max_presses} presses')
+
+    def _ui_observed(self, timeout=5.0):
+        """True when the UI probe is writing fresh samples (the mod read ui-probe.txt at boot)."""
+        deadline = time.time() + timeout
+        while True:
+            if self.ui().get('status') == 'observed':
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(0.25)
+
+    def _coursebot_play_observed(self, slot, timeout=8.0):
+        """Grid -> slot -> details -> Play by the game's own focus; returns the scene count before A."""
+        deadline = time.time() + timeout
+        while self.ui().get('course_slot') is None:
+            if time.time() >= deadline:
+                raise RuntimeError(f'Coursebot grid did not appear: {self.ui()}')
+            time.sleep(0.25)
+        self.select_slot(slot)
+        s = self.status()
+        start_count = s['scene_change_count'] if s else 0
+        self.press('A', 100)
+        # A registered slot's details offer Play; an empty one only "Make New Course".
+        deadline = time.time() + timeout
+        while True:
+            texts = self.ui().get('texts') or []
+            target = 'Play' if 'Play' in texts else next((t for t in texts if t.startswith('Make New')), None)
+            if target:
+                break
+            if time.time() >= deadline:
+                raise RuntimeError(f'course details did not appear: {self.ui()}')
+            time.sleep(0.25)
+        self.focus(target)
+        self.press('A', 100)
+        return start_count
 
     def select_slot(self, slot, max_presses=60):
         """On the Coursebot grid, move the focus to course `slot` (4 per row).
