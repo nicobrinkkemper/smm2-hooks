@@ -7,6 +7,7 @@ can contain formatting tags and controller glyphs; retain it for research.
 import argparse
 import json
 from pathlib import Path
+import re
 import struct
 import time
 
@@ -58,6 +59,9 @@ def parse_samples(text):
             try:
                 current["rows"].append(decode_row(line))
                 if len(current["rows"])>current["expected_rows"]: raise ValueError("too many rows")
+            except ValueError as e: current=None; errors.append(str(e))
+        elif line.startswith("SLOTS,") and current is not None:
+            try: current["slots"]=[int(v) for v in line.split(",")[1:]]
             except ValueError as e: current=None; errors.append(str(e))
         elif line.startswith("END,") and current is not None:
             try:
@@ -117,7 +121,14 @@ def screen(sample):
     focus=focused[0] if len(focused)==1 else None
     start=min((r["order"] for r in rows if focus and r["root"]==focus["root"]),default=0)
     for r in rows: r["background"]=r["order"]<start
-    return {"rows":rows,"focused":focus,"focus_candidates":len(focused),
+    # Coursebot tile "/L_CourseDataList_0R/L_CourseBtn_0C" is entry 4R+C of the
+    # game's tile table; the mod records the slot the game bound to each.
+    slot=None
+    m=focus and re.search(r"L_CourseDataList_0(\d)/.*L_CourseBtn_0(\d)/",focus["path"])
+    if m and sample.get("slots"):
+        i=4*int(m.group(1))+int(m.group(2))
+        if i<len(sample["slots"]) and sample["slots"][i]>=0: slot=sample["slots"][i]
+    return {"course_slot":slot,"rows":rows,"focused":focus,"focus_candidates":len(focused),
         "active":[r for r in rows if not r["background"]]}
 
 def main():
@@ -132,6 +143,7 @@ def main():
         for r in view["rows"]:
             mark=">" if r["focused"] else "." if r["background"] else " "
             print(f"{mark} {r['text']!r}  [{r['path']}]")
+        if view["course_slot"] is not None: print(f"course slot {view['course_slot']}")
         return
     if args.json: print(json.dumps(result,ensure_ascii=True,indent=2)); return
     print(result["status"]+": "+result.get("provenance",str(args.path)))

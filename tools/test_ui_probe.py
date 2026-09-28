@@ -24,6 +24,13 @@ class UiProbeTests(unittest.TestCase):
         view=screen({"rows":rows})
         self.assertEqual(len(view["rows"]),3); self.assertEqual(view["focused"]["x"],0)
         self.assertEqual([r["x"] for r in view["active"]],[0,20])
+    def test_focused_tile_maps_to_its_slot(self):
+        f=[0.0]*24; f[16]=f[21]=1.05
+        r=dict(decode_row(row()),geom=f,order=0,root="0xa",
+               path="L_CourseDataList_02/N_All_00/N_Btn_00/L_CourseBtn_01/N_Cursor_00")
+        slots=list(range(100,120))
+        self.assertEqual(screen({"rows":[r],"slots":slots})["course_slot"],109)
+        self.assertIsNone(screen({"rows":[r]})["course_slot"])
     def test_truncation(self):
         self.assertTrue(decode_row(row("A"*200))["truncated"])
     def test_tag_is_preserved_not_invented(self):

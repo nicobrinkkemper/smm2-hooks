@@ -112,6 +112,18 @@ void observe(void* pane) {
     }
 }
 
+// Coursebot list: sub_7101897360(screen, tile, slot) binds course `slot` to
+// tile `tile` of the table at 0x7102CC0E78, whose entry 4R+C (R < 5, C < 4)
+// is "/L_CourseDataList_0R/L_CourseBtn_0C"; it stores the slot at tile+0x68C.
+constexpr unsigned TILES = 20;
+int32_t tileSlot[TILES];
+bool tilesSeen = false;
+HkTrampoline<void, void*, int, int> bindTile = hk::hook::trampoline(
+    [](void* screen, int tile, int slot) -> void {
+        bindTile.orig(screen, tile, slot);
+        if (tile >= 0 && static_cast<unsigned>(tile) < TILES) { tileSlot[tile] = slot; tilesSeen = true; }
+    });
+
 HkTrampoline<void, void*, void*, void*> draw = hk::hook::trampoline(
     [](void* pane, void* drawInfo, void* commandBuffer) -> void {
         draw.orig(pane, drawInfo, commandBuffer);
@@ -129,32 +141,31 @@ void hex(const void* src, unsigned n) {
 
 void init() {
     // Missing config means zero hooks installed and no rendering changes.
-    logger.init("ui-probe.log");
-    logger.write("UI_PROBE_BOOT\n", 14);
-    logger.flush();
+    // The log is created once: a second delete+create of the same file right
+    // after the first can fail on Eden's host-backed SD card, and then every
+    // later write is lost (seen 2026-09-28).
     nn::fs::FileHandle file;
     const auto openResult = nn::fs::OpenFile(&file, "sd:/smm2-hooks/ui-probe.txt", nn::fs::MODE_READ);
-    logger.writef("CONFIG_OPEN,%u\n", openResult); logger.flush();
     if (openResult != 0) return;
     char config[256] = {};
     size_t size = 0;
     const auto rc = nn::fs::ReadFile(&size, file, 0, config, sizeof(config)-1);
     nn::fs::CloseFile(file);
-    logger.writef("CONFIG_READ,%u,%u\n", rc, (unsigned)size); logger.flush();
-    if (rc != 0 || !size || size >= sizeof(config)-1) return;
+    logger.init("ui-probe.log");
+    auto bad = [](const char* why) { logger.writef("CONFIG_ERROR,%s\n", why); logger.flush(); };
+    if (rc != 0 || !size || size >= sizeof(config)-1) return bad("read");
     if (std::strcmp(config, "capture\n") != 0 && std::strcmp(config, "capture") != 0) {
         char* line = std::strchr(config, '\n');
-        if (!line || std::strncmp(config, "print=", 6) != 0) return;
+        if (!line || std::strncmp(config, "print=", 6) != 0) return bad("mode");
         *line++ = 0;
-        if (std::strncmp(line, "expect=", 7) != 0) return;
+        if (std::strncmp(line, "expect=", 7) != 0) return bad("expect");
         char* end = std::strchr(line, '\n');
         if (end) *end = 0;
         if (!config[6] || std::strlen(config+6) >= sizeof(printPane)
-            || !line[7] || std::strlen(line+7) >= sizeof(expected)) return;
+            || !line[7] || std::strlen(line+7) >= sizeof(expected)) return bad("length");
         std::strcpy(printPane, config+6);
         std::strcpy(expected, line+7);
     }
-    logger.init("ui-probe.log");
     logger.writef("UI_PROBE,3,303,draw_submission,mode=%s\n", printPane[0] ? "print" : "capture");
     auto result = draw.installAtOffset(hk::ro::getMainModule(), 0x4C38B0);
     // Hakkun aborts on installation failure when requested; explicitly report it here.
@@ -163,6 +174,9 @@ void init() {
         logger.flush();
         return;
     }
+    for (auto& t : tileSlot) t = -1;
+    if (bindTile.installAtOffset(hk::ro::getMainModule(), 0x1897360).failed())
+        logger.write("TILE_INSTALL_FAILED\n", 20);
     enabled = true;
     logger.write("INSTALLED\n", 10);
     logger.flush();
@@ -205,6 +219,11 @@ void poll() {
         }
         logger.write(",", 1);
         hex(r.geom, GEOM_BYTES);
+        logger.write("\n", 1);
+    }
+    if (tilesSeen) {
+        logger.write("SLOTS", 5);
+        for (unsigned i = 0; i < TILES; ++i) logger.writef(",%d", tileSlot[i]);
         logger.write("\n", 1);
     }
     logger.writef("END,%u\n", sequence);
