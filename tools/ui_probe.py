@@ -56,7 +56,7 @@ def parse(text: str) -> dict:
     if head[0] != "BEGIN" or len(head) != 5 or lines[-1] != f"END,{head[1]}":
         raise ValueError("torn snapshot")
     sample = {"sequence": int(head[1]), "tick": int(head[2]), "dropped": int(head[4]),
-              "rows": [], "states": [], "focus": None, "focus_input": None,
+              "rows": [], "states": [], "focus": None, "focus_input": None, "focus_tick": 0,
               "input_on": 0, "input_off": 0, "buttons": 0, "buttons_tick": 0, "slots": []}
     for line in lines[1:-1]:
         kind, _, rest = line.partition(",")
@@ -70,11 +70,13 @@ def parse(text: str) -> dict:
                 "path": path + name, "text": raw.decode(codec, errors="replace"),
                 "truncated": len(raw) < int(length) * (1 if encoding == "1" else 2)})
         elif kind == "FOCUS":
-            path, input_on = rest.rsplit(",", 1)
+            path, input_on, tick = rest.rsplit(",", 2)
             sample["focus"], sample["focus_input"] = path, {"1": True, "0": False}.get(input_on)
+            sample["focus_tick"] = int(tick)
         elif kind == "STATE":
-            machine, executed, changed, frames, name, names = rest.split(",", 5)
+            machine, executed, changed, appeared, frames, name, names = rest.split(",", 6)
             sample["states"].append({"machine": machine, "executed": int(executed), "changed": int(changed),
+                                     "appeared": int(appeared),
                                      "frames": int(frames), "name": name, "names": names.split("|")})
         elif kind == "INPUT":
             sample["input_on"], sample["input_off"] = (int(v) for v in rest.split(","))
@@ -133,7 +135,8 @@ def menu_state(sample: dict) -> dict:
                 else "other")
         label = next((l for state, l in MACHINE_LABELS if state in m["names"]), "machine@" + m["machine"][-6:])
         screens.append({"screen": label, "state": name[1:], "frames": m["frames"], "kind": kind,
-                        "changed": m["changed"], "running": sample["tick"] - m["executed"] < 2 * SAMPLE_FRAMES})
+                        "changed": m["changed"], "appeared": m["appeared"],
+                        "running": sample["tick"] - m["executed"] < 2 * SAMPLE_FRAMES})
     live = sorted((s for s in screens if s["running"]), key=lambda s: s["frames"])
     ready = any(s["kind"] == "input" for s in live) and not any(s["kind"] == "transition" for s in live)
     # A screen switches its buttons' input on after it enters Disp (the pause
@@ -183,10 +186,16 @@ def screen(sample: dict) -> dict:
                    if r["tick"] == newest and abs(r["x"]) <= SCREEN_HALF_W and abs(r["y"]) <= SCREEN_HALF_H),
                   key=lambda r: r["order"])
     focus = sample["focus"]
+    menu = menu_state(sample)
     if focus:
         layout = re.sub(r"_\d+$", "_", focus.strip("/").split("/")[0])
         if not any(c.startswith(layout) for r in rows for c in r["path"].split("/")):
             focus = None  # a menu that just opened focuses nothing; the path is from an earlier screen
+        # A screen shown again (the pause menu reopened) draws the same layout;
+        # a focus from before its latest Appear belongs to the earlier showing.
+        shown = max((s["appeared"] for s in menu["screens"] if s["kind"] == "input"), default=0)
+        if sample["focus_tick"] < shown:
+            focus = None
     focused = next((r for r in reversed(rows) if focus and under(r["path"], focus)), None)
     start = min((r["order"] for r in rows if focused and r["root"] == focused["root"]), default=0)
     for r in rows:
@@ -195,7 +204,7 @@ def screen(sample: dict) -> dict:
     slot, source = course_slot(sample, focus)
     return {"rows": rows, "active": [r for r in rows if not r["background"]], "focused": focused,
             "focus": focus, "input": sample["focus_input"] if focus else None,
-            "course_slot": slot, "course_slot_source": source, "menu": menu_state(sample)}
+            "course_slot": slot, "course_slot_source": source, "menu": menu}
 
 
 def summary(view: dict) -> dict:

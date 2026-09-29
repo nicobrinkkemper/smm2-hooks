@@ -17,8 +17,8 @@ def snapshot(*lines, sequence=7, tick=60):
     return "\n".join([f"BEGIN,{sequence},{tick},{rows},0", *lines, f"END,{sequence}"]) + "\n"
 
 
-def state(machine, name, names, executed=60, frames=30):
-    return f"STATE,{machine},{executed},{executed - frames},{frames},{name},{'|'.join(names)}"
+def state(machine, name, names, executed=60, frames=30, appeared=0):
+    return f"STATE,{machine},{executed},{executed - frames},{appeared},{frames},{name},{'|'.join(names)}"
 
 
 LIST = ["cInit", "cIdle", "cAppear", "cDisp", "cOpenConfirmDelete", "cToPlay", "cDisappear"]
@@ -60,20 +60,28 @@ class Screen(unittest.TestCase):
             text_line("grid", root="g", order=0),
             text_line("No", name="T_Btn_00", path="RootPane/N_Btn_00/L_BtnL_00/N_Cursor_00/", root="d", order=1),
             text_line("Yes", name="T_Btn_00", path="RootPane/N_Btn_00/L_BtnR_00/N_Cursor_00/", root="d", order=2),
-            "FOCUS,/L_BtnR_00,1")))
+            "FOCUS,/L_BtnR_00,1,60")))
         self.assertEqual(view["focused"]["text"], "Yes")
         self.assertIs(view["input"], True)
         self.assertEqual([r["text"] for r in view["active"]], ["No", "Yes"])
 
     def test_focus_left_from_an_earlier_screen_is_dropped(self):
-        view = screen(parse(snapshot(text_line("PAUSE MENU", path="RootPane/N_All_00/"), "FOCUS,/L_Play_00,1")))
+        view = screen(parse(snapshot(text_line("PAUSE MENU", path="RootPane/N_All_00/"), "FOCUS,/L_Play_00,1,60")))
         self.assertIsNone(view["focus"])
         self.assertIsNone(view["focused"])
+
+    def test_focus_from_an_earlier_showing_is_dropped(self):
+        pause = ["cInit", "cIdle", "cAppear", "cDisp", "cRetryCourse", "cDisappear"]
+        row = text_line("Start Over", name="T_Btn_00", path="RootPane/N_PlayBtn_00/L_RetryBtn_00/N_Cursor_00/")
+        reopened = screen(parse(snapshot(row, "FOCUS,/L_RetryBtn_00,1,40", state("pp", "cDisp", pause, appeared=50))))
+        self.assertIsNone(reopened["focus"])  # focused at 40, the menu appeared again at 50
+        same = screen(parse(snapshot(row, "FOCUS,/L_RetryBtn_00,1,55", state("pp", "cDisp", pause, appeared=50))))
+        self.assertEqual(same["focused"]["text"], "Start Over")
 
     def test_empty_tile_keeps_the_focus_and_its_slot(self):
         slots = ",".join(str(s) for s in [-1] * 8 + [4, -1, -1, -1] + [-1] * 8)
         view = screen(parse(snapshot(text_line("Flat", path="L_CourseDataList_02/N_All_00/L_CourseBtn_00/"),
-                                     "FOCUS,/L_CourseDataList_02/L_CourseBtn_01,-1", "SLOTS," + slots)))
+                                     "FOCUS,/L_CourseDataList_02/L_CourseBtn_01,-1,60", "SLOTS," + slots)))
         self.assertIsNone(view["focused"])  # an empty tile draws no text
         self.assertEqual((view["course_slot"], view["course_slot_source"]), (5, "row"))
 

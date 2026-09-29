@@ -1699,10 +1699,11 @@ def level_switch_gallery() -> LevelBuilder:
 
 @test_level(68, "Hidden Block Row")
 def level_hidden_block_row() -> LevelBuilder:
-    """A row of hidden blocks (29) two tiles above the floor across the start
-    area, so a jump in place from the spawn hits one, for reading the spent
-    block's sprite after the hit; a question block (5) further on for the
-    same spent look from the other block.
+    """A row of hidden blocks (29) two tiles above the floor at columns 7..12,
+    for reading the spent block's sprite after the hit; a question block (5)
+    at column 15 for the same spent look from the other block. The player
+    spawns at x 72 (column 4.5), left of the row: walk under a block's centre
+    (column * 16 + 8) before jumping.
     """
     b = LevelBuilder("Hidden Block Row", "SMB1", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
@@ -1712,6 +1713,25 @@ def level_hidden_block_row() -> LevelBuilder:
                           '_half_tile_offset': True})
     b.objects.append({'id': 5, 'x': 15, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000040,
                       '_half_tile_offset': True})
+    return b
+
+
+@test_level(71, "Coin Blocks")
+def level_coin_blocks() -> LevelBuilder:
+    """Blocks with and without a coin inside, one per column with a free
+    column between, so a jump under a block's centre (column * 16 + 8) hits
+    only that block: an empty hidden block (29) at column 7, a hidden block
+    holding a coin at 9, an empty question block (5) at 12, a question block
+    holding a coin at 15. A block's contents are its child id (the record's
+    `cid`, here OBJ_COIN = 8), as the editor stores a coin dropped on it.
+    The player spawns at x 72.
+    """
+    b = LevelBuilder("Coin Blocks", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    for x, block, contents in ((7, 29, -1), (9, 29, OBJ_COIN), (12, OBJ_QUESTION, -1), (15, OBJ_QUESTION, OBJ_COIN)):
+        b.objects.append({'id': block, 'x': x, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000040,
+                          'contents': contents, '_half_tile_offset': True})
     return b
 
 
