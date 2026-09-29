@@ -145,6 +145,7 @@ HkTrampoline<void, void*, unsigned, bool> setInput = hk::hook::trampoline(
 // *(button+0x58)+0xA0.
 constexpr unsigned FOCUS = 64;
 char focusPath[FOCUS] = {};
+uint32_t focusTick = 0;  // the frame of the last focus call
 uintptr_t focusButton = 0;
 HkTrampoline<void, void*, unsigned, unsigned, unsigned, unsigned, void*> focusOn = hk::hook::trampoline(
     [](void* button, unsigned action, unsigned state, unsigned a4, unsigned a5, void* a6) -> void {
@@ -157,6 +158,7 @@ HkTrampoline<void, void*, unsigned, unsigned, unsigned, unsigned, void*> focusOn
         std::memcpy(focusPath, path, n);
         focusPath[n] = 0;
         focusButton = reinterpret_cast<uintptr_t>(button);
+        focusTick = tick;
         // A button at a freed one's address must not inherit its input state.
         const int on = readInput(focusButton);
         if (on >= 0) rememberInput(focusButton, on);
@@ -200,6 +202,7 @@ constexpr int32_t MAX_STATES = 96;
 struct Machine {
     uintptr_t machine;
     uint32_t changed, executed;   // ticks
+    uint32_t appeared;            // tick it last entered an Appear state: a new showing
     int32_t state, frames, count;
     const char* names[MAX_STATES];  // static strings in the game binary
 };
@@ -238,12 +241,16 @@ HkTrampoline<void, void*, int> changeState = hk::hook::trampoline(
             e = &machines[0];
             for (auto& c : machines) if (c.changed < e->changed) e = &c;
             e->machine = m;
+            e->appeared = 0;
             e->count = field<int32_t>(m, 0x38) < MAX_STATES ? field<int32_t>(m, 0x38) : MAX_STATES;
             for (int32_t i = 0; i < e->count; ++i) e->names[i] = stateName(m, i);
         }
         if (e) {
             e->changed = e->executed = tick;
-            e->state = field<int32_t>(m, 0x08);
+            const auto state = field<int32_t>(m, 0x08);
+            const char* name = state >= 0 && state < e->count ? e->names[state] : nullptr;
+            if (name && std::strstr(name, "Appear")) e->appeared = tick;
+            e->state = state;
             e->frames = field<int32_t>(m, 0x0C);
         }
         unlock(machinesLock);
@@ -387,13 +394,13 @@ void poll() {
         putHex(r.text, r.bytes);
         put(",%u\n", r.length);
     }
-    if (focusPath[0]) put("FOCUS,%s,%d\n", focusPath, focusInput());
+    if (focusPath[0]) put("FOCUS,%s,%d,%u\n", focusPath, focusInput(), focusTick);
     put("INPUT,%u,%u\n", inputOnTick, inputOffTick);
     put("PAD,%llx,%u\n", (unsigned long long)tas::seen_buttons(), buttonsTick);
     for (const auto& m : states) {
         if (!m.machine) continue;
         const char* name = m.state >= 0 && m.state < m.count ? m.names[m.state] : nullptr;
-        put("STATE,%llx,%u,%u,%d,%.48s,", (unsigned long long)m.machine, m.executed, m.changed,
+        put("STATE,%llx,%u,%u,%u,%d,%.48s,", (unsigned long long)m.machine, m.executed, m.changed, m.appeared,
             m.frames, name ? name : "");
         // All its state names, which say what screen it is.
         for (int32_t i = 0; i < m.count; ++i) put(i ? "|%.48s" : "%.48s", m.names[i] ? m.names[i] : "");

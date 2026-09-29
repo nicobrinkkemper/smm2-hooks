@@ -256,43 +256,106 @@ class Game:
 
     # ── Movement ────────────────────────────────────────────
 
-    def walk_to(self, target_x, timeout=10, use_analog=False):
-        """Walk Mario to target x position. Returns True if reached.
-        
-        Args:
-            target_x: target x coordinate
-            timeout: max seconds
-            use_analog: use analog stick (required for 3DW)
+    # Ground movement from the decomp (smm2-decomp src-sim/game/player/PlayerConst.h):
+    # walking accelerates 0.1 a frame up to 0.5 and 0.03 a frame up to 1.5;
+    # released on the ground it slows by a flat 0.05 a frame.
+    WALK_ACCEL = ((0.5, 0.1), (1.5, 0.03))
+    GROUND_DECEL = 0.05
+    # Frames between reading the position and the game acting on the input
+    # written after it: 4 to 5 measured through status.bin from WSL, and it
+    # varies, so the approach stops a little short and taps finish forward.
+    INPUT_DELAY_FRAMES = 7
+
+    @classmethod
+    def glide(cls, speed):
+        """Distance the player still covers after releasing at `speed` on flat ground."""
+        dist = 0.0
+        while speed > 1e-6:
+            speed = max(0.0, speed - cls.GROUND_DECEL)
+            dist += speed
+        return dist
+
+    @classmethod
+    def tap_distance(cls, frames):
+        """Distance a walk held for `frames` frames from standing covers, glide included."""
+        speed = dist = 0.0
+        for _ in range(frames):
+            # "less or same": at exactly 0.5 the game still adds 0.1 (0.5 -> 0.6)
+            accel = next((a for limit, a in cls.WALK_ACCEL if speed <= limit + 1e-6), 0.0)
+            speed = min(1.5, speed + accel)
+            dist += speed
+        return dist + cls.glide(speed)
+
+    def _wait_frames(self, n, timeout=2.0):
+        """Wait until status.bin's frame counter has advanced `n` frames."""
+        s = self.status()
+        start, deadline = (s['frame'] if s else 0), time.time() + timeout
+        while time.time() < deadline:
+            s = self.status()
+            if s and s['frame'] - start >= n:
+                return s
+            time.sleep(0.003)
+        return self.status()
+
+    def _settle(self, timeout=3.0):
+        """Wait until the player stands still; returns the status."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            s = self._wait_frames(1)
+            if s and abs(s['vx']) < 1e-4:
+                return s
+        return self.status()
+
+    def walk_to(self, target_x, tolerance=1.0, timeout=20, use_analog=False):
+        """Walk the player to `target_x` on flat ground, within `tolerance` units.
+
+        Reads the position every frame and walks toward the target, letting go
+        when the glide at the current speed (the game's 0.05 a frame ground
+        deceleration, plus the input delay) would carry the player there; then
+        closes the rest with taps held for a counted number of frames, the
+        longest that does not pass the target. It does not run and does not
+        walk past the target to come back. Slopes, belts and ice move the
+        player differently; this is for flat ground.
+        Returns True when the player stands within `tolerance`.
         """
         deadline = time.time() + timeout
-        tolerance = 4.0
-        last_dir = 0
+
+        def hold(direction):
+            if use_analog:
+                self._write_input(0, 32767 * direction, 0)
+            else:
+                self._write_input(BTN['RIGHT'] if direction > 0 else BTN['LEFT'])
 
         while time.time() < deadline:
             s = self.status()
-            if not s or not s['has_player']:
+            if not s or not s['has_player'] or s['state'] in DEATH_STATES:
                 self.release()
                 return False
-            if s['state'] in DEATH_STATES:
-                self.release()
-                return False
-
             dx = target_x - s['x']
-            if abs(dx) < tolerance:
+            direction = 1 if dx > 0 else -1
+            speed = abs(s['vx'])
+            if speed > 1e-4:
+                # Moving: hold on while the glide still falls short.
+                toward = s['vx'] * direction > 0
+                if toward and speed * self.INPUT_DELAY_FRAMES + self.glide(speed) < abs(dx):
+                    hold(direction)
+                else:
+                    self.release()
+                self._wait_frames(1)
+                continue
+            if abs(dx) <= tolerance:
                 self.release()
                 return True
-
-            # Only re-write input when direction changes (reduces file I/O contention)
-            new_dir = 1 if dx > 0 else -1
-            if new_dir != last_dir:
-                if use_analog:
-                    self._write_input(0, 32767 * new_dir, 0)
-                else:
-                    btn = BTN['RIGHT'] if new_dir > 0 else BTN['LEFT']
-                    self._write_input(btn)
-                last_dir = new_dir
-
-            time.sleep(0.15)
+            # Standing: the longest counted tap that stays short of the target,
+            # at least one frame.
+            # Aimed half a unit short: the tap's length varies a frame with the delay.
+            frames = 1
+            while frames < 90 and self.tap_distance(frames + 1) <= abs(dx) - 0.5:
+                frames += 1
+            hold(direction)
+            self._wait_frames(frames)
+            self.release()
+            self._settle()
 
         self.release()
         return False
@@ -360,18 +423,25 @@ class Game:
 
         return False
 
-    def start_over(self):
-        """In game-only play: PLUS → Start Over (first menu option) → A.
-        Resets level from beginning without returning to editor/coursebot."""
-        self.press('PLUS', 200)
-        time.sleep(1)
-        # "Start Over" is first option in pause menu
-        self.press('A', 200)
-        time.sleep(2)
+    def start_over(self, timeout=15):
+        """Pause, Start Over: play the course again from its start.
+
+        The game reloads the course for it: status.bin's scene_change_count
+        goes up (by two) and the player is gone for about 1.5 s, so this
+        waits for the count to have moved and a player to exist again. The
+        player is still there for a few frames after the press, which is why
+        a wait on the player alone returns before the restart.
+        """
+        s = self.status()
+        if not s:
+            return False
+        before = s['scene_change_count']
+        self._press('PLUS', focus=False)
+        self.focus('Start Over')
+        self._press('A')
         return self.wait_for(
-            lambda s: s['scene_mode'] == SCENE_PLAY and s['has_player'] and s['state'] not in DEATH_STATES,
-            timeout=10
-        ) is not None
+            lambda s: s['scene_change_count'] > before and s['has_player'] and s['state'] not in DEATH_STATES,
+            timeout=timeout) is not None
 
     def _coursebot_home(self, max_rows=24, gap=0.5, scroll_gap=1.2):
         """Put the Coursebot cursor on slot 0.
@@ -632,9 +702,11 @@ class Game:
         self.press(button, 100)
         key = lambda v: (v.get('focus'), v.get('course_slot'))
         seen = lambda v: v.get('buttons_tick', 0) > before['tick']
+        # The answer needs no focus: a press that closes the menu (Start Over,
+        # a dialog's No) leaves nothing focused, and that is the answer.
         return self.wait_until(
             lambda v: seen(v) and (key(v) != key(before) or v['tick'] >= v['buttons_tick'] + self.IGNORED_AFTER_FRAMES),
-            focus=focus, after=before['tick'], what=f'the game to answer {button}')
+            focus=False, after=before['tick'], what=f'the game to answer {button}')
 
     def focus(self, text, max_presses=12):
         """Move the menu focus onto the active control labelled `text`.

@@ -58,7 +58,9 @@ uploading it."), Coursebot play, the pause menu, Exit Course and back.
 
 The pause menu opens with nothing focused: the game makes no focus call
 until the first direction press, which lands on its first control;
-`focus()` makes that press. An empty Coursebot tile draws no text; its
+`focus()` makes that press. Opened again, it draws the same layout as before,
+so a focus only counts when the game made it after the screen last entered
+an `Appear` state. An empty Coursebot tile draws no text; its
 focus and slot are still reported while the grid is drawn.
 
 ## `ui-screen.txt`
@@ -69,10 +71,10 @@ sequence, so a read that lands mid-write is seen as torn and read again.
 ```
 BEGIN,<sequence>,<tick>,<rows>,<draws dropped>
 TEXT,<tick drawn>,<draw order>,<root pane>,<x>,<y>,<scale>,<0 utf-16|1 bytes>,<pane name>,<ancestor names root first, each followed by '/'>,<text hex>,<length>
-FOCUS,<button pane path>,<its input: 1 on, 0 off, -1 not seen>
+FOCUS,<button pane path>,<its input: 1 on, 0 off, -1 not seen>,<tick of the focus call>
 INPUT,<tick of the last switch on>,<tick of the last switch off>
 PAD,<buttons the game read last, hex>,<tick a button was last held>
-STATE,<machine>,<tick last executed>,<tick last changed>,<frames in state>,<state name>,<all state names joined by '|'>
+STATE,<machine>,<tick last executed>,<tick last changed>,<tick it last entered an Appear state>,<frames in state>,<state name>,<all state names joined by '|'>
 SLOTS,<slot of tile 0>,...,<slot of tile 19>
 END,<sequence>
 ```
