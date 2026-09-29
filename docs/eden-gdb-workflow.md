@@ -20,7 +20,7 @@
 - **Don't set breakpoints during loading** — `changeState` fires on Prepare Thread during scene transitions and freezes everything.
 - **Delete breakpoints before continuing** if you're done with them: `delete <num>`, then `c`.
 - **Handle SIGTRAP**: if spurious stops appear after deleting watchpoints, `handle SIGTRAP nostop noprint nopass`. Never `pass`: passing the initial SIGTRAP into the guest kills Eden on the first continue (tooling-gaps #7).
-- **ASLR**: Addresses change every launch. Must search for function byte patterns each session.
+- **Module base**: on v0.2.0-rc1 `Slope.nss` (the main module) started at `0x807c9000` on every launch; on v0.2.1 it moves every launch (five launches, five bases, 2026-09-29). Read it from `mon get info` each session rather than hard-coding it.
 
 ## Finding Functions (ASLR)
 
