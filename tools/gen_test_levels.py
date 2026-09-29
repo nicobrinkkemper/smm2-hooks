@@ -1735,6 +1735,33 @@ def level_coin_blocks() -> LevelBuilder:
     return b
 
 
+@test_level(72, "Enemy Walk")
+def level_enemy_walk() -> LevelBuilder:
+    """Generic enemies walking, for the enemy oracle: a Goomba (0) on the
+    ground between two walls of hard blocks two high (columns 9 and 19), so
+    it turns at each; a red Koopa (1 with the alt flag 0x4) alone on a
+    four-block ledge (columns 15-18, row 8), which turns at the ledge's ends;
+    a green Koopa (1) on a ledge right of it (columns 21-24, row 8), which
+    walks off, lands right of the column-19 wall, turns there and walks off
+    the ground's end at column 30. Everything is inside the opening view, so
+    all of them spawn at load; the player (x 72) is fenced off by the first
+    wall. The `enemywalk` preset records them every frame.
+    """
+    b = LevelBuilder("Enemy Walk", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    for col in (9, 19):
+        b.add_platform(col, 5, 1)
+        b.add_platform(col, 6, 1)
+    b.add_platform(15, 8, 4)
+    b.add_platform(21, 8, 4)
+    b.add_actor(OBJ_GOOMBA, 13, 5)
+    b.add_actor(1, 17, 9, flags=0x06000040 | 0x4)
+    b.add_actor(1, 23, 9)
+    return b
+
+
 @test_level(64, "Note Pitch")
 def level_note_pitch() -> LevelBuilder:
     """A height sweep of note blocks, for the pitch reading. One free-standing

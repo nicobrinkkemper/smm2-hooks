@@ -77,9 +77,12 @@ def create_key(rand, table, size):
 # Course decryption
 # ============================================================================
 def decrypt_course(path):
-    """Decrypt a .bcd file, return raw decrypted bytes or None on CRC fail."""
+    """Decrypt a .bcd file, return raw decrypted bytes or None on CRC fail
+    (or when the file is not the encrypted size, such as plain course data)."""
     with open(path, 'rb') as f:
         data = f.read()
+    if len(data) != 0x10 + 0x5BFC0 + 0x30:
+        return None
 
     header = data[:0x10]
     encrypted = data[0x10:0x10 + 0x5BFC0]
