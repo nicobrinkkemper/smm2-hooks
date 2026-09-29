@@ -33,9 +33,8 @@ there.
 
 A write watchpoint stops the game at the instruction that writes an
 address, and a watchpoint is the tool here anyway: we know the data, not
-the code. (On the Eden this was run with, v0.2.0-rc1, hardware breakpoints
-do not insert: `hbreak` gives "Enabled packet Z1 (hardware-breakpoint) not
-recognized by stub". Later Eden releases list GDB improvements; not tried.)
+the code. (Eden has no hardware breakpoints, and a software `break` that is
+hit keeps trapping after it is deleted: `docs/eden-gdb-workflow.md`.)
 The byte does not exist until the chain does, so the script watches each
 link in turn: the global, then the pointer
 at `+0x28`, then the byte. Launch Eden with the stub on
