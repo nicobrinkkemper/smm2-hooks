@@ -65,6 +65,10 @@ namespace smm2 { namespace probe {
     void flush();
 }}
 
+namespace smm2 { namespace theme_override {
+    void init();
+}}
+
 namespace smm2 { namespace directboot {
     void init();
     void per_frame(uint32_t frame);
@@ -107,5 +111,6 @@ extern "C" void hkMain() {
     smm2::sim_trace::init();        // per-frame player trace for sim comparison
     smm2::placeholder_debug::init(); // force spikeballs into placeholder state
     smm2::probe::init();
+    smm2::theme_override::init();   // sd:/smm2-hooks/theme.txt: every course loads with that theme
     smm2::directboot::init();       // sd:/smm2-hooks/boot.txt: skip the title and menus            // sd:/smm2-hooks/probe.txt -> probe.log (docs/probe.md)
 }
