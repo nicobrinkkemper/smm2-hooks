@@ -31,7 +31,8 @@ struct Field {
     char name[24];
     Type type;
     uint8_t depth;              // number of path steps; all but the last dereference
-    uint8_t fromModule;         // 1: path starts at the main module (@0x71... in probe.txt); 2: at absBase (@@0x...)
+    uint8_t fromModule;         // 1: path starts at the main module (@0x71... in probe.txt); 2: at absBase (@@0x...); 3: at argument register `reg` (x1:...)
+    uint8_t reg;                // fromModule 3: which of x0..x7
     uint32_t path[MAX_DEPTH];
     uintptr_t absBase;          // @@0x...: an absolute address, e.g. a heap object at a stable address
 };
@@ -56,9 +57,11 @@ static bool plausible(uintptr_t p, unsigned align) {
     return p >= 0x8000000ull && p < 0x8000000000ull && (p & (align - 1)) == 0;
 }
 
-static bool read_field(uintptr_t x0, const Field& f, uint64_t& out) {
+static bool read_field(const uint64_t* regs, const Field& f, uint64_t& out) {
     // a module path starts at the main module's base, so its first step is the global's offset
-    uintptr_t p = f.fromModule == 2 ? f.absBase : f.fromModule ? hk::ro::getMainModule()->range().start() : x0;
+    uintptr_t p = f.fromModule == 3 ? regs[f.reg]
+                : f.fromModule == 2 ? f.absBase
+                : f.fromModule ? hk::ro::getMainModule()->range().start() : regs[0];
     for (int i = 0; i + 1 < f.depth; i++) {
         p += f.path[i];
         if (!plausible(p, 8)) return false;
@@ -94,9 +97,10 @@ static void on_call(int idx, uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3,
     s_log.writef("R,%u,%d,%llx,%llx,%llx,%llx,%llx,%llx,%llx,%llx", frame::current(), idx,
                  (unsigned long long)x0, (unsigned long long)x1, (unsigned long long)x2, (unsigned long long)x3,
                  (unsigned long long)x4, (unsigned long long)x5, (unsigned long long)x6, (unsigned long long)x7);
+    const uint64_t regs[8] = {x0, x1, x2, x3, x4, x5, x6, x7};
     for (int i = 0; i < h.nfields; i++) {
         uint64_t v;
-        if (read_field(x0, h.fields[i], v))
+        if (read_field(regs, h.fields[i], v))
             s_log.writef(",%llx", (unsigned long long)v);
         else
             s_log.write(",-", 2);
@@ -233,7 +237,11 @@ static void parse_field(char* rest) {
     copy_name(f.name, sizeof f.name, label);
     if (!parse_type(type, f.type)) { s_log.writef("E,field %s: bad type %s\n", label, type); return; }
     char* p = path;
-    if (p[0] == '@' && p[1] == '@') {   // @@0x...: an absolute address (no relocation), then the usual chain
+    if (p[0] == 'x' && p[1] >= '0' && p[1] <= '7' && p[2] == ':') {   // x2:0x70: the chain starts at argument register x2
+        f.fromModule = 3;
+        f.reg = (uint8_t)(p[1] - '0');
+        p += 3;
+    } else if (p[0] == '@' && p[1] == '@') {   // @@0x...: an absolute address (no relocation), then the usual chain
         f.fromModule = 2;
         p += 2;
         char* sep = std::strchr(p, '>');

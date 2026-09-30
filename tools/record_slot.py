@@ -46,6 +46,8 @@ def main() -> int:
     ap.add_argument("--level", help="course file (.bcd, plain or encrypted) to install first")
     ap.add_argument("--probe", required=True, help="probe.txt to arm for this boot")
     ap.add_argument("--seconds", type=float, default=30)
+    ap.add_argument("--deploy", action="store_true",
+                    help="deploy this checkout's build/smm2-hooks.nso first (a probe feature the deployed mod lacks)")
     ap.add_argument("--input", default="", help="held once play starts, in order: BUTTONS:ms,... (e.g. RIGHT:1500)")
     ap.add_argument("-o", "--out", required=True)
     args = ap.parse_args()
@@ -59,6 +61,9 @@ def main() -> int:
     sd = Path(server.P.sd_hooks_dir)
     shutil.copy(args.probe, sd / "probe.txt")
     step("probe armed")
+    if args.deploy:
+        r = server._deploy_built_mod()
+        step(f"mod: {r}")
     if args.level:
         r = ctl.plain("level_install")(slot=args.slot, level=args.level)
         if "error" in r:

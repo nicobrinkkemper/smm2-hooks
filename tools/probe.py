@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import re
 import struct
 import sys
 from pathlib import Path
@@ -684,7 +685,10 @@ def cmd_check(args) -> int:
         if f["type"] not in ("u8", "u16", "u32", "u64", "f32"):
             print(f"line {f['line']}: field {f['label']}: bad type {f['type']}")
             rc = 1
-        steps = f["path"].split(">")
+        path = f["path"]
+        if re.match(r"^x[0-7]:", path):   # x1:0x70 -- the chain starts at argument register x1
+            path = path[3:]
+        steps = path.split(">")
         if len(steps) > 4:
             print(f"line {f['line']}: field {f['label']}: path deeper than 4")
             rc = 1

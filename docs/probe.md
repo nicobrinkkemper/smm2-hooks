@@ -43,7 +43,10 @@ field <hook-name> <label> <type> <path>
   location, which dereferences), `@@addr` does not dereference its base: a
   bare `@@addr` reads the value at `addr`, and `@@addr>0x10` reads `addr+0x10`
   directly. Add an explicit `>0` step (`@@addr>0>0x10`) to follow a pointer
-  at the base first.
+  at the base first. A path may also start at another argument register:
+  `x1:0x70` reads `*(x1+0x70)`, `x2:0xA8>0x234` follows the pointer at
+  `x2+0xA8` (x0..x7; a bare path is `x0`), for a function whose second or
+  third argument is the object you want.
 
 `python3 tools/probe.py preset rail` prints the RailMover trace config
 (block rail applier `sub_710138C520`, mover fields from the decomp's
