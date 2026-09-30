@@ -23,7 +23,13 @@ from pathlib import Path
 
 MAIN_BASE = 0x7100000000
 HERE = Path(__file__).resolve().parent
-DECOMP = Path(os.environ.get("SMM2_DECOMP", HERE.parent.parent / "smm2-decomp"))
+# The decomp checkout: $SMM2_DECOMP, else the sibling of this checkout, else
+# the one in the code root (a worktree of this repo has no sibling).
+DECOMP = Path(os.environ.get("SMM2_DECOMP") or next(
+    (p for p in (HERE.parent.parent / "smm2-decomp",
+                 Path(os.environ.get("GEITJE_CODE_ROOT", Path.home() / "code")) / "smm2-decomp")
+     if (p / "data/v3.0.3/main.elf").exists()),
+    HERE.parent.parent / "smm2-decomp"))
 ELF = DECOMP / "data/v3.0.3/main.elf"
 FUNCS = DECOMP / "data/v3.0.3/functions.csv"
 
@@ -441,6 +447,31 @@ field enemy spd   f32 0x274
 field enemy sysst u32 0x400
 field enemy f520  u32 0x520
 field enemy f524  u32 0x524
+""",
+    # What the stomp chain reads off each enemy (the decomp's
+    # src/game/enemy/: EnemyStompGate, EnemyAttackReaction, EnemyHitKind,
+    # EnemyHit): the actor id the gate's stomp-kind table is indexed by
+    # (+0x6A0), the flag words the chain tests, the delegate-override mask
+    # (+0x6A8) and the enemy data's reaction row for attack 0 (the stomp,
+    # [+0x3F0] + 0x740, 32 bytes).
+    "reaction": """\
+hook enemy 0x710128A2D0
+field enemy id    u32 0x40
+field enemy aid   u32 0x6A0
+field enemy f4E0  u32 0x4E0
+field enemy f520  u32 0x520
+field enemy f52C  u32 0x52C
+field enemy f530  u32 0x530
+field enemy f534  u32 0x534
+field enemy m6A8  u64 0x6A8
+field enemy r0    u32 0x3F0>0x740
+field enemy r1    u32 0x3F0>0x744
+field enemy r2    u32 0x3F0>0x748
+field enemy r3    u32 0x3F0>0x74C
+field enemy r4    u32 0x3F0>0x750
+field enemy r5    u32 0x3F0>0x754
+field enemy r6    u32 0x3F0>0x758
+field enemy r7    u32 0x3F0>0x75C
 """,
     # Who is still loaded, and where the camera is (docs/re-notes/globality.md
     # in the decomp). Every enemy's per-frame (0x710128A2D0) carries its
