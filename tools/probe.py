@@ -373,6 +373,49 @@ field enemy acc   f32 0x284
 field enemy grnd  u32 0x684
 field enemy sysst u32 0x400
 """,
+    # Per-face hit words (smm2-decomp re-note hit-attributes): the collider
+    # method sub_7101078AB0 rebuilds them from the actor's +0x520 bits each
+    # call (x0 = collider, +8 = its actor; side s at +0x3A4/+0x3A8/+0x3AC +
+    # 12*s); the block dispatcher sub_710138CEC0 (x0 = the block's sensor,
+    # x1 = the hitter's collider, x2 = the side) and the two requesters it
+    # calls, bound sub_710138D6B0 and break sub_710138D590 (x0 = the block,
+    # x2 = the hitter's collider, x3 = the side). Match x1/x2 against the
+    # builder's x0 to name the hitter.
+    "hot": """\
+hook build 0x7101078AB0
+field build id    u32 0x8>0x40
+field build pos_x f32 0x8>0x230
+field build pos_y f32 0x8>0x234
+field build f520  u32 0x8>0x520
+field build f58   u32 0x8>0x58
+field build a0    u32 0x3A4
+field build b0    u32 0x3A8
+field build c0    u32 0x3AC
+field build a1    u32 0x3B0
+field build b1    u32 0x3B4
+field build c1    u32 0x3B8
+field build a2    u32 0x3BC
+field build b2    u32 0x3C0
+field build c2    u32 0x3C4
+field build a3    u32 0x3C8
+field build b3    u32 0x3CC
+field build c3    u32 0x3D0
+hook disp 0x710138CEC0
+field disp type  u32 0x360
+field disp kind  u32 0x278>0x3F0
+field disp bx    f32 0x278>0x230
+field disp by    f32 0x278>0x234
+field disp bst   u32 0x278>0x478
+field disp bnd   u32 0x278>0x4BC
+hook bound 0x710138D6B0
+field bound kind u32 0x3F0
+field bound bx   f32 0x230
+field bound by   f32 0x234
+hook brk 0x710138D590
+field brk kind u32 0x3F0
+field brk bx   f32 0x230
+field brk by   f32 0x234
+""",
     # Who is still loaded, and where the camera is (docs/re-notes/globality.md
     # in the decomp). Every enemy's per-frame (0x710128A2D0) carries its
     # identity (+0x30 handle, +0x4E4 record link), its activation flags

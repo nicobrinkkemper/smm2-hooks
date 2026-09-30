@@ -1762,6 +1762,64 @@ def level_enemy_walk() -> LevelBuilder:
     return b
 
 
+@test_level(73, "Hot Gallery")
+def level_hot_gallery() -> LevelBuilder:
+    """What a spike ball does to a block from each side, small and big, for
+    the per-face hit words (sub_7101078AB0 builds them from actor+0x520; the
+    block dispatcher sub_710138CEC0 reads them). Nothing needs input.
+
+    Spike balls (74, 0x06000044) set down on flat ground roll LEFT (first
+    run, 2026-09-30: every ball, belt or no belt), so each target sits left
+    of its ball, and a hard-block fence at column 7 keeps them off the
+    player (x 72), who a ball otherwise kills 105 frames in.
+      9     question block, small ball from 10 (on a belt 10-12)
+      14    brick, small ball from 15 (belt 15-17)
+      19    question block, big ball (flag 0x4000, 2x2) from 21 (belt 20-22)
+      26    spring, small ball; hidden blocks at row 10, columns 22-26
+      32    spring, big ball; hidden blocks at row 11, columns 28-32
+      34    ON/OFF switch, a Goomba at 36 walking into it (not hot)
+    Upper lane: a 3-wide lift at row 10 (centre 13, shuttles left 3 tiles)
+    with a small ball dropped on it, carried into a question block at
+    column 10, row 11.
+    """
+    b = LevelBuilder("Hot Gallery", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 37, y_surface=4, height=5)
+    b.goal_y = 5
+
+    def obj(oid, x, y, flags=0x06000040, w=1, h=1):
+        b.objects.append({'id': oid, 'x': x, 'y': y, 'width': w, 'height': h,
+                          'flags': flags, '_half_tile_offset': True})
+
+    def belt(x):
+        obj(53, x, 5, flags=0x06000048, w=3)
+
+    def ball(x, y, big=False):
+        if big:
+            obj(OBJ_SPIKE_BALL, x, y, flags=0x06000044 | 0x4000, w=2, h=2)
+        else:
+            obj(OBJ_SPIKE_BALL, x, y, flags=0x06000044)
+
+    for row in (5, 6, 7):
+        obj(OBJ_HARD_BLOCK, 7, row)
+    obj(OBJ_QUESTION, 9, 6);  belt(10); ball(10, 7)
+    obj(OBJ_BLOCK, 14, 6);    belt(15); ball(15, 7)
+    obj(OBJ_QUESTION, 19, 6); belt(20); ball(21, 8, big=True)
+    obj(10, 26, 5); ball(26, 7)
+    for x in range(22, 27):
+        obj(29, x, 10)
+    obj(10, 32, 5); ball(32, 8, big=True)
+    for x in range(28, 33):
+        obj(29, x, 11)
+    obj(99, 34, 5)
+    b.add_actor(OBJ_GOOMBA, 36, 5)
+
+    obj(OBJ_LIFT, 13, 10, w=3)
+    ball(13, 13)
+    obj(OBJ_QUESTION, 10, 11)
+    return b
+
+
 @test_level(64, "Note Pitch")
 def level_note_pitch() -> LevelBuilder:
     """A height sweep of note blocks, for the pitch reading. One free-standing
