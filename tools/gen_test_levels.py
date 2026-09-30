@@ -1874,6 +1874,30 @@ def level_walk_in() -> LevelBuilder:
     return b
 
 
+@test_level(77, "Walker Zoo")
+def level_walker_zoo() -> LevelBuilder:
+    """More walking enemies for the walker oracle, each boxed in its own
+    three-tile run between two-high hard-block posts so it turns at walls:
+    a Spiny (25) at column 9, a Buzzy Beetle (28) at 13 and a Bob-omb (15) at
+    17 (posts at 8, 11, 12, 15, 16, 19); the player (x 72) is fenced off by
+    the first post. Everything is in the opening view. Record with the
+    `enemywalk` preset plus a hook on the wall resolver sub_7100E1EE80 (the
+    owner at bg+0x188, the side / head / foot sensors behind +0x1A8..+0x1C0).
+    """
+    b = LevelBuilder("Walker Zoo", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    for col in (8, 11, 12, 15, 16, 19):
+        for row in (5, 6):
+            b.objects.append({'id': OBJ_HARD_BLOCK, 'x': col, 'y': row, 'width': 1, 'height': 1,
+                              'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_actor(25, 9, 5)
+    b.add_actor(28, 13, 5)
+    b.add_actor(15, 17, 5)
+    return b
+
+
 @test_level(64, "Note Pitch")
 def level_note_pitch() -> LevelBuilder:
     """A height sweep of note blocks, for the pitch reading. One free-standing
