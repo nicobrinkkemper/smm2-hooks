@@ -594,8 +594,30 @@ def trace_record(action: str = "status", name: str = "", presets: str = "player,
     return {"error": f"unknown action {action}; start, stop or status"}
 
 
+def _keep_stdin_for_the_protocol() -> None:
+    """Move the JSON-RPC stream off fd 0 and put /dev/null there.
+
+    A Windows program started from WSL (eden.exe, powershell.exe, and any
+    tool module that runs one) is given the parent's stdin through the
+    interop relay, and the relay READS it: a PowerShell child took every
+    byte waiting on a piped stdin (2000 of 2000, and none with stdin
+    redirected). In this server stdin is the host's request stream, so a
+    tool that ran PowerShell or launched Eden could swallow the next
+    request; its reply never came and the host's later calls hung too.
+    With fd 0 on /dev/null every child, in this module or a tool it
+    imports, inherits nothing to read, and the transport reads its own
+    duplicate of the pipe.
+    """
+    proto = os.dup(0)
+    null = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(null, 0)
+    os.close(null)
+    sys.stdin = os.fdopen(proto, "r", encoding="utf-8", errors="replace")
+
+
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         print(json.dumps(anyio.run(eden_state), indent=1)[:1500])
     else:
+        _keep_stdin_for_the_protocol()
         mcp.run()
