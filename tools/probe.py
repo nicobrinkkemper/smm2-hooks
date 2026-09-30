@@ -473,6 +473,24 @@ field enemy r5    u32 0x3F0>0x754
 field enemy r6    u32 0x3F0>0x758
 field enemy r7    u32 0x3F0>0x75C
 """,
+    # Every actor-vs-actor contact (the enemy contact handler, x0 = the
+    # enemy's contact record, x1 = the other body's): each record's actor
+    # id, the enemy's system state and position, and each box's offset over
+    # the actor's origin and half size (+0x64, +0x6C high, +0x68 wide).
+    "contactbox": """\
+hook contact 0x71011FF860
+field contact e_id   u32 0xA8>0x40
+field contact e_sys  u32 0xA8>0x400
+field contact e_x    f32 0xA8>0x230
+field contact e_y    f32 0xA8>0x234
+field contact e_offy f32 0x64
+field contact e_hh   f32 0x6C
+field contact e_hw   f32 0x68
+field contact o_id   u32 x1:0xA8>0x40
+field contact o_y    f32 x1:0xA8>0x234
+field contact o_offy f32 x1:0x64
+field contact o_hh   f32 x1:0x6C
+""",
     # Who is still loaded, and where the camera is (docs/re-notes/globality.md
     # in the decomp). Every enemy's per-frame (0x710128A2D0) carries its
     # identity (+0x30 handle, +0x4E4 record link), its activation flags

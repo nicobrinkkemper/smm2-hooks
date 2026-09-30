@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -51,7 +52,7 @@ def main() -> int:
     ap.add_argument("--probe", required=True, help="probe.txt to arm for this boot")
     ap.add_argument("--seconds", type=float, default=30)
     ap.add_argument("--deploy", action="store_true",
-                    help="deploy this checkout's build/smm2-hooks.nso first (a probe feature the deployed mod lacks)")
+                    help="deploy this checkout's build/smm2-hooks.nso for this recording (a probe feature the deployed mod lacks); the mod deployed before is put back afterwards")
     ap.add_argument("--input", default="", help="held once play starts, in order: BUTTONS:ms,... (e.g. RIGHT:1500)")
     ap.add_argument("-o", "--out", required=True)
     args = ap.parse_args()
@@ -65,84 +66,109 @@ def main() -> int:
     sd = Path(server.P.sd_hooks_dir)
     shutil.copy(args.probe, sd / "probe.txt")
     step("probe armed")
-    if args.deploy:
-        r = server._deploy_built_mod()
-        step(f"mod: {r}")
-    if args.level:
-        r = ctl.plain("level_install")(slot=args.slot, level=args.level)
-        if "error" in r:
-            print(r, file=sys.stderr)
+    # A field path from an argument register (x1:0x70) is read only by a mod
+    # built from this checkout; the one deployed may be older, and it reads
+    # such a path as nonsense without an error. So a config that uses one
+    # needs this build deployed, and --deploy puts back what was deployed
+    # before once the recording is done.
+    built = ROOT / "build" / "smm2-hooks.nso"
+    deployed = Path(server.P.mods_dir) / "subsdk4"
+    same = built.exists() and deployed.exists() and built.read_bytes() == deployed.read_bytes()
+    if re.search(r"\sx[0-7]:", Path(args.probe).read_text()) and not args.deploy and not same:
+        print("the probe reads an argument register (xN:), which the deployed mod does not: pass --deploy",
+              file=sys.stderr)
+        return 1
+    before = None
+    if args.deploy and not same:
+        if not built.exists():
+            print("build/smm2-hooks.nso missing (ninja -C build)", file=sys.stderr)
             return 1
-        step(f"course installed in slot {args.slot}")
+        before = deployed.read_bytes() if deployed.exists() else b""
+        deployed.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(built, deployed)
+        step("mod: this build deployed")
+    try:
+        if args.level:
+            r = ctl.plain("level_install")(slot=args.slot, level=args.level)
+            if "error" in r:
+                print(r, file=sys.stderr)
+                return 1
+            step(f"course installed in slot {args.slot}")
 
-    proc = eden.process()
-    if proc:
-        subprocess.run(["taskkill.exe", "/F", "/PID", str(proc["pid"])], capture_output=True)
-        time.sleep(2)
-    r = ctl.plain("eden_launch")(gdb=False)
-    if r.get("error"):
-        print(r["error"], file=sys.stderr)
-        return 1
-    step("eden launched")
+        proc = eden.process()
+        if proc:
+            subprocess.run(["taskkill.exe", "/F", "/PID", str(proc["pid"])], capture_output=True)
+            time.sleep(2)
+        r = ctl.plain("eden_launch")(gdb=False)
+        if r.get("error"):
+            print(r["error"], file=sys.stderr)
+            return 1
+        step("eden launched")
 
-    for _ in range(100):
-        s = status()
-        if s.get("scene") == "title" and (s.get("frame") or 0) > 1500:
-            break
-        time.sleep(2)
-    else:
-        print(f"no title screen after {time.time() - t0:.0f}s (eden: {eden.process()})", file=sys.stderr)
-        return 1
-    step("title")
+        for _ in range(100):
+            s = status()
+            if s.get("scene") == "title" and (s.get("frame") or 0) > 1500:
+                break
+            time.sleep(2)
+        else:
+            print(f"no title screen after {time.time() - t0:.0f}s (eden: {eden.process()})", file=sys.stderr)
+            return 1
+        step("title")
 
-    r = ctl.plain("game_boot")(target="coursebot", slot=args.slot, budget=240, timeout=120)
-    t = server._NAV.get("thread")
-    if t is not None and t.is_alive():
-        t.join()
-        r = dict(server._NAV["result"])
-    if not r.get("ok"):
-        if "yes_no_dialog" in json.dumps(r):
-            # The grid opens behind "Corrupt data was found so the course has
-            # been deleted": the validator refused a course (usually the one
-            # just installed) and cleared its slot's used flag.
-            print(f"Coursebot deleted a course as corrupt (slot {args.slot} was just installed?)", file=sys.stderr)
-        print(json.dumps(r)[:400], file=sys.stderr)
-        return 1
-    start = status()
-    step(f"coursebot play at frame {start.get('frame')}")
+        r = ctl.plain("game_boot")(target="coursebot", slot=args.slot, budget=240, timeout=120)
+        t = server._NAV.get("thread")
+        if t is not None and t.is_alive():
+            t.join()
+            r = dict(server._NAV["result"])
+        if not r.get("ok"):
+            if "yes_no_dialog" in json.dumps(r):
+                # The grid opens behind "Corrupt data was found so the course has
+                # been deleted": the validator refused a course (usually the one
+                # just installed) and cleared its slot's used flag.
+                print(f"Coursebot deleted a course as corrupt (slot {args.slot} was just installed?)", file=sys.stderr)
+            print(json.dumps(r)[:400], file=sys.stderr)
+            return 1
+        start = status()
+        step(f"coursebot play at frame {start.get('frame')}")
 
-    held = 0.0
-    if args.input:
-        from smm2 import Game
-        game = Game("eden")
-        for part in args.input.split(","):
-            buttons, ms = part.rsplit(":", 1)
-            game.hold(buttons, int(ms))
-            held += int(ms) / 1000
-        step(f"input done: {args.input}")
-    time.sleep(max(0.0, args.seconds - held))
-    end = status()
-    time.sleep(6)  # the mod flushes probe.log every 300 frames
-    shutil.copy(sd / "probe.log", args.out)
-    proc = eden.process()
-    if proc:
-        subprocess.run(["taskkill.exe", "/F", "/PID", str(proc["pid"])], capture_output=True)
-    restarts = (end.get("scene_change_count") or 0) - (start.get("scene_change_count") or 0)
-    course = Path(args.level).read_bytes() if args.level else None
-    Path(args.out + ".json").write_text(json.dumps({
-        "slot": args.slot,
-        "level": args.level,
-        "level_sha256": hashlib.sha256(course).hexdigest() if course else None,
-        "level_name": course[0xF4:0x136].decode("utf-16-le", "ignore").split("\0")[0] if course else None,
-        "probe": Path(args.probe).read_text(),
-        "input": args.input,
-        "frames": [start.get("frame"), end.get("frame")],
-        "scene_changes_during_play": restarts,
-        "recorded": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }, indent=1))
-    step(f"recorded to frame {end.get('frame')}, log {args.out}, scene changes during play {restarts}")
-    return 0
-
+        held = 0.0
+        if args.input:
+            from smm2 import Game
+            game = Game("eden")
+            for part in args.input.split(","):
+                buttons, ms = part.rsplit(":", 1)
+                game.hold(buttons, int(ms))
+                held += int(ms) / 1000
+            step(f"input done: {args.input}")
+        time.sleep(max(0.0, args.seconds - held))
+        end = status()
+        time.sleep(6)  # the mod flushes probe.log every 300 frames
+        shutil.copy(sd / "probe.log", args.out)
+        proc = eden.process()
+        if proc:
+            subprocess.run(["taskkill.exe", "/F", "/PID", str(proc["pid"])], capture_output=True)
+        restarts = (end.get("scene_change_count") or 0) - (start.get("scene_change_count") or 0)
+        course = Path(args.level).read_bytes() if args.level else None
+        Path(args.out + ".json").write_text(json.dumps({
+            "slot": args.slot,
+            "level": args.level,
+            "level_sha256": hashlib.sha256(course).hexdigest() if course else None,
+            "level_name": course[0xF4:0x136].decode("utf-16-le", "ignore").split("\0")[0] if course else None,
+            "probe": Path(args.probe).read_text(),
+            "input": args.input,
+            "frames": [start.get("frame"), end.get("frame")],
+            "scene_changes_during_play": restarts,
+            "recorded": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }, indent=1))
+        step(f"recorded to frame {end.get('frame')}, log {args.out}, scene changes during play {restarts}")
+        return 0
+    finally:
+        if before is not None:
+            if before:
+                deployed.write_bytes(before)
+            else:
+                deployed.unlink(missing_ok=True)
+            step("mod: the one deployed before restored")
 
 if __name__ == "__main__":
     sys.exit(main())
