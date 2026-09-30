@@ -42,6 +42,7 @@ def main() -> int:
     ap.add_argument("--level", help="course file (.bcd, plain or encrypted) to install first")
     ap.add_argument("--probe", required=True, help="probe.txt to arm for this boot")
     ap.add_argument("--seconds", type=float, default=30)
+    ap.add_argument("--input", default="", help="held once play starts, in order: BUTTONS:ms,... (e.g. RIGHT:1500)")
     ap.add_argument("-o", "--out", required=True)
     args = ap.parse_args()
 
@@ -97,7 +98,16 @@ def main() -> int:
     start = status()
     step(f"coursebot play at frame {start.get('frame')}")
 
-    time.sleep(args.seconds)
+    held = 0.0
+    if args.input:
+        from smm2 import Game
+        game = Game("eden")
+        for part in args.input.split(","):
+            buttons, ms = part.rsplit(":", 1)
+            game.hold(buttons, int(ms))
+            held += int(ms) / 1000
+        step(f"input done: {args.input}")
+    time.sleep(max(0.0, args.seconds - held))
     end = status()
     time.sleep(6)  # the mod flushes probe.log every 300 frames
     shutil.copy(sd / "probe.log", args.out)

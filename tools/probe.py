@@ -416,6 +416,31 @@ field brk kind u32 0x3F0
 field brk bx   f32 0x230
 field brk by   f32 0x234
 """,
+    # The stomp on a walking enemy: the player's step and every enemy's
+    # per-frame, the fields of the 'player' and 'enemywalk' presets that a
+    # stomp moves (state, velocity, the enemy's system state and walk).
+    "stomp": """\
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player state u32 0x3F8
+field player stfr  u32 0x3FC
+field player prev  u32 0x400
+hook enemy 0x710128A2D0
+field enemy id    u32 0x40
+field enemy h30   u64 0x30
+field enemy pos_x f32 0x230
+field enemy pos_y f32 0x234
+field enemy vel_x f32 0x23C
+field enemy vel_y f32 0x240
+field enemy face  f32 0x26C
+field enemy spd   f32 0x274
+field enemy sysst u32 0x400
+field enemy f520  u32 0x520
+field enemy f524  u32 0x524
+""",
     # Who is still loaded, and where the camera is (docs/re-notes/globality.md
     # in the decomp). Every enemy's per-frame (0x710128A2D0) carries its
     # identity (+0x30 handle, +0x4E4 record link), its activation flags
