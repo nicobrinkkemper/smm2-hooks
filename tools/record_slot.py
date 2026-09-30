@@ -8,6 +8,10 @@ launches it straight into the game, waits for the title, boots the slot into
 Coursebot play, lets it run --seconds, copies probe.log to -o and kills Eden.
 Prints one line per step with the elapsed time, and the scene-change count at
 the end: more than 4 means the course restarted (the player died).
+
+Do not run IDA (tools/decompile.py, xrefs.py in the decomp) during a
+recording: once, with an IDA batch running beside it, the game sat at
+"loading" and the boot failed; alone, the same run passed.
 """
 from __future__ import annotations
 
