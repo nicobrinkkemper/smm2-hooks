@@ -1774,13 +1774,16 @@ def level_hot_gallery() -> LevelBuilder:
     player (x 72), who a ball otherwise kills 105 frames in.
       9     question block, small ball from 10 (on a belt 10-12)
       14    brick, small ball from 15 (belt 15-17)
-      19    question block, big ball (flag 0x4000, 2x2) from 21 (belt 20-22)
-      26    spring, small ball; hidden blocks at row 10, columns 22-26
-      32    spring, big ball; hidden blocks at row 11, columns 28-32
-      34    ON/OFF switch, a Goomba at 36 walking into it (not hot)
-    Upper lane: a 3-wide lift at row 10 (centre 13, shuttles left 3 tiles)
-    with a small ball dropped on it, carried into a question block at
-    column 10, row 11.
+      21    spring, big ball, hidden blocks at row 11, 17-21: a big ball on
+            a small spring does not bounce, it rolls off; a big spring
+            (0x4000, 2x2 at 20,6) got the course deleted as corrupt
+      25    ON/OFF switch, a Goomba at 26 boxed in by a hard block at 27, so
+            it meets the switch whichever way it starts (it started right in
+            one run and left in another); a Goomba carries no hit bits
+    Nothing right of about column 27 spawns at load (2026-09-30), so all
+    of it sits left of that. Above the view, as placeholders: a 3-wide lift
+    at row 18 (centre 16, shuttles left 3 tiles) with a small ball on it and
+    a question block at column 13, row 19 in its path.
     """
     b = LevelBuilder("Hot Gallery", "SMB1", "Ground")
     b.width = 48
@@ -1804,19 +1807,17 @@ def level_hot_gallery() -> LevelBuilder:
         obj(OBJ_HARD_BLOCK, 7, row)
     obj(OBJ_QUESTION, 9, 6);  belt(10); ball(10, 7)
     obj(OBJ_BLOCK, 14, 6);    belt(15); ball(15, 7)
-    obj(OBJ_QUESTION, 19, 6); belt(20); ball(21, 8, big=True)
-    obj(10, 26, 5); ball(26, 7)
-    for x in range(22, 27):
-        obj(29, x, 10)
-    obj(10, 32, 5); ball(32, 8, big=True)
-    for x in range(28, 33):
+    obj(10, 21, 5); ball(21, 8, big=True)
+    for x in range(17, 22):
         obj(29, x, 11)
-    obj(99, 34, 5)
-    b.add_actor(OBJ_GOOMBA, 36, 5)
+    obj(99, 25, 5)
+    b.add_actor(OBJ_GOOMBA, 26, 5)
+    obj(OBJ_HARD_BLOCK, 27, 5)
 
-    obj(OBJ_LIFT, 13, 10, w=3)
-    ball(13, 13)
-    obj(OBJ_QUESTION, 10, 11)
+    # Above the view (top row 13.5): these spawn as placeholders at load.
+    obj(OBJ_LIFT, 16, 18, w=3)
+    ball(16, 19)
+    obj(OBJ_QUESTION, 13, 19)
     return b
 
 

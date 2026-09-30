@@ -87,6 +87,11 @@ def main() -> int:
         t.join()
         r = dict(server._NAV["result"])
     if not r.get("ok"):
+        if "yes_no_dialog" in json.dumps(r):
+            # The grid opens behind "Corrupt data was found so the course has
+            # been deleted": the validator refused a course (usually the one
+            # just installed) and cleared its slot's used flag.
+            print(f"Coursebot deleted a course as corrupt (slot {args.slot} was just installed?)", file=sys.stderr)
         print(json.dumps(r)[:400], file=sys.stderr)
         return 1
     start = status()
