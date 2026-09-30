@@ -1854,6 +1854,26 @@ def level_stomp_pit_koopa() -> LevelBuilder:
     return _stomp_pit("Stomp Pit Koopa", 1)
 
 
+@test_level(76, "Walk-In")
+def level_walk_in() -> LevelBuilder:
+    """A walking contact with an enemy, not a stomp: flat ground at the start
+    area's height, a Goomba (0) at column 10 boxed in by a two-high hard-block
+    post at column 12 (and the start area's ground on the left), so the player
+    holding RIGHT from the start meets it head-on whichever way it walks.
+    Record with the stomp preset plus hooks on the stomp test (x1: paths) to
+    see what the contact classifier makes of a side contact.
+    """
+    b = LevelBuilder("Walk-In", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    for row in (5, 6):
+        b.objects.append({'id': OBJ_HARD_BLOCK, 'x': 12, 'y': row, 'width': 1, 'height': 1,
+                          'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_actor(OBJ_GOOMBA, 10, 5)
+    return b
+
+
 @test_level(64, "Note Pitch")
 def level_note_pitch() -> LevelBuilder:
     """A height sweep of note blocks, for the pitch reading. One free-standing

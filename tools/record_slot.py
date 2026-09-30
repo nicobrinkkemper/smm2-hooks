@@ -7,7 +7,10 @@ Installs the course (optional) and the probe config, kills any running Eden,
 launches it straight into the game, waits for the title, boots the slot into
 Coursebot play, lets it run --seconds, copies probe.log to -o and kills Eden.
 Prints one line per step with the elapsed time, and the scene-change count at
-the end: more than 4 means the course restarted (the player died).
+the end: more than 4 means the course restarted (the player died). Beside the
+log it writes <out>.json: the course file's sha256 (a fixture made on an
+earlier version of a test level must be replayed on that version), the probe
+config, the input, the slot and the frames recorded.
 
 Do not run IDA (tools/decompile.py, xrefs.py in the decomp) during a
 recording: once, with an IDA batch running beside it, the game sat at
@@ -16,6 +19,7 @@ recording: once, with an IDA batch running beside it, the game sat at
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -124,6 +128,18 @@ def main() -> int:
     if proc:
         subprocess.run(["taskkill.exe", "/F", "/PID", str(proc["pid"])], capture_output=True)
     restarts = (end.get("scene_change_count") or 0) - (start.get("scene_change_count") or 0)
+    course = Path(args.level).read_bytes() if args.level else None
+    Path(args.out + ".json").write_text(json.dumps({
+        "slot": args.slot,
+        "level": args.level,
+        "level_sha256": hashlib.sha256(course).hexdigest() if course else None,
+        "level_name": course[0xF4:0x136].decode("utf-16-le", "ignore").split("\0")[0] if course else None,
+        "probe": Path(args.probe).read_text(),
+        "input": args.input,
+        "frames": [start.get("frame"), end.get("frame")],
+        "scene_changes_during_play": restarts,
+        "recorded": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }, indent=1))
     step(f"recorded to frame {end.get('frame')}, log {args.out}, scene changes during play {restarts}")
     return 0
 
