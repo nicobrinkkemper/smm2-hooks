@@ -1825,19 +1825,21 @@ def _stomp_pit(name: str, enemy: int, flags: int = 0x06000040) -> LevelBuilder:
     """A stomp on a walking enemy, for the stomp oracle, with one held
     button. The course ground is three rows under the start area (surface
     row 1 against the start's 5), so the player walks off the start ledge at
-    x 112 and drops. The enemy patrols the two-tile pit under the ledge,
-    between the start area's face (x 112) and a hard-block wall at column 9,
-    so the player comes down on it (Goomba, 2026-09-30: landed on frame 3166
-    of play with RIGHT held 1.5 s). Record with probe preset 'stomp' and
+    x 112, lands on a two-high hard-block post at column 7 and walks off it
+    into a one-tile pit (column 8) walled by another post at 9, onto the
+    enemy boxed in there. The one-tile pit matters: an enemy starts walking
+    either way (it varied between runs), and in the first two-tile version
+    the Koopa sometimes dodged. Record with probe preset 'stomp' and
     `record_slot.py --input RIGHT:1500`.
     """
     b = LevelBuilder(name, "SMB1", "Ground")
     b.width = 48
     b.add_ground_block(7, 30, y_surface=1, height=1)
     b.goal_y = 1
-    for row in (2, 3):
-        b.objects.append({'id': OBJ_HARD_BLOCK, 'x': 9, 'y': row, 'width': 1, 'height': 1,
-                          'flags': 0x06000040, '_half_tile_offset': True})
+    for col in (7, 9):
+        for row in (2, 3):
+            b.objects.append({'id': OBJ_HARD_BLOCK, 'x': col, 'y': row, 'width': 1, 'height': 1,
+                              'flags': 0x06000040, '_half_tile_offset': True})
     b.add_actor(enemy, 8, 2, flags=flags)
     return b
 
