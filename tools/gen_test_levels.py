@@ -1979,6 +1979,36 @@ def level_belt_jump() -> LevelBuilder:
     return b
 
 
+@test_level(73, "Belt Walkers")
+def level_belt_walkers() -> LevelBuilder:
+    """Goombas and Koopas walking on belts: what a belt's carry does to a
+    walker, and when the game counts it as standing. Three floor belts
+    between hard-block walls two high, so every walker turns at the walls and
+    walks both with and against its belt: a normal belt with the flags Belt
+    Jump uses (0x06000048), the same without bit 0x8 (0x06000040; the facing
+    bit, so it should run the other way) and a fast one (0x06040048). Each
+    holds a Goomba (0) and a green Koopa (1). The first belt is inside the
+    opening view; the player (x 72) is fenced off by the first wall and walks
+    on to bring the others in. The `enemywalk` preset records them every
+    frame with their bg-check flags."""
+    b = LevelBuilder("Belt Walkers", "SMB1", "Ground")
+    b.width = 52
+    b.add_ground_block(7, 9, y_surface=1, height=1)
+    b.add_ground_block(38, 41, y_surface=1, height=1)
+    belts = ((11, 0x06000048), (20, 0x06000040), (29, 0x06040048))
+    for left, flags in belts:
+        b.objects.append({'id': 53, 'x': left, 'y': 1, 'width': 8, 'height': 1,
+                          'flags': flags, '_half_tile_offset': True})
+        b.add_actor(OBJ_GOOMBA, left + 2, 2)
+        b.add_actor(1, left + 5, 2)
+    for col in (10, 19, 28, 37):
+        b.add_ground_block(col, col, y_surface=1, height=1)
+        b.add_platform(col, 2, 1)
+        b.add_platform(col, 3, 1)
+    b.goal_y = 1
+    return b
+
+
 @test_level(65, "Stack Drop")
 def level_stack_drop() -> LevelBuilder:
     """How far below the camera a stack of enemies stays loaded, in a vertical
