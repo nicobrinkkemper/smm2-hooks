@@ -356,8 +356,11 @@ field activate pos_y f32 0x234
     # enemy's per-frame (0x710128A2D0) with its type (+0x40), handle (+0x30),
     # position and velocity, the facing (+0x26C), the x speed and the speed it
     # approaches by the step (+0x274, +0x278, +0x284: ActorMoveStep.cpp in the
-    # decomp), the ground state (+0x684: -1 airborne, 0 touching, 1 landed,
-    # 2 at rest) and the system state (+0x400, the machine at +0x3F8).
+    # decomp), the bg-check flags the enemy code reads (+0x658: bit 0
+    # standing, 0x4000 a wall, bit 31 in liquid; EnemyShellWait.cpp and
+    # ActorMoveStep.cpp in the decomp) and the system state (+0x400, the
+    # machine at +0x3F8). +0x684, read here before, stayed -1 on every row of
+    # a walk on flat ground, so it is not the ground state.
     "enemywalk": """\
 hook enemy 0x710128A2D0
 field enemy id    u32 0x40
@@ -370,7 +373,7 @@ field enemy face  f32 0x26C
 field enemy spd   f32 0x274
 field enemy tgt   f32 0x278
 field enemy acc   f32 0x284
-field enemy grnd  u32 0x684
+field enemy bg    u32 0x658
 field enemy sysst u32 0x400
 """,
     # Who is still loaded, and where the camera is (docs/re-notes/globality.md
