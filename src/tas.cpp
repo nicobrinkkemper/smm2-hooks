@@ -41,6 +41,10 @@ static Keyframe script[MAX_KEYFRAMES];
 static int script_len = 0;
 static int script_idx = 0;
 static bool script_active = false;
+// A header with "anchor=player" counts the script's frames from the frame
+// this play's player was first seen (status::player_since), not from boot,
+// so a script found in the simulator lines up whatever the boot took.
+static bool script_anchor_player = false;
 
 static bool load_script() {
     nn::fs::FileHandle f;
@@ -56,8 +60,10 @@ static bool load_script() {
     script_len = 0;
     char* line = buf;
 
-    // Skip header
+    // Skip header (it may carry "anchor=player")
     char* nl = std::strchr(line, '\n');
+    if (nl) *nl = '\0';
+    script_anchor_player = std::strstr(line, "anchor=player") != nullptr;
     if (nl) line = nl + 1;
 
     while (*line && script_len < MAX_KEYFRAMES) {
@@ -123,8 +129,10 @@ static void update_input() {
     status::update_from_input_poll();
 
     // Script mode: advance keyframes
-    if (script_active && script_len > 0) {
-        uint32_t f = frame::current();
+    uint32_t since = script_anchor_player ? status::player_since() : 0;
+    bool anchored = !script_anchor_player || (since != 0 && frame::current() >= since);   // no player yet: nothing pressed
+    if (script_active && script_len > 0 && anchored) {
+        uint32_t f = frame::current() - since;
         while (script_idx < script_len && script[script_idx].frame <= f) {
             cur_buttons = script[script_idx].buttons;
             cur_lx = script[script_idx].stick_lx;
