@@ -376,6 +376,35 @@ field enemy acc   f32 0x284
 field enemy bg    u32 0x658
 field enemy sysst u32 0x400
 """,
+    # The background check's passes per enemy (hul8 in the decomp's epic; its
+    # re-notes bg-check-object.md): the every-frame move runs the runner
+    # sub_7101079E20 (x0 the wrapper at actor+0x650, the owner at +8), and
+    # EnemyUber slot 7 sub_710128A090 runs it a second time when the actor's
+    # +0x4E0 has 0x40000. Rows come in call order, so a frame's `move`,
+    # `slot7` and `bgrun` rows of one handle show whether the second pass ran
+    # and the bg-check flags (+0x658) going into each check. The runner's
+    # wrapper +0x2C8 bit 0 path checks with y lowered by 0.01.
+    "bgpass": """\
+hook move 0x71012941E0
+field move id    u32 0x40
+field move h30   u64 0x30
+field move pos_y f32 0x234
+field move bg    u32 0x658
+hook slot7 0x710128A090
+field slot7 id    u32 0x40
+field slot7 h30   u64 0x30
+field slot7 pos_y f32 0x234
+field slot7 bg    u32 0x658
+field slot7 f4e0  u32 0x4E0
+hook bgrun 0x7101079E20
+field bgrun id    u32 0x8>0x40
+field bgrun h30   u64 0x8>0x30
+field bgrun pos_x f32 0x8>0x230
+field bgrun pos_y f32 0x8>0x234
+field bgrun bg    u32 0x8>0x658
+field bgrun w2c8  u8  0x2C8
+field bgrun w336  u8  0x336
+""",
     # Who is still loaded, and where the camera is (docs/re-notes/globality.md
     # in the decomp). Every enemy's per-frame (0x710128A2D0) carries its
     # identity (+0x30 handle, +0x4E4 record link), its activation flags
