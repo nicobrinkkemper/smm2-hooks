@@ -87,9 +87,6 @@ def tool(name: str, args: dict | None = None) -> dict:
     return {"ok": True, "tool": name, "data": data, "ms": ms}
 
 
-def mode() -> str:
-    data = tool("eden_state").get("data") or {}
-    return str(data.get("mode", "off")) if isinstance(data, dict) else "off"
 
 
 def play_slot(slot: int) -> dict:
