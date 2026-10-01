@@ -9,7 +9,6 @@
 //                              play buffer before the request. The Coursebot's Play copies the
 //                              selected entry there itself (sub_71016EDF70); the request reads no
 //                              course data, so play uses whatever the buffer holds.
-//     area <n>                 the request's start area (+0xC of the play request), 1 = the sub-area
 //
 // The Coursebot's play-start (sub_71016E5C10) is four calls, replayed here:
 //     sub_7101792070(kind, params)       prepare the transition
@@ -35,8 +34,7 @@ constexpr uintptr_t OFF_MODE      = 0x1790480;
 constexpr uintptr_t OFF_SOURCE    = 0x1792890;
 constexpr uintptr_t OFF_GO        = 0x1791020;
 constexpr uintptr_t OFF_GPM       = 0x2C57D58;
-constexpr uintptr_t OFF_PLAYBUF   = 0x2A39088;   // [+0x20] = the play buffer; the course at +0x6C000
-constexpr uintptr_t OFF_REQUEST   = 0x2C58880;   // [+0x28] = the play request; +0xC the start area
+constexpr uintptr_t OFF_PLAYBUF   = 0x2A39088;   // [[this]+0x20] = the play buffer; the course at +0x6C000 (sub_71016EDF70)
 constexpr size_t COURSE_BYTES     = 0x10 + 0x5BFC0;   // GamePhaseManager*; [[gpm]+0x30]+0x14 = scene mode (6 = title)
 constexpr uint32_t TITLE_SETTLE   = 150;         // frames of title before the first request
 constexpr uint32_t ROBO_SETTLE    = 300;         // frames in the Coursebot scene: its list load opens every used slot
@@ -54,7 +52,6 @@ bool s_two_phase = false;       // coursebot2: go through the Coursebot scene fi
 uint32_t s_left_title = 0;
 bool s_done = false;
 char s_file[128] = "";          // file: the course to load into the play buffer
-int s_area = -1;                // area: the start area to request
 
 uint32_t scene_mode(uintptr_t base) {
     uintptr_t gpm = *reinterpret_cast<uintptr_t*>(base + OFF_GPM);
@@ -89,9 +86,6 @@ void load_config() {
         } else if (!std::strncmp(p, "file ", 5)) {
             std::strncpy(s_file, p + 5, sizeof(s_file) - 1);
             s_log.writef("config file %s\n", s_file);
-        } else if (!std::strncmp(p, "area ", 5)) {
-            s_area = (int)std::strtol(p + 5, nullptr, 10);
-            s_log.writef("config area %d\n", s_area);
         } else if (*p && *p != '#') {
             s_log.writef("E,unknown line: %s\n", p);
         }
@@ -109,9 +103,10 @@ void init() {
 // The file's course into the play buffer, where the Coursebot's Play would
 // have copied the selected entry.
 static bool load_course(uintptr_t base) {
-    uintptr_t buf = *reinterpret_cast<uintptr_t*>(base + OFF_PLAYBUF);
+    uintptr_t owner = *reinterpret_cast<uintptr_t*>(base + OFF_PLAYBUF);
+    uintptr_t buf = owner >= 0x1000000ull && owner < 0x3000000000ull ? *reinterpret_cast<uintptr_t*>(owner + 0x20) : 0;
     if (buf < 0x1000000ull || buf >= 0x3000000000ull) { s_log.writef("E,play buffer not set up\n"); s_log.flush(); return false; }
-    char* dst = reinterpret_cast<char*>(buf + 0x20 + 0x6C000);
+    char* dst = reinterpret_cast<char*>(buf + 0x6C000);
     nn::fs::FileHandle f;
     if (nn::fs::OpenFile(&f, s_file, nn::fs::MODE_READ) != 0) { s_log.writef("E,cannot open %s\n", s_file); s_log.flush(); return false; }
     size_t n = 0;
@@ -134,10 +129,6 @@ static void request(uint32_t frame, uintptr_t base, int kind) {
     prepare(kind, params);
     mode_fn(kind);
     source(kind, s_course, params);
-    if (s_area >= 0) {
-        uintptr_t req = *reinterpret_cast<uintptr_t*>(base + OFF_REQUEST);
-        if (req >= 0x1000000ull && req < 0x3000000000ull) *reinterpret_cast<int32_t*>(req + 0x28 + 0xC) = s_area;
-    }
     uint64_t r = go(nullptr);
     s_tries++;
     s_last_try = frame;
