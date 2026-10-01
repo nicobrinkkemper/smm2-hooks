@@ -32,6 +32,8 @@ from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
 import random
 
+from autotile import autotile_ground
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Constants (from gen_level.py)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -61,26 +63,6 @@ COURSE_KEY_TABLE = [
     0xCCDF0CE9, 0x50E4135C, 0xFF2658B2, 0x3780F156,
     0x7D8F5D68, 0x517CBED1, 0x1FCDDF0D, 0x77A58C94,
 ]
-
-# Tile IDs (from level analysis)
-# 0x003E appears to be generic ground fill
-GROUND_FILL = 0x3E
-GROUND_LEFT = 0x19
-GROUND_MID = 0x1a
-GROUND_RIGHT = 0x1b
-
-# Connected ground block tile IDs (proper visual connection)
-# Surface row (top of ground)
-GROUND_SURFACE_MID = 59      # 0x3B - middle surface
-GROUND_SURFACE_RIGHT = 60    # 0x3C - right edge surface
-GROUND_SURFACE_PRE_GOAL = 9  # special tile before goal area
-# Fill rows (below surface)
-GROUND_FILL_MID = 62         # 0x3E - middle fill
-# Right edge fill (varies by row)
-GROUND_FILL_RIGHT_Y3 = 68    # right edge at y=3
-GROUND_FILL_RIGHT_Y2 = 12    # right edge at y=2
-GROUND_FILL_RIGHT_Y0 = 13    # right edge at y=0
-# NOTE: No left edge tiles needed - start area auto-connects!
 
 # Slope object IDs (slopes are objects, not ground tiles)
 OBJ_SLIGHT_SLOPE = 87
@@ -237,94 +219,23 @@ class LevelBuilder:
         self.sub_autoscroll = 0   # a vertical area scrolls UPWARD, and the
                                   # scroll moves what is in spawn range with it
         self.sub_objects: List[dict] = []
-        self.sub_ground_tiles: List[Tuple[int, int, int]] = []
+        self.sub_ground_tiles: List[Tuple[int, int]] = []
         self.sub_tracks: List[dict] = []
-        self.ground_tiles: List[Tuple[int, int, int]] = []
+        self.ground_tiles: List[Tuple[int, int]] = []   # (x, y); build() picks the ids
         self.start_y = 5  # tiles
         self.goal_y = None  # auto-calculated if None
         
-    def add_ground(self, x_start: int, x_end: int, y: int):
-        """Add ground tiles from x_start to x_end at height y."""
-        for x in range(x_start, x_end + 1):
-            if x == x_start:
-                tile_id = GROUND_LEFT
-            elif x == x_end:
-                tile_id = GROUND_RIGHT
-            else:
-                tile_id = GROUND_MID
-            self.ground_tiles.append((x, y, tile_id))
-    
     def add_ground_fill(self, x_start: int, x_end: int, y: int):
-        """Add solid ground fill (tile 0x3E) from x_start to x_end at height y."""
+        """Add a row of ground tiles from x_start to x_end at height y."""
         for x in range(x_start, x_end + 1):
-            self.ground_tiles.append((x, y, GROUND_FILL))
-    
+            self.ground_tiles.append((x, y))
+
     def add_ground_block(self, x_start: int, x_end: int, y_surface: int, height: int = 5):
-        """Add a connected ground block with proper tile visuals.
-        
-        Uses style-specific tile patterns:
-        - 2D styles (SMB1/SMB3/SMW/NSMBU): uniform fill
-        - 3DW: detailed edges with texture variation
-        """
-        is_3dw = (self.style_id == 4)  # 3DW style
-        
-        # Surface row (top)
-        for x in range(x_start, x_end + 1):
-            if x == x_start:
-                # Left edge: 3DW uses 10, 2D styles use 59 (no special left)
-                tile_id = 10 if is_3dw else GROUND_SURFACE_MID
-            elif x == x_end:
-                tile_id = GROUND_SURFACE_RIGHT  # 60
-            elif x == x_end - 1 and is_3dw:
-                tile_id = 10  # 3DW has special pre-right tile
-            else:
-                tile_id = GROUND_SURFACE_MID  # 59
-            self.ground_tiles.append((x, y_surface, tile_id))
-        
-        # Fill rows (below surface)
-        import random
-        random.seed(42)  # Deterministic but varied
-        
-        for y in range(y_surface - 1, y_surface - height, -1):
-            if y < 0:
-                break
-            for x in range(x_start, x_end + 1):
-                is_left = (x == x_start)
-                is_right = (x == x_end)
-                is_bottom = (y == 0)
-                
-                if is_right:
-                    # Right edge
-                    if y == y_surface - 1:
-                        tile_id = GROUND_FILL_RIGHT_Y3  # 68
-                    else:
-                        tile_id = GROUND_FILL_MID  # 62
-                elif is_3dw:
-                    # 3DW: scatter variation tiles (12, 13)
-                    if is_left and is_bottom:
-                        tile_id = 12  # bottom-left corner
-                    elif is_bottom and random.random() < 0.3:
-                        tile_id = 12  # scattered on bottom
-                    elif is_left and random.random() < 0.5:
-                        tile_id = 12  # scattered on left edge
-                    elif random.random() < 0.25:
-                        tile_id = 12 if random.random() < 0.8 else 13
-                    else:
-                        tile_id = GROUND_FILL_MID  # 62
-                else:
-                    # 2D styles: uniform fill with edge specials
-                    if is_right:
-                        if y == y_surface - 2:
-                            tile_id = GROUND_FILL_RIGHT_Y2  # 12
-                        elif y == 0:
-                            tile_id = GROUND_FILL_RIGHT_Y0  # 13
-                        else:
-                            tile_id = GROUND_FILL_MID
-                    else:
-                        tile_id = GROUND_FILL_MID  # 62
-                
-                self.ground_tiles.append((x, y, tile_id))
-    
+        """Add a solid ground block, its top row at y_surface, `height` rows
+        tall (stopping at row 0)."""
+        for y in range(y_surface, max(y_surface - height, -1), -1):
+            self.add_ground_fill(x_start, x_end, y)
+
     def add_ice(self, x_start: int, x_end: int, y: int):
         """Add ice block objects from x_start to x_end.
         
@@ -474,9 +385,9 @@ class LevelBuilder:
             right = o['x'] + max(1, int(o.get('width', 1))) - 1
             if right >= go:
                 bad.append(f"object id {o['id']} at ({o['x']}, {o['y']}) w {o.get('width', 1)} reaches the goal area (x >= {go})")
-        for (x, y, tile_id) in self.ground_tiles:
+        for (x, y) in self.ground_tiles:
             if x >= g:
-                bad.append(f"tile {tile_id:#x} at ({x}, {y}) is in the goal area (x >= {g})")
+                bad.append(f"ground tile at ({x}, {y}) is in the goal area (x >= {g})")
                 break
         for t in getattr(self, 'tracks', []):
             if t['x'] < self.START_AREA_TILES:
@@ -521,7 +432,16 @@ class LevelBuilder:
         
         # NOTE: Do NOT add goal object - game auto-generates from header goal_x/goal_y
         
-        _write_area(data, area, self.objects, self.ground_tiles,
+        # The editor tiles against ground that has no record: the start and
+        # goal areas (a block's column 7 at row start_y - 1 is a plain top in
+        # editor-made courses, not a left corner, and the same on the goal
+        # side at goal_y - 1) and the area's edges.
+        goal_y = data[0x01]
+        g = self.goal_area_start()
+        def unrecorded(x, y):
+            return ((x < self.START_AREA_TILES and y < self.start_y) or (x >= g and y < goal_y)
+                    or _beyond(x, y, self.width, self.height))
+        _write_area(data, area, self.objects, _tiled(self.ground_tiles, unrecorded),
                     getattr(self, 'tracks', []))
 
         # Area 1, the subworld. Vertical areas live here: a vertical area has
@@ -538,7 +458,8 @@ class LevelBuilder:
         data[area1 + 0x07] = 1                     # liquid_start_height (CRITICAL!)
         struct.pack_into('<i', data, area1 + 0x08, self.sub_width * 16)
         struct.pack_into('<i', data, area1 + 0x0C, self.sub_height * 16)
-        _write_area(data, area1, self.sub_objects, self.sub_ground_tiles,
+        _write_area(data, area1, self.sub_objects, _tiled(self.sub_ground_tiles,
+                    lambda x, y: _beyond(x, y, self.sub_width, self.sub_height)),
                     self.sub_tracks)
 
         return bytes(data)
@@ -549,6 +470,18 @@ class LevelBuilder:
 # ═══════════════════════════════════════════════════════════════════════════
 
 TEST_LEVELS = {}
+
+def _beyond(x, y, width, height):
+    """Past the area's left, right or top edge, which the editor tiles as ground."""
+    return x < 0 or x >= width or y >= height
+
+
+def _tiled(positions, outside):
+    """(x, y, id) ground records, one per position, with the editor's ids."""
+    positions = list(dict.fromkeys(positions))
+    ids = autotile_ground(positions, outside)
+    return [(x, y, ids[(x, y)]) for (x, y) in positions]
+
 
 def _write_area(data: bytearray, area: int, objects: list, ground: list,
                 tracks: list) -> None:
@@ -665,7 +598,7 @@ def level_slope_layout() -> LevelBuilder:
     which part Coursebot rejects."""
     b = LevelBuilder("Slope Layout", "SMB1", "Ground")
     b.add_ground_block(7, 10, y_surface=4, height=5)
-    b.add_ground(21, 23, 10)
+    b.add_ground_fill(21, 23, 10)
     b.start_y = 5
     b.goal_y = 10
     return b
@@ -813,7 +746,7 @@ def level_slopes() -> LevelBuilder:
     # Slight slope going up (id=87) 
     b.add_slope(13, 7, width=8, height=4, steep=False)
     # End ground near goal
-    b.add_ground(21, 23, 10)
+    b.add_ground_fill(21, 23, 10)
     b.start_y = 5
     b.goal_y = 10
     return b
@@ -1673,7 +1606,7 @@ def level_surface_kinds() -> LevelBuilder:
                           '_half_tile_offset': True})
         b.objects.append({'id': OBJ_SPIKE_BALL, 'x': x, 'y': 9, 'width': 1, 'height': 1,
                           'flags': 0x06000044, '_half_tile_offset': True})
-    b.ground_tiles.append((23, 6, GROUND_FILL))
+    b.ground_tiles.append((23, 6))
     b.objects.append({'id': OBJ_SPIKE_BALL, 'x': 23, 'y': 9, 'width': 1, 'height': 1,
                       'flags': 0x06000044, '_half_tile_offset': True})
     return b
@@ -2065,7 +1998,7 @@ def level_stack_drop() -> LevelBuilder:
     col = 12
     top = b.sub_height - 8
     for x in range(col - 4, col + 5):
-        b.sub_ground_tiles.append((x, 4, GROUND_FILL))          # the floor, far below
+        b.sub_ground_tiles.append((x, 4))          # the floor, far below
     # The exit, mouth right, LEVEL with the stack and over open air: the player
     # is spat out sideways with the stack beside them, so it is inside the
     # view on arrival and spawns, then recedes above as they fall. Put the
