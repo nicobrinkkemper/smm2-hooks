@@ -616,6 +616,39 @@ def parse_config(text: str):
     return hooks, fields
 
 
+def merge_presets(keys: list[str]) -> str:
+    """One probe config from several presets. The mod hooks an address once,
+    so presets that hook the same function share one hook (the first preset's
+    name). Fields reading the same type and path behind it are kept once; a
+    field whose label is taken by a different read is renamed to
+    `<its preset's hook name>_<label>`."""
+    hooks: dict[int, str] = {}           # vaddr -> hook name
+    opts: dict[int, list[str]] = {}
+    fields: list[tuple[str, str, str, str]] = []   # hook, label, type, path
+    seen: dict[tuple[str, str, str], str] = {}     # (hook, type, path) -> label
+    labels: dict[tuple[str, str], tuple[str, str]] = {}  # (hook, label) -> (type, path)
+    for key in keys:
+        local_hooks, local_fields = parse_config(PRESETS[key])
+        rename: dict[str, str] = {}
+        for h in local_hooks:
+            name = hooks.setdefault(h["vaddr"], h["name"])
+            opts.setdefault(h["vaddr"], h["opts"])
+            rename[h["name"]] = name
+        for f in local_fields:
+            hook = rename[f["hook"]]
+            if (hook, f["type"], f["path"]) in seen:
+                continue
+            label = f["label"]
+            if labels.get((hook, label), (f["type"], f["path"])) != (f["type"], f["path"]):
+                label = f"{f['hook']}_{label}"
+            seen[(hook, f["type"], f["path"])] = label
+            labels[(hook, label)] = (f["type"], f["path"])
+            fields.append((hook, label, f["type"], f["path"]))
+    lines = [" ".join(["hook", name, f"0x{vaddr:X}", *opts[vaddr]]) for vaddr, name in hooks.items()]
+    lines += [f"field {hook} {label} {typ} {path}" for hook, label, typ, path in fields]
+    return "\n".join(lines) + "\n"
+
+
 def cmd_check(args) -> int:
     hooks, fields = parse_config(Path(args.config).read_text())
     if len(hooks) > 8:
@@ -623,6 +656,12 @@ def cmd_check(args) -> int:
         return 1
     rc = 0
     names = {h["name"] for h in hooks}
+    by_addr: dict[int, str] = {}
+    for h in hooks:
+        if h["vaddr"] in by_addr:
+            print(f"line {h['line']}: {h['name']} hooks {h['vaddr']:#x}, already hooked as {by_addr[h['vaddr']]}: the mod hooks an address once (merge the presets)")
+            rc = 1
+        by_addr.setdefault(h["vaddr"], h["name"])
     for h in hooks:
         try:
             word = read_word(h["vaddr"])
