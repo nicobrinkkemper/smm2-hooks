@@ -5,16 +5,13 @@
     python3 trace.py --probe spawn.txt --coursebot 5 --walk RIGHT:9,LEFT:22,RIGHT:14 -o persist.csv
     python3 trace.py --preset rail --coursebot 11 --wait 12 -o loop.csv          # no input, just watch
 
-Writes sd:/smm2-hooks/boot.txt (docs/direct-boot.md; removed again right
-after launch), installs the probe config, launches Eden, waits for
-Coursebot play (scene mode 7), holds each button of --walk for its seconds
-while sampling status.bin into <out>.player.csv, kills Eden, decodes
-probe.log into <out>. Play starts about 16 s after launch with skip_intro
-on; a whole run is under a minute plus the walk.
-
-Known limit (2026-08-30): the direct boot plays the course that is resident
-at the title, not the Coursebot entry, until the Coursebot's course-load
-call is replayed too; see docs/direct-boot.md.
+Writes sd:/smm2-hooks/boot.txt (+ a boot.bin from the slot's .bcd when
+present; docs/direct-boot.md), installs the probe config, launches Eden,
+waits for Coursebot play (scene mode 7), holds each button of --walk for
+its seconds while sampling status.bin into <out>.player.csv, kills Eden,
+decodes probe.log into <out>. Play starts about 16 s after launch with
+skip_intro on; a whole run is under a minute plus the walk. Pass --menu
+to navigate Coursebot with button injection instead.
 """
 from __future__ import annotations
 
@@ -69,8 +66,20 @@ def main() -> int:
     if args.menu:
         boot.unlink(missing_ok=True)
     else:
-        keyword = "coursebot2" if args.via_robo else "coursebot"
-        boot.write_text(f"{keyword} {args.coursebot} {args.kind}\n")
+        # Load the slot's .bcd into the play buffer (PR #50 `file` line); the
+        # coursebot index alone still plays the resident title course.
+        save_dir = Path(eden.paths().save_dir or "")
+        bcd = save_dir / f"course_data_{args.coursebot:03d}.bcd" if save_dir else None
+        if bcd and bcd.exists():
+            from directboot_cfg import write_slot_boot  # noqa: WPS433
+            boot, _ = write_slot_boot(
+                sd, bcd, slot=args.coursebot, kind=args.kind, two_phase=args.via_robo
+            )
+        else:
+            keyword = "coursebot2" if args.via_robo else "coursebot"
+            boot.write_text(f"{keyword} {args.coursebot} {args.kind}\n")
+            if not args.via_robo:
+                print(f"warning: no {bcd}; directboot will play the resident course (pass --menu to navigate)")
     log = sd / "probe.log"
     if log.exists():
         log.unlink()

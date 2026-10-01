@@ -202,9 +202,75 @@ def _nav_running() -> bool:
     return bool(t and t.is_alive())
 
 
+def _directboot_coursebot(slot: int, timeout: int) -> dict:
+    """Relaunch Eden with boot.txt so the mod loads the slot's course into the
+    play buffer and starts Coursebot play — no TAS menu walk (docs/direct-boot.md)."""
+    from directboot_cfg import write_slot_boot  # noqa: WPS433
+
+    if not P.save_dir:
+        return {"ok": False, "pending": False, "error": "no save dir found"}
+    bcd = Path(P.save_dir) / f"course_data_{slot:03d}.bcd"
+    if not bcd.exists():
+        return {"ok": False, "pending": False, "error": f"no course file for slot {slot} ({bcd.name})"}
+    sd = Path(P.sd_hooks_dir)
+    try:
+        boot_txt, boot_bin = write_slot_boot(sd, bcd, slot=slot, kind=4)
+    except ValueError as e:
+        return {"ok": False, "pending": False, "error": str(e)}
+
+    if eden.process():
+        eden.kill()
+        time.sleep(2)
+    launched = eden.launch(P, gdb=False)
+    if not launched.get("process"):
+        boot_txt.unlink(missing_ok=True)
+        return {"ok": False, "pending": False, "error": "eden_launch failed", "launch": launched}
+    # Mod reads boot.txt once at init; leave no leftover for later menu tools.
+    time.sleep(3)
+    boot_txt.unlink(missing_ok=True)
+
+    g = _game()
+    # Cold boot: title ~8 s, play ~16 s with skip_intro (docs/direct-boot.md).
+    wait = max(timeout, 90)
+    st = g.wait_for(lambda s: s and s.get("scene_mode") == 7, timeout=wait)
+    if not st:
+        log = sd / "directboot.log"
+        return {
+            "ok": False,
+            "pending": False,
+            "error": f"no Coursebot play within {wait} s",
+            "directboot_log": log.read_text() if log.exists() else None,
+            "boot_bin": str(boot_bin),
+            "status": eden.read_status(P),
+        }
+    return {
+        "ok": True,
+        "pending": False,
+        "method": "directboot",
+        "boot_bin": str(boot_bin),
+        "status": eden.read_status(P),
+    }
+
+
 @tool(exclusive=True)
-def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int = 45, budget: int = 100) -> dict:
-    """Navigate from the title screen: target 'editor' (edit-time), 'editor_play' (test-play the editor course), or 'coursebot' with a slot. A slot the game lists starts Coursebot play (scene_mode 7); an empty slot only offers 'Make New Course', so it opens the editor with a default course and MINUS starts test-play (scene_mode 5) instead. Read scene_mode in the returned status. The call returns within `budget` seconds; if navigation is still going it returns pending=true and keeps going, game_status then carries the outcome under 'boot', and every tool that drives the game refuses until it is done. The final result reports 'registered' as save.dat stands after the visit (Coursebot may delete the slot on the way in)."""
+def game_boot(
+    target: str = "coursebot",
+    slot: int | None = None,
+    timeout: int = 45,
+    budget: int = 120,
+    via_menu: bool = False,
+) -> dict:
+    """Boot into play or the editor.
+
+    target 'coursebot' with a slot: by default writes boot.txt + a boot.bin from
+    that slot's .bcd, relaunches Eden, and lets the mod start Coursebot play from
+    the title (scene_mode 7) — no TAS Coursebot UI walk. Pass via_menu=true to
+    keep the old button-injection navigation (slower; needs a live session already
+    past the title). target 'editor' / 'editor_play' still navigate the menus.
+    The call returns within `budget` seconds; if work is still going it returns
+    pending=true and game_status carries the outcome under 'boot'. The final
+    result reports 'registered' as save.dat stands after the visit.
+    """
     if target == "coursebot" and slot is None:
         return {"error": "slot required"}
     if target not in ("coursebot", "editor", "editor_play"):
@@ -217,24 +283,32 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
         registered = _registered_slots() if target == "coursebot" else None
         if registered is not None:
             result["registered"] = slot in registered
-            if slot not in registered:
+            if slot not in registered and result.get("method") != "directboot":
                 result["note"] = "slot is not in save.dat, so this is editor test-play of a default course, not the installed level; level_install registers a slot (the course must pass validation)"
         return result
 
     def navigate():
         try:
+            if target == "coursebot" and not via_menu:
+                _NAV["result"] = with_registration(_directboot_coursebot(slot, timeout))
+                return
             if target == "coursebot":
                 ok = g.to_coursebot_play(slot=slot, timeout=timeout)
             elif target == "editor":
                 ok = g.to_editor(timeout=timeout)
             else:
                 ok = g.to_play(timeout=timeout)
-            _NAV["result"] = with_registration({"ok": bool(ok), "pending": False, "status": eden.read_status(P)})
+            _NAV["result"] = with_registration(
+                {"ok": bool(ok), "pending": False, "method": "menu", "status": eden.read_status(P)}
+            )
         except Exception as e:  # noqa: BLE001
             _NAV["result"] = {"ok": False, "pending": False, "error": repr(e)}
 
     t = threading.Thread(target=navigate, name="game_boot", daemon=True)
-    _NAV.update(thread=t, result={"ok": False, "pending": True, "target": target, "slot": slot})
+    _NAV.update(
+        thread=t,
+        result={"ok": False, "pending": True, "target": target, "slot": slot, "via_menu": via_menu},
+    )
     t.start()
     # Plain join: @tool runs this in a worker thread, so waiting here does not
     # block the event loop. Keep `budget` under the host's per-call limit
@@ -242,7 +316,6 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
     # the outcome of a pending navigation.
     t.join(budget)
     return dict(_NAV["result"])
-
 
 def _registered_slots() -> set[int] | None:
     """Slots Coursebot lists: the used_flag per record in save.dat. The .bcd files on disk are not consulted by the game."""
