@@ -7,9 +7,9 @@
 
 Every button runs one tool through ctl.py in a fresh process, the same code
 the agent's MCP tools run, so the panel and the agent see one truth
-(eden_state's `mode`). Three composite actions live here because they span
-several tools: play a Coursebot slot from any state, export a slot to the sim
-app, and launch or kill Ryujinx (tools/emu_session.py, start and stop only).
+(eden_state's `mode`). Composite actions here: play a Coursebot slot
+(`game_boot` / directboot), export a slot to the sim app, and launch or kill
+Ryujinx (tools/emu_session.py, start and stop only).
 
 The sim app checkout the export writes into is `$SMM2_SIM_DIR`, else the
 sibling `../smm2-sim`.
@@ -93,35 +93,15 @@ def mode() -> str:
 
 
 def play_slot(slot: int) -> dict:
-    """Coursebot play of a slot from any state: kill a game that is not at the
-    title, launch, wait for the title to settle, then navigate."""
-    started = time.time()
-    steps: list[str] = []
-    m = mode()
-    steps.append(f"state {m}")
-    if m != "title":
-        if m != "off":
-            tool("eden_kill")
-            steps.append("killed")
-            time.sleep(3)
-        launched = tool("eden_launch", {"gdb": False})
-        if not launched["ok"]:
-            return {**launched, "tool": "play slot", "data": {"steps": steps}}
-        steps.append("launched")
-        deadline = time.time() + 150
-        while time.time() < deadline:
-            time.sleep(3)
-            m = mode()
-            if m == "title":
-                break
-        if m != "title":
-            return {"ok": False, "tool": "play slot", "error": f"no title screen after launch (mode {m})",
-                    "data": {"steps": steps}, "ms": int((time.time() - started) * 1000)}
-        time.sleep(5)   # the title needs a moment before it takes input
-        steps.append("title")
+    """Coursebot play of a slot via game_boot (directboot by default).
+
+    game_boot writes boot.txt + the slot's boot.bin and relaunches Eden itself;
+    do not pre-launch to the title here — that would boot once without the
+    course file, then kill and boot again.
+    """
     boot = tool("game_boot", {"target": "coursebot", "slot": slot})
     data = boot.get("data") if isinstance(boot.get("data"), dict) else {}
-    return {**boot, "tool": "play slot", "data": {**data, "steps": steps}}
+    return {**boot, "tool": "play slot", "data": {**data, "steps": ["game_boot"]}}
 
 
 def export_slot(slot: int) -> dict:
