@@ -210,6 +210,8 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
     if target not in ("coursebot", "editor", "editor_play"):
         return {"error": f"unknown target {target}"}
     g = _game()
+    if target == "coursebot":
+        _note_played(slot, "game_boot")
 
     def with_registration(result: dict) -> dict:
         registered = _registered_slots() if target == "coursebot" else None
@@ -483,6 +485,80 @@ def gdb_log(last: int = 10) -> dict:
 RECORD_FILE = "record.json"
 
 
+def _course_mtimes() -> dict[str, int]:
+    """mtime_ns of every course_data_NNN.bcd in the save dir, keyed by slot."""
+    if not P.save_dir:
+        return {}
+    import save_dat  # noqa: WPS433
+    out = {}
+    for slot in range(save_dat.RECORD_COUNT):
+        path = Path(P.save_dir) / SLOT_FILES[0].format(slot)
+        if path.exists():
+            out[str(slot)] = path.stat().st_mtime_ns
+    return out
+
+
+def _note_played(slot: int, via: str) -> dict | None:
+    """Add a Coursebot slot to the recording in progress, if there is one: stop saves its course."""
+    rec = Path(P.sd_hooks_dir) / RECORD_FILE
+    if not rec.exists():
+        return None
+    state = json.loads(rec.read_text())
+    registered = _registered_slots()
+    entry = {"slot": slot, "via": via, "at": time.strftime("%H:%M:%S"),
+             "registered": (slot in registered) if registered is not None else None}
+    path = Path(P.save_dir) / SLOT_FILES[0].format(slot) if P.save_dir else None
+    if path and path.exists():
+        entry["mtime_ns"] = path.stat().st_mtime_ns
+    state.setdefault("played", []).append(entry)
+    rec.write_text(json.dumps(state, indent=1))
+    return entry
+
+
+def _save_courses(state: dict, stem: Path) -> dict:
+    """Copy the course file(s) of the slots the recording played next to the fixture, as
+    <stem>_course_NNN.bcd. The played slots are the ones game_boot navigated to during the
+    recording or that were named with `slot`. With none known, the registered slots whose
+    course file changed since start are copied and `courses_unknown` says so."""
+    out: dict = {"courses": [], "notes": []}
+    if not P.save_dir:
+        out["courses_unknown"] = "no save dir found; no course saved"
+        return out
+    sd = Path(P.save_dir)
+    played = state.get("played", [])
+    slots = []
+    for entry in played:
+        if entry["slot"] in slots:
+            continue
+        if entry.get("registered") is False:
+            out["notes"].append(f"slot {entry['slot']} was not registered when played: the game test-played "
+                                "a default editor course, not that slot's file; not saved")
+            continue
+        slots.append(entry["slot"])
+    if not played:
+        registered = _registered_slots() or set()
+        before = state.get("course_mtimes", {})
+        now = _course_mtimes()
+        slots = sorted(int(k) for k, v in now.items() if int(k) in registered and before.get(k) != v)
+        out["courses_unknown"] = (
+            "the played slot is unknown (no game_boot to a Coursebot slot during the recording and no slot "
+            "given); saved the registered slots whose course file changed since start: "
+            f"{slots if slots else 'none'}. Pass slot=N to stop to name the course that was played")
+    import shutil  # noqa: WPS433
+    for slot in slots:
+        src = sd / SLOT_FILES[0].format(slot)
+        if not src.exists():
+            out["notes"].append(f"slot {slot}: {src.name} is gone; not saved")
+            continue
+        changed = [e for e in played if e["slot"] == slot and e.get("mtime_ns") not in (None, src.stat().st_mtime_ns)]
+        if changed:
+            out["notes"].append(f"slot {slot}: {src.name} changed after it was played; saved as it is now")
+        dst = Path(f"{stem}_course_{slot:03d}.bcd")
+        shutil.copyfile(src, dst)
+        out["courses"].append({"slot": slot, "path": str(dst)})
+    return out
+
+
 def _fixtures_dir() -> Path:
     root = HERE.parents[1]
     for name in ("smm2-decomp-integration", "smm2-decomp"):
@@ -515,15 +591,19 @@ def _deploy_built_mod() -> dict:
 
 
 @tool(exclusive=True)
-def trace_record(action: str = "status", name: str = "", presets: str = "player,rail", out_dir: str | None = None) -> dict:
+def trace_record(action: str = "status", name: str = "", presets: str = "player,rail", out_dir: str | None = None,
+                 slot: int | None = None) -> dict:
     """Record a play session as a sim fixture. action=start: install the probe presets (comma list of
     tools/probe.py PRESETS: player, rail, note, camera), deploy a newer mod build, relaunch Eden (the
     probe is read at boot) and remember the recording; then play. action=stop: wait for the mod's
     flush, decode probe.log into <out_dir>/<name>_eden.csv (actor rows with the pad columns),
     <name>_eden_inputs.csv (the pad as a tas.csv script) and <name>_eden.json (what was recorded, with the
-    marks); out_dir defaults to smm2-decomp's src-sim/test/fixtures. action=mark: stamp the game's current
-    frame with `name` as a label (a milestone: "reached door A") into the recording in progress.
-    action=status: the recording in progress."""
+    marks); out_dir defaults to smm2-decomp's src-sim/test/fixtures. stop also copies the course file of
+    each Coursebot slot played into <name>_course_NNN.bcd: a game_boot to a slot during the recording
+    counts as played, and `slot` (on mark or stop) names one navigated to by hand; with neither, it
+    copies the registered slots whose course changed since start and says so under courses_unknown.
+    action=mark: stamp the game's current frame with `name` as a label (a milestone: "reached door A")
+    into the recording in progress. action=status: the recording in progress."""
     sd = Path(P.sd_hooks_dir)
     rec = sd / RECORD_FILE
     state = json.loads(rec.read_text()) if rec.exists() else None
@@ -552,10 +632,16 @@ def trace_record(action: str = "status", name: str = "", presets: str = "player,
             killed = eden.kill()
         launched = eden.launch(P, False)
         state = {"name": name, "presets": keys, "started": time.strftime("%Y-%m-%d %H:%M:%S"),
-                 "out_dir": str(Path(out_dir) if out_dir else _fixtures_dir()), "config": config}
+                 "out_dir": str(Path(out_dir) if out_dir else _fixtures_dir()), "config": config,
+                 "course_mtimes": _course_mtimes()}
         rec.write_text(json.dumps(state, indent=1))
         return {"recording": state, "mod": deployed, "killed": killed, "launch": launched,
                 "note": "the probe is armed for this boot: navigate to the course and play; stop when done"}
+    if action in ("mark", "stop") and state and slot is not None:
+        if (err := _slot_error(slot)):
+            return err
+        _note_played(slot, "slot")
+        state = json.loads(rec.read_text())
     if action == "mark":
         if not state:
             return {"error": "no recording in progress (start one first)"}
@@ -584,13 +670,19 @@ def trace_record(action: str = "status", name: str = "", presets: str = "player,
         except SystemExit as e:
             return {"error": str(e), "recording": state}
         status = eden.read_status(P)
+        courses = _save_courses(state, out / state["name"])
         # The sidecar is committed next to its CSVs: names only, no paths from this machine.
-        recorded = {k: v for k, v in state.items() if k != "out_dir"}
+        recorded = {k: v for k, v in state.items() if k not in ("out_dir", "course_mtimes")}
         meta = {**recorded, "stopped": time.strftime("%Y-%m-%d %H:%M:%S"), "decoded": decoded,
-                "status_at_stop": status, "files": {"fixture": Path(fixture).name, "inputs": Path(inputs).name}}
+                "status_at_stop": status, "files": {"fixture": Path(fixture).name, "inputs": Path(inputs).name,
+                                                    "courses": {f"{c['slot']:03d}": Path(c["path"]).name for c in courses["courses"]}}}
+        extra = {k: courses[k] for k in ("courses_unknown", "notes") if courses.get(k)}
+        meta.update(extra)
         Path(sidecar).write_text(json.dumps(meta, indent=1))
         rec.unlink()
-        return {"saved": {"fixture": fixture, "inputs": inputs, "sidecar": sidecar}, "decoded": decoded, "status_at_stop": status}
+        saved = {"fixture": fixture, "inputs": inputs, "sidecar": sidecar,
+                 "courses": {f"{c['slot']:03d}": c["path"] for c in courses["courses"]}}
+        return {"saved": saved, **extra, "decoded": decoded, "status_at_stop": status}
     return {"error": f"unknown action {action}; start, stop or status"}
 
 
