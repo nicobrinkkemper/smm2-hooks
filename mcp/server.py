@@ -619,13 +619,18 @@ def trace_record(action: str = "status", name: str = "", presets: str = "player,
         unknown = [k for k in keys if k not in probe.PRESETS]
         if unknown:
             return {"error": f"unknown presets {unknown}; known: {sorted(probe.PRESETS)}"}
-        config = "".join(probe.PRESETS[k] for k in keys)
+        config = probe.merge_presets(keys)   # presets hooking one function share the hook
         sd.mkdir(parents=True, exist_ok=True)
         cfg = sd / "probe.txt"
         cfg.write_text(config)
         import types  # noqa: WPS433
-        if probe.cmd_check(types.SimpleNamespace(config=str(cfg))):
-            return {"error": "the probe config failed its check against main.elf (see the server log)"}
+        import contextlib, io  # noqa: WPS433
+        report = io.StringIO()
+        with contextlib.redirect_stdout(report):
+            failed = probe.cmd_check(types.SimpleNamespace(config=str(cfg)))
+        if failed:
+            problems = [ln for ln in report.getvalue().splitlines() if not ln.startswith("ok ")]
+            return {"error": "the probe config failed its check against main.elf", "problems": problems}
         deployed = _deploy_built_mod()
         killed = None
         if eden.process():
