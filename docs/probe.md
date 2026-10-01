@@ -114,4 +114,9 @@ card on the mission-control /smm2/ panel) does the whole session: `start`
 installs the chosen presets, deploys a newer mod build, relaunches Eden and
 remembers the name; `stop` waits for the flush and decodes into
 `<name>_eden.csv`, `<name>_eden_inputs.csv` and `<name>_eden.json` in
-smm2-decomp's `src-sim/test/fixtures`.
+smm2-decomp's `src-sim/test/fixtures`, and copies the course of each
+Coursebot slot played into `<name>_course_NNN.bcd` beside them, so the
+recording stays replayable after the slot is reused. A `game_boot` to a slot
+during the recording counts as played; a slot reached by hand is named with
+`slot=N` on `mark` or `stop`. With neither, `stop` copies the registered slots
+whose course file changed since `start` and reports `courses_unknown`.
