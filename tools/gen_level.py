@@ -208,8 +208,7 @@ def create_minimal_course(style_id: int, theme_id: int) -> bytes:
     # Use autotile module if available, else fallback
     try:
         from autotile import autotile_ground
-        style_name = ['SMB1', 'SMB3', 'SMW', 'NSMBU', '3DW'][style_id]
-        tile_ids = autotile_ground(ground_positions, style_name)
+        tile_ids = autotile_ground(ground_positions)
     except ImportError:
         # Fallback: use simple tile IDs based on position
         tile_ids = {}
