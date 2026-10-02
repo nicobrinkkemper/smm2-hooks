@@ -518,6 +518,25 @@ field lift pos_y   f32 0x234
 field lift id      u32 0x40
 field lift h48     u64 0x30
 """,
+    "terrain": """\
+# What the terrain factory (sub_7101C9CCD0) is handed while a course loads:
+# on its row x2 is the tile's kind word, x3 / x4 the width and height in
+# tiles. The shape registration it runs logs just before it, with the tile's
+# position (its lower-left corner): a box (the terrain box's constructor), a
+# polygon (a slope piece, 3 or 4 points) or a line. Every row of one load
+# shares a frame; the rows of the last load before play are the course.
+hook factory 0x7101C9CCD0
+hook polygon 0x7100E30EF0
+field polygon x      f32 0x290>0x0
+field polygon y      f32 0x290>0x4
+field polygon points u32 0x3B0
+hook box 0x7101C9D980
+field box x f32 0x20
+field box y f32 0x24
+hook line 0x7100E2CF70
+field line x f32 0x290>0x0
+field line y f32 0x290>0x4
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
