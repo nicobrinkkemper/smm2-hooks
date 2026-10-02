@@ -15,6 +15,7 @@ namespace status {
 
 static const char* STATUS_PATH = "sd:/smm2-hooks/status.bin";
 static uintptr_t s_player = 0;
+static uint32_t s_player_since = 0;   // the frame this play's player was first seen
 static uint8_t s_mode = 0;  // 0=editor, 1=playing
 static uint32_t s_last_procframe = 0;    // last frame from procFrame_ callback
 static uint32_t s_input_poll_frame = 0;  // monotonic counter from input polls
@@ -33,6 +34,10 @@ static HkTrampoline<void, void*, uint32_t> playerChangeState_hook =
         playerChangeState_hook.orig(player_obj, new_state);
         s_player = reinterpret_cast<uintptr_t>(player_obj);
     });
+
+uint32_t player_since() {
+    return s_player_since;
+}
 
 void set_player(uintptr_t player) {
     s_player = player;
@@ -135,7 +140,11 @@ void update(uint32_t frame) {
     // Clear player pointer when not in play mode to prevent stale data
     if (blk.scene_mode != 5 && blk.scene_mode != 7) {
         s_player = 0;
+        s_player_since = 0;
+    } else if (s_player != 0 && s_player_since == 0) {
+        s_player_since = frame;
     }
+    blk.player_since = s_player_since;
 
     // Additional stale detection: if player data looks frozen, clear pointer
     if (s_player != 0) {
