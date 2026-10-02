@@ -1854,6 +1854,21 @@ def level_stomp_pit_koopa() -> LevelBuilder:
     return _stomp_pit("Stomp Pit Koopa", 1)
 
 
+@test_level(78, "Stomp Pit Spiny")
+def level_stomp_pit_spiny() -> LevelBuilder:
+    return _stomp_pit("Stomp Pit Spiny", 25)
+
+
+@test_level(79, "Stomp Pit Buzzy")
+def level_stomp_pit_buzzy() -> LevelBuilder:
+    return _stomp_pit("Stomp Pit Buzzy", 28)
+
+
+@test_level(80, "Stomp Pit Bob-omb")
+def level_stomp_pit_bobomb() -> LevelBuilder:
+    return _stomp_pit("Stomp Pit Bob-omb", 15)
+
+
 @test_level(76, "Walk-In")
 def level_walk_in() -> LevelBuilder:
     """A walking contact with an enemy, not a stomp: flat ground at the start
