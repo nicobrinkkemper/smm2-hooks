@@ -16,13 +16,20 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import re
 import struct
 import sys
 from pathlib import Path
 
 MAIN_BASE = 0x7100000000
 HERE = Path(__file__).resolve().parent
-DECOMP = Path(os.environ.get("SMM2_DECOMP", HERE.parent.parent / "smm2-decomp"))
+# The decomp checkout: $SMM2_DECOMP, else the sibling of this checkout, else
+# the one in the code root (a worktree of this repo has no sibling).
+DECOMP = Path(os.environ.get("SMM2_DECOMP") or next(
+    (p for p in (HERE.parent.parent / "smm2-decomp",
+                 Path(os.environ.get("GEITJE_CODE_ROOT", Path.home() / "code")) / "smm2-decomp")
+     if (p / "data/v3.0.3/main.elf").exists()),
+    HERE.parent.parent / "smm2-decomp"))
 ELF = DECOMP / "data/v3.0.3/main.elf"
 FUNCS = DECOMP / "data/v3.0.3/functions.csv"
 
@@ -376,6 +383,117 @@ field enemy acc   f32 0x284
 field enemy bg    u32 0x658
 field enemy sysst u32 0x400
 """,
+    # Per-face hit words (smm2-decomp re-note hit-attributes): the collider
+    # method sub_7101078AB0 rebuilds them from the actor's +0x520 bits each
+    # call (x0 = collider, +8 = its actor; side s at +0x3A4/+0x3A8/+0x3AC +
+    # 12*s); the block dispatcher sub_710138CEC0 (x0 = the block's sensor,
+    # x1 = the hitter's collider, x2 = the side) and the two requesters it
+    # calls, bound sub_710138D6B0 and break sub_710138D590 (x0 = the block,
+    # x2 = the hitter's collider, x3 = the side). Match x1/x2 against the
+    # builder's x0 to name the hitter.
+    "hot": """\
+hook build 0x7101078AB0
+field build id    u32 0x8>0x40
+field build pos_x f32 0x8>0x230
+field build pos_y f32 0x8>0x234
+field build f520  u32 0x8>0x520
+field build f58   u32 0x8>0x58
+field build a0    u32 0x3A4
+field build b0    u32 0x3A8
+field build c0    u32 0x3AC
+field build a1    u32 0x3B0
+field build b1    u32 0x3B4
+field build c1    u32 0x3B8
+field build a2    u32 0x3BC
+field build b2    u32 0x3C0
+field build c2    u32 0x3C4
+field build a3    u32 0x3C8
+field build b3    u32 0x3CC
+field build c3    u32 0x3D0
+hook disp 0x710138CEC0
+field disp type  u32 0x360
+field disp kind  u32 0x278>0x3F0
+field disp bx    f32 0x278>0x230
+field disp by    f32 0x278>0x234
+field disp bst   u32 0x278>0x478
+field disp bnd   u32 0x278>0x4BC
+hook bound 0x710138D6B0
+field bound kind u32 0x3F0
+field bound bx   f32 0x230
+field bound by   f32 0x234
+hook brk 0x710138D590
+field brk kind u32 0x3F0
+field brk bx   f32 0x230
+field brk by   f32 0x234
+""",
+    # The stomp on a walking enemy: the player's step and every enemy's
+    # per-frame, the fields of the 'player' and 'enemywalk' presets that a
+    # stomp moves (state, velocity, the enemy's system state and walk).
+    "stomp": """\
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player state u32 0x3F8
+field player stfr  u32 0x3FC
+field player prev  u32 0x400
+hook enemy 0x710128A2D0
+field enemy id    u32 0x40
+field enemy h30   u64 0x30
+field enemy pos_x f32 0x230
+field enemy pos_y f32 0x234
+field enemy vel_x f32 0x23C
+field enemy vel_y f32 0x240
+field enemy face  f32 0x26C
+field enemy spd   f32 0x274
+field enemy sysst u32 0x400
+field enemy f520  u32 0x520
+field enemy f524  u32 0x524
+""",
+    # What the stomp chain reads off each enemy (the decomp's
+    # src/game/enemy/: EnemyStompGate, EnemyAttackReaction, EnemyHitKind,
+    # EnemyHit): the actor id the gate's stomp-kind table is indexed by
+    # (+0x6A0), the flag words the chain tests, the delegate-override mask
+    # (+0x6A8) and the enemy data's reaction row for attack 0 (the stomp,
+    # [+0x3F0] + 0x740, 32 bytes).
+    "reaction": """\
+hook enemy 0x710128A2D0
+field enemy id    u32 0x40
+field enemy aid   u32 0x6A0
+field enemy f4E0  u32 0x4E0
+field enemy f520  u32 0x520
+field enemy f52C  u32 0x52C
+field enemy f530  u32 0x530
+field enemy f534  u32 0x534
+field enemy m6A8  u64 0x6A8
+field enemy r0    u32 0x3F0>0x740
+field enemy r1    u32 0x3F0>0x744
+field enemy r2    u32 0x3F0>0x748
+field enemy r3    u32 0x3F0>0x74C
+field enemy r4    u32 0x3F0>0x750
+field enemy r5    u32 0x3F0>0x754
+field enemy r6    u32 0x3F0>0x758
+field enemy r7    u32 0x3F0>0x75C
+""",
+    # Every actor-vs-actor contact (the enemy contact handler, x0 = the
+    # enemy's contact record, x1 = the other body's): each record's actor
+    # id, the enemy's system state and position, and each box's offset over
+    # the actor's origin and half size (+0x64, +0x6C high, +0x68 wide).
+    "contactbox": """\
+hook contact 0x71011FF860
+field contact e_id   u32 0xA8>0x40
+field contact e_sys  u32 0xA8>0x400
+field contact e_x    f32 0xA8>0x230
+field contact e_y    f32 0xA8>0x234
+field contact e_offy f32 0x64
+field contact e_hh   f32 0x6C
+field contact e_hw   f32 0x68
+field contact o_id   u32 x1:0xA8>0x40
+field contact o_y    f32 x1:0xA8>0x234
+field contact o_offy f32 x1:0x64
+field contact o_hh   f32 x1:0x6C
+""",
     # The background check's passes per enemy (hul8 in the decomp's epic; its
     # re-notes bg-check-object.md): the every-frame move runs the runner
     # sub_7101079E20 (x0 the wrapper at actor+0x650, the owner at +8), and
@@ -706,7 +824,10 @@ def cmd_check(args) -> int:
         if f["type"] not in ("u8", "u16", "u32", "u64", "f32"):
             print(f"line {f['line']}: field {f['label']}: bad type {f['type']}")
             rc = 1
-        steps = f["path"].split(">")
+        path = f["path"]
+        if re.match(r"^x[0-7]:", path):   # x1:0x70 -- the chain starts at argument register x1
+            path = path[3:]
+        steps = path.split(">")
         if len(steps) > 4:
             print(f"line {f['line']}: field {f['label']}: path deeper than 4")
             rc = 1

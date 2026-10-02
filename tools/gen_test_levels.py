@@ -1695,6 +1695,157 @@ def level_enemy_walk() -> LevelBuilder:
     return b
 
 
+@test_level(81, "Hot Gallery")
+def level_hot_gallery() -> LevelBuilder:
+    """What a spike ball does to a block from each side, small and big, for
+    the per-face hit words (sub_7101078AB0 builds them from actor+0x520; the
+    block dispatcher sub_710138CEC0 reads them). Nothing needs input.
+
+    Spike balls (74, 0x06000044) set down on flat ground roll LEFT (first
+    run, 2026-09-30: every ball, belt or no belt), so each target sits left
+    of its ball, and a hard-block fence at column 7 keeps them off the
+    player (x 72), who a ball otherwise kills 105 frames in.
+      9     question block, small ball from 10 (on a belt 10-12)
+      14    brick, small ball from 15 (belt 15-17)
+      21    spring, big ball, hidden blocks at row 11, 17-21: a big ball on
+            a small spring does not bounce, it rolls off; a big spring
+            (0x4000, 2x2 at 20,6) got the course deleted as corrupt
+      25    ON/OFF switch, a Goomba at 26 boxed in by a hard block at 27, so
+            it meets the switch whichever way it starts (it started right in
+            one run and left in another); a Goomba carries no hit bits
+    Nothing right of about column 27 spawns at load (2026-09-30), so all
+    of it sits left of that. Above the view, as placeholders: a 3-wide lift
+    at row 18 (centre 16, shuttles left 3 tiles) with a small ball on it and
+    a question block at column 13, row 19 in its path.
+    """
+    b = LevelBuilder("Hot Gallery", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 37, y_surface=4, height=5)
+    b.goal_y = 5
+
+    def obj(oid, x, y, flags=0x06000040, w=1, h=1):
+        b.objects.append({'id': oid, 'x': x, 'y': y, 'width': w, 'height': h,
+                          'flags': flags, '_half_tile_offset': True})
+
+    def belt(x):
+        obj(53, x, 5, flags=0x06000048, w=3)
+
+    def ball(x, y, big=False):
+        if big:
+            obj(OBJ_SPIKE_BALL, x, y, flags=0x06000044 | 0x4000, w=2, h=2)
+        else:
+            obj(OBJ_SPIKE_BALL, x, y, flags=0x06000044)
+
+    for row in (5, 6, 7):
+        obj(OBJ_HARD_BLOCK, 7, row)
+    obj(OBJ_QUESTION, 9, 6);  belt(10); ball(10, 7)
+    obj(OBJ_BLOCK, 14, 6);    belt(15); ball(15, 7)
+    obj(10, 21, 5); ball(21, 8, big=True)
+    for x in range(17, 22):
+        obj(29, x, 11)
+    obj(99, 25, 5)
+    b.add_actor(OBJ_GOOMBA, 26, 5)
+    obj(OBJ_HARD_BLOCK, 27, 5)
+
+    # Above the view (top row 13.5): these spawn as placeholders at load.
+    obj(OBJ_LIFT, 16, 18, w=3)
+    ball(16, 19)
+    obj(OBJ_QUESTION, 13, 19)
+    return b
+
+
+def _stomp_pit(name: str, enemy: int, flags: int = 0x06000040) -> LevelBuilder:
+    """A stomp on a walking enemy, for the stomp oracle, with one held
+    button. The course ground is three rows under the start area (surface
+    row 1 against the start's 5), so the player walks off the start ledge at
+    x 112, lands on a two-high hard-block post at column 7 and walks off it
+    into a one-tile pit (column 8) walled by another post at 9, onto the
+    enemy boxed in there. The one-tile pit matters: an enemy starts walking
+    either way (it varied between runs), and in the first two-tile version
+    the Koopa sometimes dodged. Record with probe preset 'stomp' and
+    `record_slot.py --input RIGHT:1500`.
+    """
+    b = LevelBuilder(name, "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=1, height=1)
+    b.goal_y = 1
+    for col in (7, 9):
+        for row in (2, 3):
+            b.objects.append({'id': OBJ_HARD_BLOCK, 'x': col, 'y': row, 'width': 1, 'height': 1,
+                              'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_actor(enemy, 8, 2, flags=flags)
+    return b
+
+
+@test_level(74, "Stomp Pit")
+def level_stomp_pit() -> LevelBuilder:
+    return _stomp_pit("Stomp Pit", OBJ_GOOMBA)
+
+
+@test_level(75, "Stomp Pit Koopa")
+def level_stomp_pit_koopa() -> LevelBuilder:
+    return _stomp_pit("Stomp Pit Koopa", 1)
+
+
+@test_level(78, "Stomp Pit Spiny")
+def level_stomp_pit_spiny() -> LevelBuilder:
+    return _stomp_pit("Stomp Pit Spiny", 25)
+
+
+@test_level(79, "Stomp Pit Buzzy")
+def level_stomp_pit_buzzy() -> LevelBuilder:
+    return _stomp_pit("Stomp Pit Buzzy", 28)
+
+
+@test_level(80, "Stomp Pit Bob-omb")
+def level_stomp_pit_bobomb() -> LevelBuilder:
+    return _stomp_pit("Stomp Pit Bob-omb", 15)
+
+
+@test_level(76, "Walk-In")
+def level_walk_in() -> LevelBuilder:
+    """A walking contact with an enemy, not a stomp: flat ground at the start
+    area's height, a Goomba (0) at column 10 boxed in by a two-high hard-block
+    post at column 12 (and the start area's ground on the left), so the player
+    holding RIGHT from the start meets it head-on whichever way it walks.
+    Record with the stomp preset plus hooks on the stomp test (x1: paths) to
+    see what the contact classifier makes of a side contact.
+    """
+    b = LevelBuilder("Walk-In", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    for row in (5, 6):
+        b.objects.append({'id': OBJ_HARD_BLOCK, 'x': 12, 'y': row, 'width': 1, 'height': 1,
+                          'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_actor(OBJ_GOOMBA, 10, 5)
+    return b
+
+
+@test_level(77, "Walker Zoo")
+def level_walker_zoo() -> LevelBuilder:
+    """More walking enemies for the walker oracle, each boxed in its own
+    three-tile run between two-high hard-block posts so it turns at walls:
+    a Spiny (25) at column 9, a Buzzy Beetle (28) at 13 and a Bob-omb (15) at
+    17 (posts at 8, 11, 12, 15, 16, 19); the player (x 72) is fenced off by
+    the first post. Everything is in the opening view. Record with the
+    `enemywalk` preset plus a hook on the wall resolver sub_7100E1EE80 (the
+    owner at bg+0x188, the side / head / foot sensors behind +0x1A8..+0x1C0).
+    """
+    b = LevelBuilder("Walker Zoo", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    for col in (8, 11, 12, 15, 16, 19):
+        for row in (5, 6):
+            b.objects.append({'id': OBJ_HARD_BLOCK, 'x': col, 'y': row, 'width': 1, 'height': 1,
+                              'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_actor(25, 9, 5)
+    b.add_actor(28, 13, 5)
+    b.add_actor(15, 17, 5)
+    return b
+
+
 @test_level(64, "Note Pitch")
 def level_note_pitch() -> LevelBuilder:
     """A height sweep of note blocks, for the pitch reading. One free-standing

@@ -91,8 +91,9 @@ def _read_ini(path: str) -> dict[str, str]:
 
 def paths() -> EdenPaths:
     env = _dotenv()
-    exe = env.get("EDEN_EXE", "/mnt/c/Users/nico/Documents/eden/eden.exe")
-    game = env.get("EDEN_GAME_PATH", "")
+    # The process environment wins over .env: a worktree has no .env.
+    exe = os.environ.get("EDEN_EXE") or env.get("EDEN_EXE", "/mnt/c/Users/nico/Documents/eden/eden.exe")
+    game = os.environ.get("EDEN_GAME_PATH") or env.get("EDEN_GAME_PATH", "")
     exe_dir = str(Path(exe).parent)
     portable_user = f"{exe_dir}/user"
     portable = os.path.isdir(portable_user)
@@ -202,6 +203,9 @@ def stub_listening(port: int) -> bool | None:
 
 
 def launch(p: EdenPaths, gdb: bool) -> dict:
+    if not p.game:
+        # Eden given `-g ""` opens its game list, which looks like a hung boot.
+        return {"error": "EDEN_GAME_PATH is not set (in .env or the environment); Eden would open its game list"}
     docked = ensure_docked(p)
     changed = set_gdbstub(p, gdb)
     status = Path(p.sd_hooks_dir) / "status.bin"
