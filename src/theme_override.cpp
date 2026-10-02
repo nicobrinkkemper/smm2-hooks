@@ -1,4 +1,4 @@
-// Course theme override (docs/tutorial-theme.md): sd:/smm2-hooks/theme.txt
+// Course theme override (docs/theme-override.md): sd:/smm2-hooks/theme.txt
 // holds a number; every course the game loads gets that main-area theme.
 //
 // sub_7100E3BA90 copies the course file into the buffer at [obj+0x28]

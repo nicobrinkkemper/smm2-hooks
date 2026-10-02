@@ -112,13 +112,13 @@ and is wrong about the GDB stub until it is switched to `mcp/eden.py`.
 | `docs/tooling-gaps.md` | What keeps breaking, and what is fixed |
 | `docs/botting-patches.md` | Patches used by the automation |
 | `docs/patches.md` | pchtxt patches versioned in `patches/`, toggled with `eden.py --enable/--disable` or MCP `eden_patches` |
-| `docs/tutorial-theme.md` | Tutorial: from a runtime value (the course theme) to the code that writes it, to a mod that changes it |
+| `docs/theme-override.md` | `theme.txt`: every course loads with that theme (reaches a theme installed in slot 10) |
 | `docs/direct-boot.md` | `boot.txt` + `file`: boot straight into a chosen course from the play buffer (~16 s); `game_boot` / `tools/trace.py` use it by default |
 
 ## Adding Hooks
 
 1. Add the symbol's offset in the main module to `syms/main.sym`
-2. Create a hook with `HkTrampoline` + `installAtSym` (worked example: `docs/tutorial-theme.md`)
+2. Create a hook with `HkTrampoline` + `installAtSym` (a small one to read: `src/theme_override.cpp`)
 3. Use `smm2::log::Logger` for output
 4. Init from `hkMain()` in `src/main.cpp`
 
