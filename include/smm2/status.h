@@ -67,7 +67,7 @@ struct StatusBlock {
     uint8_t  collision_normal;   // 0x94: from normal array at +0x1B30
     uint8_t  _coll_pad[3];       // 0x95-0x97
     int32_t  collision_slope;    // 0x98: slope angle from normal+0x08
-    uint32_t _pad3;              // 0x9C: padding for alignment
+    uint32_t player_since;       // 0x9C: the frame this play's player was first seen (0 outside play)
 };
 
 static_assert(sizeof(StatusBlock) == 160, "StatusBlock size mismatch");
@@ -79,6 +79,7 @@ void update(uint32_t frame);
 void update_from_input_poll();  // fallback: called from NpadStates hook, fires in ALL scenes
 void set_player(uintptr_t player);
 void set_mode(uint8_t mode);  // 0=editor, 1=playing
+uint32_t player_since();       // the frame this play's player was first seen, 0 outside play
 
 } // namespace status
 } // namespace smm2

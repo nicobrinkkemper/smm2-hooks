@@ -202,37 +202,113 @@ def _nav_running() -> bool:
     return bool(t and t.is_alive())
 
 
+def _directboot_coursebot(slot: int, timeout: int) -> dict:
+    """Relaunch Eden with boot.txt so the mod loads the slot's course into the
+    play buffer and starts Coursebot play — no TAS menu walk (docs/direct-boot.md)."""
+    from directboot_cfg import write_slot_boot  # noqa: WPS433
+
+    if not P.save_dir:
+        return {"ok": False, "pending": False, "error": "no save dir found"}
+    bcd = Path(P.save_dir) / f"course_data_{slot:03d}.bcd"
+    if not bcd.exists():
+        return {"ok": False, "pending": False, "error": f"no course file for slot {slot} ({bcd.name})"}
+    sd = Path(P.sd_hooks_dir)
+    try:
+        boot_txt, boot_bin = write_slot_boot(sd, bcd, slot=slot, kind=4)
+    except ValueError as e:
+        return {"ok": False, "pending": False, "error": str(e)}
+
+    if eden.process():
+        eden.kill()
+        time.sleep(2)
+    launched = eden.launch(P, gdb=False)
+    if not launched.get("process"):
+        boot_txt.unlink(missing_ok=True)
+        return {"ok": False, "pending": False, "error": "eden_launch failed", "launch": launched}
+    # Mod reads boot.txt once at init; leave no leftover for later menu tools.
+    time.sleep(3)
+    boot_txt.unlink(missing_ok=True)
+
+    g = _game()
+    # Cold boot: title ~8 s, play ~16 s with skip_intro (docs/direct-boot.md).
+    wait = max(timeout, 90)
+    st = g.wait_for(lambda s: s and s.get("scene_mode") == 7, timeout=wait)
+    if not st:
+        log = sd / "directboot.log"
+        return {
+            "ok": False,
+            "pending": False,
+            "error": f"no Coursebot play within {wait} s",
+            "directboot_log": log.read_text() if log.exists() else None,
+            "boot_bin": str(boot_bin),
+            "status": eden.read_status(P),
+        }
+    return {
+        "ok": True,
+        "pending": False,
+        "method": "directboot",
+        "boot_bin": str(boot_bin),
+        "status": eden.read_status(P),
+    }
+
+
 @tool(exclusive=True)
-def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int = 45, budget: int = 100) -> dict:
-    """Navigate from the title screen: target 'editor' (edit-time), 'editor_play' (test-play the editor course), or 'coursebot' with a slot. A slot the game lists starts Coursebot play (scene_mode 7); an empty slot only offers 'Make New Course', so it opens the editor with a default course and MINUS starts test-play (scene_mode 5) instead. Read scene_mode in the returned status. The call returns within `budget` seconds; if navigation is still going it returns pending=true and keeps going, game_status then carries the outcome under 'boot', and every tool that drives the game refuses until it is done. The final result reports 'registered' as save.dat stands after the visit (Coursebot may delete the slot on the way in)."""
+def game_boot(
+    target: str = "coursebot",
+    slot: int | None = None,
+    timeout: int = 45,
+    budget: int = 120,
+    via_menu: bool = False,
+) -> dict:
+    """Boot into play or the editor.
+
+    target 'coursebot' with a slot: by default writes boot.txt + a boot.bin from
+    that slot's .bcd, relaunches Eden, and lets the mod start Coursebot play from
+    the title (scene_mode 7) — no TAS Coursebot UI walk. Pass via_menu=true to
+    keep the old button-injection navigation (slower; needs a live session already
+    past the title). target 'editor' / 'editor_play' still navigate the menus.
+    The call returns within `budget` seconds; if work is still going it returns
+    pending=true and game_status carries the outcome under 'boot'. The final
+    result reports 'registered' as save.dat stands after the visit.
+    """
     if target == "coursebot" and slot is None:
         return {"error": "slot required"}
     if target not in ("coursebot", "editor", "editor_play"):
         return {"error": f"unknown target {target}"}
     g = _game()
+    if target == "coursebot":
+        _note_played(slot, "game_boot")
 
     def with_registration(result: dict) -> dict:
         registered = _registered_slots() if target == "coursebot" else None
         if registered is not None:
             result["registered"] = slot in registered
-            if slot not in registered:
+            if slot not in registered and result.get("method") != "directboot":
                 result["note"] = "slot is not in save.dat, so this is editor test-play of a default course, not the installed level; level_install registers a slot (the course must pass validation)"
         return result
 
     def navigate():
         try:
+            if target == "coursebot" and not via_menu:
+                _NAV["result"] = with_registration(_directboot_coursebot(slot, timeout))
+                return
             if target == "coursebot":
                 ok = g.to_coursebot_play(slot=slot, timeout=timeout)
             elif target == "editor":
                 ok = g.to_editor(timeout=timeout)
             else:
                 ok = g.to_play(timeout=timeout)
-            _NAV["result"] = with_registration({"ok": bool(ok), "pending": False, "status": eden.read_status(P)})
+            _NAV["result"] = with_registration(
+                {"ok": bool(ok), "pending": False, "method": "menu", "status": eden.read_status(P)}
+            )
         except Exception as e:  # noqa: BLE001
             _NAV["result"] = {"ok": False, "pending": False, "error": repr(e)}
 
     t = threading.Thread(target=navigate, name="game_boot", daemon=True)
-    _NAV.update(thread=t, result={"ok": False, "pending": True, "target": target, "slot": slot})
+    _NAV.update(
+        thread=t,
+        result={"ok": False, "pending": True, "target": target, "slot": slot, "via_menu": via_menu},
+    )
     t.start()
     # Plain join: @tool runs this in a worker thread, so waiting here does not
     # block the event loop. Keep `budget` under the host's per-call limit
@@ -240,7 +316,6 @@ def game_boot(target: str = "coursebot", slot: int | None = None, timeout: int =
     # the outcome of a pending navigation.
     t.join(budget)
     return dict(_NAV["result"])
-
 
 def _registered_slots() -> set[int] | None:
     """Slots Coursebot lists: the used_flag per record in save.dat. The .bcd files on disk are not consulted by the game."""
@@ -483,6 +558,80 @@ def gdb_log(last: int = 10) -> dict:
 RECORD_FILE = "record.json"
 
 
+def _course_mtimes() -> dict[str, int]:
+    """mtime_ns of every course_data_NNN.bcd in the save dir, keyed by slot."""
+    if not P.save_dir:
+        return {}
+    import save_dat  # noqa: WPS433
+    out = {}
+    for slot in range(save_dat.RECORD_COUNT):
+        path = Path(P.save_dir) / SLOT_FILES[0].format(slot)
+        if path.exists():
+            out[str(slot)] = path.stat().st_mtime_ns
+    return out
+
+
+def _note_played(slot: int, via: str) -> dict | None:
+    """Add a Coursebot slot to the recording in progress, if there is one: stop saves its course."""
+    rec = Path(P.sd_hooks_dir) / RECORD_FILE
+    if not rec.exists():
+        return None
+    state = json.loads(rec.read_text())
+    registered = _registered_slots()
+    entry = {"slot": slot, "via": via, "at": time.strftime("%H:%M:%S"),
+             "registered": (slot in registered) if registered is not None else None}
+    path = Path(P.save_dir) / SLOT_FILES[0].format(slot) if P.save_dir else None
+    if path and path.exists():
+        entry["mtime_ns"] = path.stat().st_mtime_ns
+    state.setdefault("played", []).append(entry)
+    rec.write_text(json.dumps(state, indent=1))
+    return entry
+
+
+def _save_courses(state: dict, stem: Path) -> dict:
+    """Copy the course file(s) of the slots the recording played next to the fixture, as
+    <stem>_course_NNN.bcd. The played slots are the ones game_boot navigated to during the
+    recording or that were named with `slot`. With none known, the registered slots whose
+    course file changed since start are copied and `courses_unknown` says so."""
+    out: dict = {"courses": [], "notes": []}
+    if not P.save_dir:
+        out["courses_unknown"] = "no save dir found; no course saved"
+        return out
+    sd = Path(P.save_dir)
+    played = state.get("played", [])
+    slots = []
+    for entry in played:
+        if entry["slot"] in slots:
+            continue
+        if entry.get("registered") is False:
+            out["notes"].append(f"slot {entry['slot']} was not registered when played: the game test-played "
+                                "a default editor course, not that slot's file; not saved")
+            continue
+        slots.append(entry["slot"])
+    if not played:
+        registered = _registered_slots() or set()
+        before = state.get("course_mtimes", {})
+        now = _course_mtimes()
+        slots = sorted(int(k) for k, v in now.items() if int(k) in registered and before.get(k) != v)
+        out["courses_unknown"] = (
+            "the played slot is unknown (no game_boot to a Coursebot slot during the recording and no slot "
+            "given); saved the registered slots whose course file changed since start: "
+            f"{slots if slots else 'none'}. Pass slot=N to stop to name the course that was played")
+    import shutil  # noqa: WPS433
+    for slot in slots:
+        src = sd / SLOT_FILES[0].format(slot)
+        if not src.exists():
+            out["notes"].append(f"slot {slot}: {src.name} is gone; not saved")
+            continue
+        changed = [e for e in played if e["slot"] == slot and e.get("mtime_ns") not in (None, src.stat().st_mtime_ns)]
+        if changed:
+            out["notes"].append(f"slot {slot}: {src.name} changed after it was played; saved as it is now")
+        dst = Path(f"{stem}_course_{slot:03d}.bcd")
+        shutil.copyfile(src, dst)
+        out["courses"].append({"slot": slot, "path": str(dst)})
+    return out
+
+
 def _fixtures_dir() -> Path:
     root = HERE.parents[1]
     for name in ("smm2-decomp-integration", "smm2-decomp"):
@@ -515,15 +664,19 @@ def _deploy_built_mod() -> dict:
 
 
 @tool(exclusive=True)
-def trace_record(action: str = "status", name: str = "", presets: str = "player,rail", out_dir: str | None = None) -> dict:
+def trace_record(action: str = "status", name: str = "", presets: str = "player,rail", out_dir: str | None = None,
+                 slot: int | None = None) -> dict:
     """Record a play session as a sim fixture. action=start: install the probe presets (comma list of
     tools/probe.py PRESETS: player, rail, note, camera), deploy a newer mod build, relaunch Eden (the
     probe is read at boot) and remember the recording; then play. action=stop: wait for the mod's
     flush, decode probe.log into <out_dir>/<name>_eden.csv (actor rows with the pad columns),
     <name>_eden_inputs.csv (the pad as a tas.csv script) and <name>_eden.json (what was recorded, with the
-    marks); out_dir defaults to smm2-decomp's src-sim/test/fixtures. action=mark: stamp the game's current
-    frame with `name` as a label (a milestone: "reached door A") into the recording in progress.
-    action=status: the recording in progress."""
+    marks); out_dir defaults to smm2-decomp's src-sim/test/fixtures. stop also copies the course file of
+    each Coursebot slot played into <name>_course_NNN.bcd: a game_boot to a slot during the recording
+    counts as played, and `slot` (on mark or stop) names one navigated to by hand; with neither, it
+    copies the registered slots whose course changed since start and says so under courses_unknown.
+    action=mark: stamp the game's current frame with `name` as a label (a milestone: "reached door A")
+    into the recording in progress. action=status: the recording in progress."""
     sd = Path(P.sd_hooks_dir)
     rec = sd / RECORD_FILE
     state = json.loads(rec.read_text()) if rec.exists() else None
@@ -539,23 +692,34 @@ def trace_record(action: str = "status", name: str = "", presets: str = "player,
         unknown = [k for k in keys if k not in probe.PRESETS]
         if unknown:
             return {"error": f"unknown presets {unknown}; known: {sorted(probe.PRESETS)}"}
-        config = "".join(probe.PRESETS[k] for k in keys)
+        config = probe.merge_presets(keys)   # presets hooking one function share the hook
         sd.mkdir(parents=True, exist_ok=True)
         cfg = sd / "probe.txt"
         cfg.write_text(config)
         import types  # noqa: WPS433
-        if probe.cmd_check(types.SimpleNamespace(config=str(cfg))):
-            return {"error": "the probe config failed its check against main.elf (see the server log)"}
+        import contextlib, io  # noqa: WPS433
+        report = io.StringIO()
+        with contextlib.redirect_stdout(report):
+            failed = probe.cmd_check(types.SimpleNamespace(config=str(cfg)))
+        if failed:
+            problems = [ln for ln in report.getvalue().splitlines() if not ln.startswith("ok ")]
+            return {"error": "the probe config failed its check against main.elf", "problems": problems}
         deployed = _deploy_built_mod()
         killed = None
         if eden.process():
             killed = eden.kill()
         launched = eden.launch(P, False)
         state = {"name": name, "presets": keys, "started": time.strftime("%Y-%m-%d %H:%M:%S"),
-                 "out_dir": str(Path(out_dir) if out_dir else _fixtures_dir()), "config": config}
+                 "out_dir": str(Path(out_dir) if out_dir else _fixtures_dir()), "config": config,
+                 "course_mtimes": _course_mtimes()}
         rec.write_text(json.dumps(state, indent=1))
         return {"recording": state, "mod": deployed, "killed": killed, "launch": launched,
                 "note": "the probe is armed for this boot: navigate to the course and play; stop when done"}
+    if action in ("mark", "stop") and state and slot is not None:
+        if (err := _slot_error(slot)):
+            return err
+        _note_played(slot, "slot")
+        state = json.loads(rec.read_text())
     if action == "mark":
         if not state:
             return {"error": "no recording in progress (start one first)"}
@@ -584,18 +748,46 @@ def trace_record(action: str = "status", name: str = "", presets: str = "player,
         except SystemExit as e:
             return {"error": str(e), "recording": state}
         status = eden.read_status(P)
+        courses = _save_courses(state, out / state["name"])
         # The sidecar is committed next to its CSVs: names only, no paths from this machine.
-        recorded = {k: v for k, v in state.items() if k != "out_dir"}
+        recorded = {k: v for k, v in state.items() if k not in ("out_dir", "course_mtimes")}
         meta = {**recorded, "stopped": time.strftime("%Y-%m-%d %H:%M:%S"), "decoded": decoded,
-                "status_at_stop": status, "files": {"fixture": Path(fixture).name, "inputs": Path(inputs).name}}
+                "status_at_stop": status, "files": {"fixture": Path(fixture).name, "inputs": Path(inputs).name,
+                                                    "courses": {f"{c['slot']:03d}": Path(c["path"]).name for c in courses["courses"]}}}
+        extra = {k: courses[k] for k in ("courses_unknown", "notes") if courses.get(k)}
+        meta.update(extra)
         Path(sidecar).write_text(json.dumps(meta, indent=1))
         rec.unlink()
-        return {"saved": {"fixture": fixture, "inputs": inputs, "sidecar": sidecar}, "decoded": decoded, "status_at_stop": status}
+        saved = {"fixture": fixture, "inputs": inputs, "sidecar": sidecar,
+                 "courses": {f"{c['slot']:03d}": c["path"] for c in courses["courses"]}}
+        return {"saved": saved, **extra, "decoded": decoded, "status_at_stop": status}
     return {"error": f"unknown action {action}; start, stop or status"}
+
+
+def _keep_stdin_for_the_protocol() -> None:
+    """Move the JSON-RPC stream off fd 0 and put /dev/null there.
+
+    A Windows program started from WSL (eden.exe, powershell.exe, and any
+    tool module that runs one) is given the parent's stdin through the
+    interop relay, and the relay READS it: a PowerShell child took every
+    byte waiting on a piped stdin (2000 of 2000, and none with stdin
+    redirected). In this server stdin is the host's request stream, so a
+    tool that ran PowerShell or launched Eden could swallow the next
+    request; its reply never came and the host's later calls hung too.
+    With fd 0 on /dev/null every child, in this module or a tool it
+    imports, inherits nothing to read, and the transport reads its own
+    duplicate of the pipe.
+    """
+    proto = os.dup(0)
+    null = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(null, 0)
+    os.close(null)
+    sys.stdin = os.fdopen(proto, "r", encoding="utf-8", errors="replace")
 
 
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         print(json.dumps(anyio.run(eden_state), indent=1)[:1500])
     else:
+        _keep_stdin_for_the_protocol()
         mcp.run()

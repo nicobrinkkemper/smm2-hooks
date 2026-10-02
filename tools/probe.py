@@ -363,8 +363,11 @@ field activate pos_y f32 0x234
     # enemy's per-frame (0x710128A2D0) with its type (+0x40), handle (+0x30),
     # position and velocity, the facing (+0x26C), the x speed and the speed it
     # approaches by the step (+0x274, +0x278, +0x284: ActorMoveStep.cpp in the
-    # decomp), the ground state (+0x684: -1 airborne, 0 touching, 1 landed,
-    # 2 at rest) and the system state (+0x400, the machine at +0x3F8).
+    # decomp), the bg-check flags the enemy code reads (+0x658: bit 0
+    # standing, 0x4000 a wall, bit 31 in liquid; EnemyShellWait.cpp and
+    # ActorMoveStep.cpp in the decomp) and the system state (+0x400, the
+    # machine at +0x3F8). +0x684, read here before, stayed -1 on every row of
+    # a walk on flat ground, so it is not the ground state.
     "enemywalk": """\
 hook enemy 0x710128A2D0
 field enemy id    u32 0x40
@@ -377,7 +380,7 @@ field enemy face  f32 0x26C
 field enemy spd   f32 0x274
 field enemy tgt   f32 0x278
 field enemy acc   f32 0x284
-field enemy grnd  u32 0x684
+field enemy bg    u32 0x658
 field enemy sysst u32 0x400
 """,
     # Per-face hit words (smm2-decomp re-note hit-attributes): the collider
@@ -490,6 +493,35 @@ field contact o_id   u32 x1:0xA8>0x40
 field contact o_y    f32 x1:0xA8>0x234
 field contact o_offy f32 x1:0x64
 field contact o_hh   f32 x1:0x6C
+""",
+    # The background check's passes per enemy (hul8 in the decomp's epic; its
+    # re-notes bg-check-object.md): the every-frame move runs the runner
+    # sub_7101079E20 (x0 the wrapper at actor+0x650, the owner at +8), and
+    # EnemyUber slot 7 sub_710128A090 runs it a second time when the actor's
+    # +0x4E0 has 0x40000. Rows come in call order, so a frame's `move`,
+    # `slot7` and `bgrun` rows of one handle show whether the second pass ran
+    # and the bg-check flags (+0x658) going into each check. The runner's
+    # wrapper +0x2C8 bit 0 path checks with y lowered by 0.01.
+    "bgpass": """\
+hook move 0x71012941E0
+field move id    u32 0x40
+field move h30   u64 0x30
+field move pos_y f32 0x234
+field move bg    u32 0x658
+hook slot7 0x710128A090
+field slot7 id    u32 0x40
+field slot7 h30   u64 0x30
+field slot7 pos_y f32 0x234
+field slot7 bg    u32 0x658
+field slot7 f4e0  u32 0x4E0
+hook bgrun 0x7101079E20
+field bgrun id    u32 0x8>0x40
+field bgrun h30   u64 0x8>0x30
+field bgrun pos_x f32 0x8>0x230
+field bgrun pos_y f32 0x8>0x234
+field bgrun bg    u32 0x8>0x658
+field bgrun w2c8  u8  0x2C8
+field bgrun w336  u8  0x336
 """,
     # Who is still loaded, and where the camera is (docs/re-notes/globality.md
     # in the decomp). Every enemy's per-frame (0x710128A2D0) carries its
@@ -604,6 +636,25 @@ field lift pos_y   f32 0x234
 field lift id      u32 0x40
 field lift h48     u64 0x30
 """,
+    "terrain": """\
+# What the terrain factory (sub_7101C9CCD0) is handed while a course loads:
+# on its row x2 is the tile's kind word, x3 / x4 the width and height in
+# tiles. The shape registration it runs logs just before it, with the tile's
+# position (its lower-left corner): a box (the terrain box's constructor), a
+# polygon (a slope piece, 3 or 4 points) or a line. Every row of one load
+# shares a frame; the rows of the last load before play are the course.
+hook factory 0x7101C9CCD0
+hook polygon 0x7100E30EF0
+field polygon x      f32 0x290>0x0
+field polygon y      f32 0x290>0x4
+field polygon points u32 0x3B0
+hook box 0x7101C9D980
+field box x f32 0x20
+field box y f32 0x24
+hook line 0x7100E2CF70
+field line x f32 0x290>0x0
+field line y f32 0x290>0x4
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
@@ -702,6 +753,39 @@ def parse_config(text: str):
     return hooks, fields
 
 
+def merge_presets(keys: list[str]) -> str:
+    """One probe config from several presets. The mod hooks an address once,
+    so presets that hook the same function share one hook (the first preset's
+    name). Fields reading the same type and path behind it are kept once; a
+    field whose label is taken by a different read is renamed to
+    `<its preset's hook name>_<label>`."""
+    hooks: dict[int, str] = {}           # vaddr -> hook name
+    opts: dict[int, list[str]] = {}
+    fields: list[tuple[str, str, str, str]] = []   # hook, label, type, path
+    seen: dict[tuple[str, str, str], str] = {}     # (hook, type, path) -> label
+    labels: dict[tuple[str, str], tuple[str, str]] = {}  # (hook, label) -> (type, path)
+    for key in keys:
+        local_hooks, local_fields = parse_config(PRESETS[key])
+        rename: dict[str, str] = {}
+        for h in local_hooks:
+            name = hooks.setdefault(h["vaddr"], h["name"])
+            opts.setdefault(h["vaddr"], h["opts"])
+            rename[h["name"]] = name
+        for f in local_fields:
+            hook = rename[f["hook"]]
+            if (hook, f["type"], f["path"]) in seen:
+                continue
+            label = f["label"]
+            if labels.get((hook, label), (f["type"], f["path"])) != (f["type"], f["path"]):
+                label = f"{f['hook']}_{label}"
+            seen[(hook, f["type"], f["path"])] = label
+            labels[(hook, label)] = (f["type"], f["path"])
+            fields.append((hook, label, f["type"], f["path"]))
+    lines = [" ".join(["hook", name, f"0x{vaddr:X}", *opts[vaddr]]) for vaddr, name in hooks.items()]
+    lines += [f"field {hook} {label} {typ} {path}" for hook, label, typ, path in fields]
+    return "\n".join(lines) + "\n"
+
+
 def cmd_check(args) -> int:
     hooks, fields = parse_config(Path(args.config).read_text())
     if len(hooks) > 8:
@@ -709,6 +793,12 @@ def cmd_check(args) -> int:
         return 1
     rc = 0
     names = {h["name"] for h in hooks}
+    by_addr: dict[int, str] = {}
+    for h in hooks:
+        if h["vaddr"] in by_addr:
+            print(f"line {h['line']}: {h['name']} hooks {h['vaddr']:#x}, already hooked as {by_addr[h['vaddr']]}: the mod hooks an address once (merge the presets)")
+            rc = 1
+        by_addr.setdefault(h["vaddr"], h["name"])
     for h in hooks:
         try:
             word = read_word(h["vaddr"])
