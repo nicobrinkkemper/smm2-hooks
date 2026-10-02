@@ -25,6 +25,9 @@ ActorProfileRegister = 0x1047F40
 # StateMachine::registerState
 SMRegisterState = 0x8B8FA0
 
+# Copies the course file into [obj+0x28] (theme_override.cpp)
+CourseDataCopy = 0xE3BA90
+
 # StateMachine::changeState (Lp::Utl::StateMachine)
 StateMachine_changeState = 0x8b9320
 

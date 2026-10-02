@@ -16,11 +16,11 @@
 
 - **ONE persistent GDB session** via tmux (`eden-gdb`). Never use batch `-batch` connections — they crash Eden on reconnect.
 - **Always continue after a breakpoint/watchpoint hit**: `c` in GDB. Game is frozen while stopped!
-- **No breakpoints at all**: `break` is baked into Eden's code cache and loops forever; `hbreak` is accepted by GDB but the stub answers Z1 with EMPTY, so it never fires. Use watchpoints (`watch`/`rwatch`/`awatch`) or the probe (`docs/probe.md`).
+- **Breakpoints.** Hardware breakpoints are not implemented in Eden: its stub answers `Z1` with an empty reply (`HandleBreakpointInsert` in `src/core/debugger/gdbstub.cpp`, master as of 2026-09), so `hbreak` fails with "Enabled packet Z1 (hardware-breakpoint) not recognized by stub". Software breakpoints (`break`, `Z0`) insert and hit, but a deleted one keeps trapping at the same address (4 of 4 continues after `delete` on both v0.2.0-rc1 and v0.2.1, and the same in Coursebot play with devkitPro's `aarch64-none-elf-gdb` 14.1 as with Ubuntu's `gdb-multiarch` 15, 2026-09-29; the nightly of 2026-09-27, which has the vCont rework of PR #3896, behaves the same, and a `stepi` off the breakpoint before `delete` does not help: the next continue reports the old address again at once and the game's frame counter does not move): the `BRK` stays in the JIT's compiled code, so the game cannot get past it and needs a relaunch. A `break` is usable once, at the end of a session. Use watchpoints (`watch`/`rwatch`/`awatch`) or the probe (`docs/probe.md`).
 - **Don't set breakpoints during loading** — `changeState` fires on Prepare Thread during scene transitions and freezes everything.
 - **Delete breakpoints before continuing** if you're done with them: `delete <num>`, then `c`.
 - **Handle SIGTRAP**: if spurious stops appear after deleting watchpoints, `handle SIGTRAP nostop noprint nopass`. Never `pass`: passing the initial SIGTRAP into the guest kills Eden on the first continue (tooling-gaps #7).
-- **ASLR**: Addresses change every launch. Must search for function byte patterns each session.
+- **Module base**: on v0.2.0-rc1 `Slope.nss` (the main module) started at `0x807c9000` on every launch; on v0.2.1 it moves every launch (five launches, five bases, 2026-09-29). Read it from `mon get info` each session rather than hard-coding it.
 
 ## Finding Functions (ASLR)
 
