@@ -49,6 +49,14 @@ field <hook-name> <label> <type> <path>
 (block rail applier `sub_710138C520`, mover fields from the decomp's
 `docs/re-notes/rail-follower.md`).
 
+`python3 tools/probe.py preset terrain` logs what the terrain factory
+(`sub_7101C9CCD0`) is handed while a course loads: one `factory` row per
+collision shape with the tile's kind word in `x2` and its width and height
+in tiles in `x3` / `x4`, each preceded by the row of the registration it
+ran (`box`, `polygon` or `line`) with the tile's position. All rows of one
+load share a frame, so the rows of the last load before play are the
+course's terrain. Boot the course, let the log flush, quit.
+
 ## Rules
 
 - **First instruction must not be PC-relative.** hakkun's trampoline copies
