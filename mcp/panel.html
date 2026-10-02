@@ -70,7 +70,7 @@
   </div>
   <div class="row">
     <span class="muted">From the title screen:</span>
-    <button id="bootCoursebot">Play slot (Coursebot)</button>
+    <button id="bootCoursebot">Play slot (direct boot)</button>
     <button id="bootEditor">Editor</button>
     <button id="bootEditorPlay">Editor test-play</button>
   </div>
@@ -174,7 +174,7 @@ function render() {
   for (const b of ["install", "restore"]) $(b).disabled = !!busy;
   $("install").disabled = !!busy || !$("level").value;
   for (const b of ["bootCoursebot", "bootEditor", "bootEditorPlay"]) $(b).disabled = !!busy || !running;
-  $("bootCoursebot").textContent = `Play slot ${slot} (Coursebot)`;
+  $("bootCoursebot").textContent = `Play slot ${slot} (direct boot)`;
   $("levelsErr").textContent = levels.ok ? "" : (levels.error || "");
 
   const filter = $("filter").value.toLowerCase();

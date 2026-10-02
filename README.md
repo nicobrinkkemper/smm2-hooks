@@ -113,7 +113,7 @@ and is wrong about the GDB stub until it is switched to `mcp/eden.py`.
 | `docs/botting-patches.md` | Patches used by the automation |
 | `docs/patches.md` | pchtxt patches versioned in `patches/`, toggled with `eden.py --enable/--disable` or MCP `eden_patches` |
 | `docs/tutorial-theme.md` | Tutorial: from a runtime value (the course theme) to the code that writes it, to a mod that changes it |
-| `docs/direct-boot.md` | `boot.txt`: boot straight into a Coursebot course (play at 16 s); `tools/trace.py` records a probe run in one command |
+| `docs/direct-boot.md` | `boot.txt` + `file`: boot straight into a chosen course from the play buffer (~16 s); `game_boot` / `tools/trace.py` use it by default |
 
 ## Adding Hooks
 

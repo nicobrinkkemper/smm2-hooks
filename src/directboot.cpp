@@ -4,6 +4,11 @@
 // sd:/smm2-hooks/boot.txt, read once at boot:
 //     coursebot <index> [kind] play the Coursebot entry <index> as soon as the title is up;
 //                              kind is the transition (4 = cMyCourseToNormalPlay, 3 = cRoboToEdit)
+//     file <sd path>           the course to play instead of the resident one: a .bcd's 0x10-byte
+//                              header followed by its decrypted body (0x5BFD0 bytes), read into the
+//                              play buffer before the request. The Coursebot's Play copies the
+//                              selected entry there itself (sub_71016EDF70); the request reads no
+//                              course data, so play uses whatever the buffer holds.
 //
 // The Coursebot's play-start (sub_71016E5C10) is four calls, replayed here:
 //     sub_7101792070(kind, params)       prepare the transition
@@ -28,7 +33,9 @@ constexpr uintptr_t OFF_PREPARE   = 0x1792070;
 constexpr uintptr_t OFF_MODE      = 0x1790480;
 constexpr uintptr_t OFF_SOURCE    = 0x1792890;
 constexpr uintptr_t OFF_GO        = 0x1791020;
-constexpr uintptr_t OFF_GPM       = 0x2C57D58;   // GamePhaseManager*; [[gpm]+0x30]+0x14 = scene mode (6 = title)
+constexpr uintptr_t OFF_GPM       = 0x2C57D58;
+constexpr uintptr_t OFF_PLAYBUF   = 0x2A39088;   // [[this]+0x20] = the play buffer; the course at +0x6C000 (sub_71016EDF70)
+constexpr size_t COURSE_BYTES     = 0x10 + 0x5BFC0;   // GamePhaseManager*; [[gpm]+0x30]+0x14 = scene mode (6 = title)
 constexpr uint32_t TITLE_SETTLE   = 150;         // frames of title before the first request
 constexpr uint32_t ROBO_SETTLE    = 300;         // frames in the Coursebot scene: its list load opens every used slot
 constexpr uint32_t RETRY_EVERY    = 90;
@@ -44,6 +51,7 @@ int s_phase = 0;                // 0 title -> Coursebot (kind 1), 1 Coursebot ->
 bool s_two_phase = false;       // coursebot2: go through the Coursebot scene first (course selection, experimental)
 uint32_t s_left_title = 0;
 bool s_done = false;
+char s_file[128] = "";          // file: the course to load into the play buffer
 
 uint32_t scene_mode(uintptr_t base) {
     uintptr_t gpm = *reinterpret_cast<uintptr_t*>(base + OFF_GPM);
@@ -61,21 +69,26 @@ void load_config() {
     nn::fs::ReadFile(&n, f, 0, buf, sizeof(buf) - 1);
     nn::fs::CloseFile(f);
     buf[n] = '\0';
-    char* p = buf;
-    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-    if (!std::strncmp(p, "coursebot2", 10)) {        // two-phase experiment: via the Coursebot scene
-        s_two_phase = true;
-        char* end = nullptr;
-        s_course = (int)std::strtol(p + 10, &end, 10);
-        if (end && *end) { long k = std::strtol(end, nullptr, 10); if (k > 0) s_kind = (int)k; }
-        s_log.writef("config coursebot2 %d kind %d\n", s_course, s_kind);
-    } else if (!std::strncmp(p, "coursebot", 9)) {   // single-phase: play the resident course
-        char* end = nullptr;
-        s_course = (int)std::strtol(p + 9, &end, 10);
-        if (end && *end) { long k = std::strtol(end, nullptr, 10); if (k > 0) s_kind = (int)k; }
-        s_log.writef("config coursebot %d kind %d\n", s_course, s_kind);
-    } else if (*p && *p != '#') {
-        s_log.writef("E,unknown line: %s\n", p);
+    for (char* line = std::strtok(buf, "\r\n"); line; line = std::strtok(nullptr, "\r\n")) {
+        char* p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (!std::strncmp(p, "coursebot2", 10)) {        // two-phase experiment: via the Coursebot scene
+            s_two_phase = true;
+            char* end = nullptr;
+            s_course = (int)std::strtol(p + 10, &end, 10);
+            if (end && *end) { long k = std::strtol(end, nullptr, 10); if (k > 0) s_kind = (int)k; }
+            s_log.writef("config coursebot2 %d kind %d\n", s_course, s_kind);
+        } else if (!std::strncmp(p, "coursebot", 9)) {   // single-phase: play the resident course
+            char* end = nullptr;
+            s_course = (int)std::strtol(p + 9, &end, 10);
+            if (end && *end) { long k = std::strtol(end, nullptr, 10); if (k > 0) s_kind = (int)k; }
+            s_log.writef("config coursebot %d kind %d\n", s_course, s_kind);
+        } else if (!std::strncmp(p, "file ", 5)) {
+            std::strncpy(s_file, p + 5, sizeof(s_file) - 1);
+            s_log.writef("config file %s\n", s_file);
+        } else if (*p && *p != '#') {
+            s_log.writef("E,unknown line: %s\n", p);
+        }
     }
 }
 
@@ -87,11 +100,31 @@ void init() {
     s_log.flush();
 }
 
+// The file's course into the play buffer, where the Coursebot's Play would
+// have copied the selected entry.
+static bool load_course(uintptr_t base) {
+    uintptr_t owner = *reinterpret_cast<uintptr_t*>(base + OFF_PLAYBUF);
+    uintptr_t buf = owner >= 0x1000000ull && owner < 0x3000000000ull ? *reinterpret_cast<uintptr_t*>(owner + 0x20) : 0;
+    if (buf < 0x1000000ull || buf >= 0x3000000000ull) { s_log.writef("E,play buffer not set up\n"); s_log.flush(); return false; }
+    char* dst = reinterpret_cast<char*>(buf + 0x6C000);
+    nn::fs::FileHandle f;
+    if (nn::fs::OpenFile(&f, s_file, nn::fs::MODE_READ) != 0) { s_log.writef("E,cannot open %s\n", s_file); s_log.flush(); return false; }
+    size_t n = 0;
+    nn::fs::ReadFile(&n, f, 0, dst, COURSE_BYTES);
+    nn::fs::CloseFile(f);
+    if (n != COURSE_BYTES || std::memcmp(dst + 0xC, "SCDL", 4) != 0) {
+        s_log.writef("E,%s: %zu bytes, want %zu with SCDL at +0xC\n", s_file, n, COURSE_BYTES); s_log.flush(); return false;
+    }
+    s_log.writef("loaded %s into the play buffer\n", s_file);
+    return true;
+}
+
 static void request(uint32_t frame, uintptr_t base, int kind) {
     auto prepare = reinterpret_cast<void (*)(int, int64_t*)>(base + OFF_PREPARE);
     auto mode_fn = reinterpret_cast<void (*)(int)>(base + OFF_MODE);
     auto source  = reinterpret_cast<void (*)(int, int, int64_t*)>(base + OFF_SOURCE);
     auto go      = reinterpret_cast<uint64_t (*)(void*)>(base + OFF_GO);
+    if (s_file[0] && !load_course(base)) { s_done = true; return; }
     int64_t params[2] = {-1, -1};
     prepare(kind, params);
     mode_fn(kind);
