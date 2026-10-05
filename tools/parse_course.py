@@ -333,16 +333,15 @@ def render_map(area, width=120, height=30):
 # Main
 # ============================================================================
 def get_save_path():
-    """Get Ryujinx save data path."""
-    # Check .env first
-    p = os.environ.get('RYUJINX_SAVE_PATH', '')
+    """The save directory Eden writes (mcp/eden.py resolves it from Eden's
+    own config); RYUJINX_SAVE_PATH only when there is no Eden save."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'mcp'))
+    import eden
+    p = eden.paths().save_dir
     if p and os.path.isdir(p):
         return p
-    # Default Ryujinx path (Windows via WSL)
-    default = '/mnt/c/Users/nico/AppData/Roaming/Ryujinx/bis/user/save/0000000000000001/0'
-    if os.path.isdir(default):
-        return default
-    return None
+    p = os.environ.get('RYUJINX_SAVE_PATH', '')
+    return p if p and os.path.isdir(p) else None
 
 
 def main():
