@@ -1489,7 +1489,7 @@ def level_slope_walk() -> LevelBuilder:
        to row 2): does the object carry its own body?
     C: a rising steep slope (4x3) over a staircase, then a plateau.
        The ground before it sits at the box's ledge height (row 4, surface
-       5): the first cut had it two rows lower and the walker stopped at
+       5): the first cut had it two rows lower and the enemy stopped at
        the box's wall. Ground under a slope stays a row under its line;
        Coursebot deleted a cut whose staircase touched it.
     D: a rising slight slope (4x2) over a staircase, then the goal ground.
@@ -1822,9 +1822,9 @@ def level_walk_in() -> LevelBuilder:
     return b
 
 
-@test_level(77, "Walker Zoo")
-def level_walker_zoo() -> LevelBuilder:
-    """More walking enemies for the walker oracle, each boxed in its own
+@test_level(77, "Enemy Zoo")
+def level_enemy_zoo() -> LevelBuilder:
+    """More walking enemies for the walking-enemy oracle, each boxed in its own
     three-tile run between two-high hard-block posts so it turns at walls:
     a Spiny (25) at column 9, a Buzzy Beetle (28) at 13 and a Bob-omb (15) at
     17 (posts at 8, 11, 12, 15, 16, 19); the player (x 72) is fenced off by
@@ -1832,7 +1832,7 @@ def level_walker_zoo() -> LevelBuilder:
     `enemywalk` preset plus a hook on the wall resolver sub_7100E1EE80 (the
     owner at bg+0x188, the side / head / foot sensors behind +0x1A8..+0x1C0).
     """
-    b = LevelBuilder("Walker Zoo", "SMB1", "Ground")
+    b = LevelBuilder("Enemy Zoo", "SMB1", "Ground")
     b.width = 48
     b.add_ground_block(7, 30, y_surface=4, height=5)
     b.goal_y = 5
@@ -1892,7 +1892,7 @@ def level_note_ceiling() -> LevelBuilder:
         return {'id': OBJ_HARD_BLOCK, 'x': x, 'y': y, 'width': 1, 'height': 1, 'flags': 0x06000040, '_half_tile_offset': True}
     for col, ceil in ((11, 9), (17, 12)):
         b.objects.append(block(col))
-        # Boxed in on the block's top: a walker left alone strolls off a
+        # Boxed in on the block's top: an enemy left alone strolls off a
         # one-tile block long before the player arrives.
         b.objects.append(goomba(col))
         b.objects.append(hard(col - 1, 7))
@@ -2063,11 +2063,11 @@ def level_belt_jump() -> LevelBuilder:
     return b
 
 
-@test_level(73, "Belt Walkers")
-def level_belt_walkers() -> LevelBuilder:
-    """Goombas and Koopas walking on belts: what a belt's carry does to a
-    walker, and when the game counts it as standing. Three floor belts
-    between hard-block walls two high, so every walker turns at the walls and
+@test_level(73, "Belt Enemies")
+def level_belt_enemies() -> LevelBuilder:
+    """Goombas and Koopas walking on belts: what a belt's carry does to an
+    enemy, and when the game counts it as standing. Three floor belts
+    between hard-block walls two high, so every enemy turns at the walls and
     walks both with and against its belt: a normal belt with the flags Belt
     Jump uses (0x06000048), the same without bit 0x8 (0x06000040; the facing
     bit, so it should run the other way) and a fast one (0x06040048). Each
@@ -2075,7 +2075,7 @@ def level_belt_walkers() -> LevelBuilder:
     opening view; the player (x 72) is fenced off by the first wall and walks
     on to bring the others in. The `enemywalk` preset records them every
     frame with their bg-check flags."""
-    b = LevelBuilder("Belt Walkers", "SMB1", "Ground")
+    b = LevelBuilder("Belt Enemies", "SMB1", "Ground")
     b.width = 52
     b.add_ground_block(7, 9, y_surface=1, height=1)
     b.add_ground_block(38, 41, y_surface=1, height=1)
