@@ -2228,6 +2228,33 @@ def get_save_paths():
     return paths
 
 
+@test_level(82, "Winged Goomba")
+def level_winged_goomba() -> LevelBuilder:
+    """One winged Goomba on flat ground, far from the start, for the wing
+    component's hop (docs/re-notes/enemy-containers.md, "Wing 1"): the
+    rest, the turn toward the player and the flap speed, with no input."""
+    b = LevelBuilder("Winged Goomba", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    b.add_actor(OBJ_GOOMBA, 20, 5, flags=0x06000040 | FLAG_WINGS)
+    return b
+
+
+@test_level(83, "Claw Goomba")
+def level_claw_goomba() -> LevelBuilder:
+    """A swinging claw a tile above the ground line and a Goomba walking
+    into it from the right, for the claw's grab, carry and release
+    (docs/re-notes/enemy-containers.md, "Crane 16"), with no input."""
+    b = LevelBuilder("Claw Goomba", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    b.add_actor(OBJ_GOOMBA, 22, 5)
+    b.add_actor(105, 18, 6)   # SwingingClaw (course object 105)
+    return b
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate SMM2 test levels')
     parser.add_argument('--dry-run', action='store_true', help="Preview only")
