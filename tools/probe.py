@@ -674,6 +674,12 @@ field player prev   u32 0x400
 # water & 1 = the body is under the surface, & 0x80 = a ceiling over the head.
 field player water u32 0x230C
 field player surf  f32 0x2338
+# The pass's packed floor angle (+0x232C, bg-ab.md), the ceiling angle the
+# head met (+0x2334) and the contact byte at +0x2309 (slot82-analysis.md):
+# what the player's steps along a slope line and a sloped underside read.
+field player floor_ang u32 0x232C
+field player ceil_ang  u32 0x2334
+field player bg09      u8  0x2309
 # The pad object at player+0x550 (the gravity selector reads +22/+30 to
 # pick the held table): a spread of its bytes around those flags.
 field player pad14 u8 0x550>0x14
