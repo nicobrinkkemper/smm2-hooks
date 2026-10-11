@@ -2228,6 +2228,32 @@ def get_save_paths():
     return paths
 
 
+
+OBJ_FIRE_FLOWER = 34
+
+
+@test_level(84, "Fire Flower")
+def level_fire_flower() -> LevelBuilder:
+    """Big Flat's floor with a Fire Flower where its mushroom stands: small
+    Mario runs into it and turns Fire (the power change from small)."""
+    b = LevelBuilder("Fire Flower", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_actor(OBJ_FIRE_FLOWER, 9, 5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(85, "Mushroom Then Flower")
+def level_mushroom_then_flower() -> LevelBuilder:
+    """Big Flat's mushroom, then a Fire Flower at tile 18: one run takes
+    small to Super, then Super to Fire."""
+    b = LevelBuilder("Mushroom Then Flower", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_actor(OBJ_MUSHROOM, 9, 5)
+    b.add_actor(OBJ_FIRE_FLOWER, 18, 5)
+    b.goal_y = 5
+    return b
+
 def main():
     parser = argparse.ArgumentParser(description='Generate SMM2 test levels')
     parser.add_argument('--dry-run', action='store_true', help="Preview only")
