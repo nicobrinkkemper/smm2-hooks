@@ -79,6 +79,7 @@ OBJ_QUESTION = 5
 OBJ_HARD_BLOCK = 6
 OBJ_COIN = 8
 OBJ_MUSHROOM = 20
+OBJ_FIRE_FLOWER = 34
 OBJ_SLOPE_GENTLE = 44  # Gentle slope
 OBJ_SLOPE_STEEP = 45   # Steep slope
 OBJ_NOTE_BLOCK = 23    # Note block (music block is the same id with a flag)
@@ -2226,6 +2227,29 @@ def get_save_paths():
         break
     
     return paths
+
+
+@test_level(84, "Fire Flower")
+def level_fire_flower() -> LevelBuilder:
+    """Big Flat's floor with a Fire Flower where its mushroom stands: small
+    Mario runs into it and turns Fire (the power change from small)."""
+    b = LevelBuilder("Fire Flower", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_actor(OBJ_FIRE_FLOWER, 9, 5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(85, "Mushroom Then Flower")
+def level_mushroom_then_flower() -> LevelBuilder:
+    """Big Flat's mushroom, then a Fire Flower at tile 18: one run takes
+    small to Super, then Super to Fire."""
+    b = LevelBuilder("Mushroom Then Flower", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_actor(OBJ_MUSHROOM, 9, 5)
+    b.add_actor(OBJ_FIRE_FLOWER, 18, 5)
+    b.goal_y = 5
+    return b
 
 
 def main():

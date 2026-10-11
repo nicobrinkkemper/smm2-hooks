@@ -685,6 +685,54 @@ field player pad1d u8 0x550>0x1D
 field player pad1e u8 0x550>0x1E
 field player pad1f u8 0x550>0x1F
 """,
+    # Taking a power-up (the decomp's src/game/item/ItemFrame.h): the
+    # player's calc override sub_710158A3F0 logs the power-up (+0x4A8), the
+    # one the item asked for (+0x4B0, written by sub_71015A94A0), the
+    # second state machine at +0x438 (its state at +0x440) and the change
+    # object at +0x2458; the item frame sub_710134FFD0 logs the item, its
+    # state (+0xD20) and the player slot a touch left at +0xD28.
+    "powerup": """\
+hook power 0x710158A3F0
+field power pos_x f32 0x230
+field power pos_y f32 0x234
+field power vel_x f32 0x23C
+field power vel_y f32 0x240
+field power state u32 0x3F8
+field power stfr  u32 0x3FC
+field power pw    u32 0x4A8
+field power pwreq u32 0x4B0
+field power sm2   u32 0x440
+field power sm2fr u32 0x444
+field power f4a0  u32 0x4A0
+field power b2382 u8  0x2382
+field power chg   u64 0x2458
+hook item 0x710134FFD0
+field item id    u32 0x40
+field item pos_x f32 0x230
+field item pos_y f32 0x234
+field item vel_x f32 0x23C
+field item vel_y f32 0x240
+field item sys   u32 0x400
+field item kind  u32 0xD20
+field item big   u32 0xD24
+field item slot  u32 0xD28
+field item gone  u8  0x52
+""",
+    # What holds an enemy's move while the player's power changes (the
+    # holds actor_move and its move step test, src/game/actor/ActorMove.cpp
+    # and ActorMoveStep.cpp in the decomp): +0x52C bits 20 / 22, +0x530
+    # (+0x531 bit 6), +0x534 (+0x537 bit 4), the hold count +0x608 and the
+    # owner at +0x32C.
+    "freeze": """\
+hook enemy 0x710128A2D0
+field enemy id    u32 0x40
+field enemy pos_x f32 0x230
+field enemy f52c  u32 0x52C
+field enemy f530  u32 0x530
+field enemy f534  u32 0x534
+field enemy f608  u32 0x608
+field enemy own   u64 0x32C
+""",
 }
 
 
