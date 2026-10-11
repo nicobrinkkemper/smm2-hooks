@@ -79,6 +79,9 @@ OBJ_QUESTION = 5
 OBJ_HARD_BLOCK = 6
 OBJ_COIN = 8
 OBJ_MUSHROOM = 20
+OBJ_P_SWITCH = 18
+OBJ_ON_OFF_SWITCH = 99
+OBJ_DOTTED_LINE = 100
 OBJ_FIRE_FLOWER = 34
 OBJ_SUPER_STAR = 35
 OBJ_MUNCHER = 57
@@ -2278,6 +2281,21 @@ def level_star_munchers() -> LevelBuilder:
     b.add_actor(OBJ_SUPER_STAR, 9, 5)
     b.add_actor(OBJ_MUNCHER, 18, 5)
     b.add_actor(OBJ_MUNCHER, 19, 5)
+    b.goal_y = 5
+    return b
+
+@test_level(88, "Switch Timing")
+def level_switch_timing() -> LevelBuilder:
+    """The switches' timing: an ON/OFF switch two tiles over the floor at
+    column 9 for a standing jump to strike (twice: the toggle, its cooldown),
+    a blue dotted-line block beside it at column 11 (its solidity across the
+    flip), and a P-switch on the floor at column 15 to land on (the request,
+    the press, the 540-frame window)."""
+    b = LevelBuilder("Switch Timing", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_actor(OBJ_ON_OFF_SWITCH, 9, 7)
+    b.add_actor(OBJ_DOTTED_LINE, 11, 7)
+    b.add_actor(OBJ_P_SWITCH, 15, 5)
     b.goal_y = 5
     return b
 
