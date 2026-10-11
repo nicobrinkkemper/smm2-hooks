@@ -80,6 +80,8 @@ OBJ_HARD_BLOCK = 6
 OBJ_COIN = 8
 OBJ_MUSHROOM = 20
 OBJ_FIRE_FLOWER = 34
+OBJ_SUPER_STAR = 35
+OBJ_MUNCHER = 57
 OBJ_SLOPE_GENTLE = 44  # Gentle slope
 OBJ_SLOPE_STEEP = 45   # Steep slope
 OBJ_NOTE_BLOCK = 23    # Note block (music block is the same id with a flag)
@@ -2263,6 +2265,19 @@ def level_bump_wall() -> LevelBuilder:
     b.add_ground_block(13, 22, y_surface=8, height=2)
     b.add_actor(OBJ_BLOCK, 12, 9)
     b.add_actor(OBJ_GOOMBA, 20, 9)
+    b.goal_y = 5
+    return b
+
+@test_level(87, "Star Munchers")
+def level_star_munchers() -> LevelBuilder:
+    """A Super Star at tile 9 and two Munchers at tiles 18 and 19 on Big
+    Flat's floor: whether a player with the star stops at a Muncher's face,
+    stands on its top, or passes through it."""
+    b = LevelBuilder("Star Munchers", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_actor(OBJ_SUPER_STAR, 9, 5)
+    b.add_actor(OBJ_MUNCHER, 18, 5)
+    b.add_actor(OBJ_MUNCHER, 19, 5)
     b.goal_y = 5
     return b
 
