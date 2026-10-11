@@ -2252,6 +2252,20 @@ def level_mushroom_then_flower() -> LevelBuilder:
     return b
 
 
+@test_level(86, "Bump Wall")
+def level_bump_wall() -> LevelBuilder:
+    """A Goomba walks left along a ledge (rows 7..8, top row 8) into a brick
+    at its own height (column 12, row 9). Small Mario stands under the brick
+    and strikes it from below, so the brick bounds while the Goomba meets
+    it: whether the Goomba turns at the bounding brick's face."""
+    b = LevelBuilder("Bump Wall", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.add_ground_block(13, 22, y_surface=8, height=2)
+    b.add_actor(OBJ_BLOCK, 12, 9)
+    b.add_actor(OBJ_GOOMBA, 20, 9)
+    b.goal_y = 5
+    return b
+
 def main():
     parser = argparse.ArgumentParser(description='Generate SMM2 test levels')
     parser.add_argument('--dry-run', action='store_true', help="Preview only")
