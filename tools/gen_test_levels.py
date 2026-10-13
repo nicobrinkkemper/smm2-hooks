@@ -2241,6 +2241,27 @@ def level_winged_goomba() -> LevelBuilder:
     return b
 
 
+@test_level(84, "Winged Koopas")
+def level_winged_koopas() -> LevelBuilder:
+    """A green Koopa with wings and a red Koopa with wings on flat ground,
+    for the Koopa's two Wing handlers (docs/re-notes/enemy-containers.md,
+    "Wing 1"): the green one hops along the ground between two hard-block
+    walls two high (columns 9 and 19) and turns at each; the red one flies
+    up and down about its start height right of the second wall, facing the
+    player. The player (x 72) is fenced off by the first wall; no input. The
+    `enemywalk` preset records them every frame."""
+    b = LevelBuilder("Winged Koopas", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    for col in (9, 19):
+        b.add_platform(col, 5, 1)
+        b.add_platform(col, 6, 1)
+    b.add_actor(1, 14, 5, flags=0x06000040 | FLAG_WINGS)
+    b.add_actor(1, 25, 5, flags=0x06000040 | FLAG_WINGS | 0x4)
+    return b
+
+
 @test_level(83, "Claw Goomba")
 def level_claw_goomba() -> LevelBuilder:
     """A swinging claw a tile above the ground line and a Goomba walking
