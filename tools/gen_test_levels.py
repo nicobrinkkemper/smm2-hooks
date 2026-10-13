@@ -2299,6 +2299,76 @@ def level_switch_timing() -> LevelBuilder:
     b.goal_y = 5
     return b
 
+@test_level(82, "Winged Goomba")
+def level_winged_goomba() -> LevelBuilder:
+    """One winged Goomba on flat ground, far from the start, for the wing
+    component's hop (docs/re-notes/enemy-containers.md, "Wing 1"): the
+    rest, the turn toward the player and the flap speed, with no input."""
+    b = LevelBuilder("Winged Goomba", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    b.add_actor(OBJ_GOOMBA, 20, 5, flags=0x06000040 | FLAG_WINGS)
+    return b
+
+
+@test_level(89, "Winged Koopas")
+def level_winged_koopas() -> LevelBuilder:
+    """A green Koopa with wings and a red Koopa with wings on flat ground,
+    for the Koopa's two Wing handlers (docs/re-notes/enemy-containers.md,
+    "Wing 1"): the green one hops along the ground past two hard-block
+    walls two high (columns 9 and 19), which its hop clears (recorded
+    2026-10-13: it lands on each wall's top and hops on); the red one flies
+    up and down about its start height right of the second wall, facing the
+    player, but at column 25 it sits outside the opening view. The player
+    (x 72) is fenced off by the first wall; no input. The `enemywalk` preset
+    records them every frame."""
+    b = LevelBuilder("Winged Koopas", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    for col in (9, 19):
+        b.add_platform(col, 5, 1)
+        b.add_platform(col, 6, 1)
+    b.add_actor(1, 14, 5, flags=0x06000040 | FLAG_WINGS)
+    b.add_actor(1, 25, 5, flags=0x06000040 | FLAG_WINGS | 0x4)
+    return b
+
+
+@test_level(90, "Winged Koopas Walls")
+def level_winged_koopas_walls() -> LevelBuilder:
+    """Winged Koopas with walls the hop cannot clear: hard-block walls three
+    high at columns 9 and 19, the green Koopa with wings between them (it
+    turns at each), the red Koopa with wings at column 22, inside the
+    opening view, flying up and down and facing the player. The player (x
+    72) is fenced off by the first wall; no input. The `enemywalk` preset
+    records them every frame."""
+    b = LevelBuilder("Winged Koopas Walls", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    for col in (9, 19):
+        for row in (5, 6, 7):
+            b.add_platform(col, row, 1)
+    b.add_actor(1, 14, 5, flags=0x06000040 | FLAG_WINGS)
+    b.add_actor(1, 22, 5, flags=0x06000040 | FLAG_WINGS | 0x4)
+    return b
+
+
+@test_level(83, "Claw Goomba")
+def level_claw_goomba() -> LevelBuilder:
+    """A swinging claw a tile above the ground line and a Goomba walking
+    into it from the right, for the claw's grab, carry and release
+    (docs/re-notes/enemy-containers.md, "Crane 16"), with no input."""
+    b = LevelBuilder("Claw Goomba", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    b.add_actor(OBJ_GOOMBA, 22, 5)
+    b.add_actor(105, 18, 6)   # SwingingClaw (course object 105)
+    return b
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate SMM2 test levels')
     parser.add_argument('--dry-run', action='store_true', help="Preview only")
