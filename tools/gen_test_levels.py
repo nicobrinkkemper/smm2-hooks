@@ -2245,11 +2245,13 @@ def level_winged_goomba() -> LevelBuilder:
 def level_winged_koopas() -> LevelBuilder:
     """A green Koopa with wings and a red Koopa with wings on flat ground,
     for the Koopa's two Wing handlers (docs/re-notes/enemy-containers.md,
-    "Wing 1"): the green one hops along the ground between two hard-block
-    walls two high (columns 9 and 19) and turns at each; the red one flies
+    "Wing 1"): the green one hops along the ground past two hard-block
+    walls two high (columns 9 and 19), which its hop clears (recorded
+    2026-10-13: it lands on each wall's top and hops on); the red one flies
     up and down about its start height right of the second wall, facing the
-    player. The player (x 72) is fenced off by the first wall; no input. The
-    `enemywalk` preset records them every frame."""
+    player, but at column 25 it sits outside the opening view. The player
+    (x 72) is fenced off by the first wall; no input. The `enemywalk` preset
+    records them every frame."""
     b = LevelBuilder("Winged Koopas", "SMB1", "Ground")
     b.width = 48
     b.add_ground_block(7, 30, y_surface=4, height=5)
@@ -2259,6 +2261,26 @@ def level_winged_koopas() -> LevelBuilder:
         b.add_platform(col, 6, 1)
     b.add_actor(1, 14, 5, flags=0x06000040 | FLAG_WINGS)
     b.add_actor(1, 25, 5, flags=0x06000040 | FLAG_WINGS | 0x4)
+    return b
+
+
+@test_level(85, "Winged Koopas Walls")
+def level_winged_koopas_walls() -> LevelBuilder:
+    """Winged Koopas with walls the hop cannot clear: hard-block walls three
+    high at columns 9 and 19, the green Koopa with wings between them (it
+    turns at each), the red Koopa with wings at column 22, inside the
+    opening view, flying up and down and facing the player. The player (x
+    72) is fenced off by the first wall; no input. The `enemywalk` preset
+    records them every frame."""
+    b = LevelBuilder("Winged Koopas Walls", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    for col in (9, 19):
+        for row in (5, 6, 7):
+            b.add_platform(col, row, 1)
+    b.add_actor(1, 14, 5, flags=0x06000040 | FLAG_WINGS)
+    b.add_actor(1, 22, 5, flags=0x06000040 | FLAG_WINGS | 0x4)
     return b
 
 
