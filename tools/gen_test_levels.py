@@ -341,9 +341,9 @@ class LevelBuilder:
         tr['has_object'] = True
 
     def add_note_block(self, x: int, y: int, wings: bool = False):
-        """A free-standing note block (id 23), bottom-left tile at (x, y)."""
-        flags = 0x06000040 | (FLAG_WINGS if wings else 0)
-        self.objects.append({'id': OBJ_NOTE_BLOCK, 'x': x, 'y': y, 'flags': flags})
+        """A free-standing note block (id 23) in tile (x, y): the record at the
+        tile's centre, as every one-tile actor (add_actor)."""
+        self.add_actor(OBJ_NOTE_BLOCK, x, y, flags=0x06000040 | (FLAG_WINGS if wings else 0))
 
     def add_actor(self, actor_id: int, x, y, flags: int = 0x06000040,
                   lid: int = -1, half: bool = True):
@@ -2352,6 +2352,21 @@ def level_winged_koopas_walls() -> LevelBuilder:
             b.add_platform(col, row, 1)
     b.add_actor(1, 14, 5, flags=0x06000040 | FLAG_WINGS)
     b.add_actor(1, 22, 5, flags=0x06000040 | FLAG_WINGS | 0x4)
+    return b
+
+
+@test_level(91, "Shell Note")
+def level_shell_note() -> LevelBuilder:
+    """A green Koopa walking left toward the player and a note block on the
+    floor at column 20: the player stomps the Koopa, backs off and kicks the
+    shell right into the block's side, for a note block hit from the side
+    (BoundUp) and what the shell does after."""
+    b = LevelBuilder("Shell Note", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    b.add_actor(1, 12, 5)
+    b.add_note_block(20, 5)
     return b
 
 
