@@ -130,6 +130,16 @@ static void update_input() {
 
     // Script mode: advance keyframes
     uint32_t since = script_anchor_player ? status::player_since() : 0;
+    // A new anchor (the title demo's player goes, the booted course's player
+    // comes) starts the script over: the demo must not consume the course's
+    // keyframes.
+    static uint32_t s_last_since = 0;
+    if (script_anchor_player && since != s_last_since) {
+        s_last_since = since;
+        script_idx = 0;
+        cur_buttons = 0; cur_lx = 0; cur_ly = 0;
+        script_active = script_len > 0;
+    }
     bool anchored = !script_anchor_player || (since != 0 && frame::current() >= since);   // no player yet: nothing pressed
     if (script_active && script_len > 0 && anchored) {
         uint32_t f = frame::current() - since;
