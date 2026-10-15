@@ -53,7 +53,7 @@ Total size: **376,832 bytes (0x5C000)**
 1. Generate 16-byte random state
 2. Initialize SeadRandom PRNG with random state
 3. Generate **key1** using `create_key(rand, key_table, 16)`
-4. Encrypt data with AES-256-CBC using key1 + random IV
+4. Encrypt data with AES-128-CBC using key1 (16 bytes) + random IV
 5. Generate **key2** (continuing PRNG state from step 3)
 6. Compute AES-CMAC of **decrypted** data using key2
 7. Build file: header + encrypted + IV + random_state + CMAC
