@@ -3,9 +3,11 @@
 
     python3 tools/video_cards.py <clip> <out.mp4> --title "..." [--subtitle "..."]
                                  [--outro "line" ...] [--speed 0.5]
+                                 [--intro-secs N] [--outro-secs N]
 
 The clip is fitted into a 1920x1080 frame at 30 fps. --speed 0.5 shows a 60 fps clip
-at half speed with every frame kept. Clip audio is kept (cards are silent).
+at half speed with every frame kept. Each card holds long enough to read its words
+(about four a second, at least 4 s) unless --intro-secs / --outro-secs say otherwise. Clip audio is kept (cards are silent).
 """
 import argparse, json, subprocess, tempfile
 from pathlib import Path
@@ -21,8 +23,12 @@ a.add_argument("clip"); a.add_argument("out")
 a.add_argument("--title", required=True); a.add_argument("--subtitle", default="")
 a.add_argument("--outro", action="append", default=[])
 a.add_argument("--speed", type=float, default=1.0)
-a.add_argument("--intro-secs", type=float, default=2.5); a.add_argument("--outro-secs", type=float, default=4.0)
+a.add_argument("--intro-secs", type=float); a.add_argument("--outro-secs", type=float)
 args = a.parse_args()
+reading = lambda *texts: max(4.0, 1.5 + len(" ".join(texts).split()) / 4)  # ~4 words a second, plus a beat
+outro = args.outro or ["Geitje"]
+if args.intro_secs is None: args.intro_secs = reading(args.title, args.subtitle)
+if args.outro_secs is None: args.outro_secs = reading(*outro)
 
 def card(path, lines):
     """lines: (text, font size, bold, colour), centred as one block."""
@@ -45,7 +51,7 @@ audio = any(s["codec_type"] == "audio" for s in probe["streams"])
 
 tmp = Path(tempfile.mkdtemp())
 card(tmp / "intro.png", [(args.title, 96, True, FG)] + ([(args.subtitle, 48, False, DIM)] if args.subtitle else []))
-card(tmp / "outro.png", [(t, 56, i == 0, FG if i == 0 else DIM) for i, t in enumerate(args.outro or ["Geitje"])])
+card(tmp / "outro.png", [(t, 56, i == 0, FG if i == 0 else DIM) for i, t in enumerate(outro)])
 
 v = lambda i, d: f"fade=t=in:d={FADE},fade=t=out:st={d - FADE}:d={FADE},format=yuv420p,setsar=1[v{i}]"
 f = [f"[0]fps={FPS},{v(0, args.intro_secs)}",
