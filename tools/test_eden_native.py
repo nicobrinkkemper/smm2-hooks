@@ -27,10 +27,17 @@ import eden  # noqa: E402
 LOADER = next((p for p in ("/lib64/ld-linux-x86-64.so.2", "/lib/ld-linux-aarch64.so.1") if os.path.exists(p)), None)
 
 
+# The fakes' program name. eden.process() and eden.kill() match by name, so
+# with the real one ("eden") the tests would find, and kill, an Eden that is
+# running on the machine.
+FAKE = f"edenfake{os.getpid()}"
+
+
 def _env(**kw):
-    """Environment with only the given EDEN_* variables (and no .env in play)."""
+    """Environment with only the given EDEN_* variables (and no .env in play);
+    the process name is the fakes' unless a test names one."""
     base = {k: v for k, v in os.environ.items() if not k.startswith("EDEN_")}
-    return mock.patch.dict(os.environ, {**base, **kw}, clear=True)
+    return mock.patch.dict(os.environ, {**base, "EDEN_PROCESS_NAME": FAKE, **kw}, clear=True)
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "Linux only")
@@ -50,7 +57,7 @@ class Native(unittest.TestCase):
                 p.kill()
             p.wait()
 
-    def _fake_eden(self, via_loader=False, name="eden") -> subprocess.Popen:
+    def _fake_eden(self, via_loader=False, name=FAKE) -> subprocess.Popen:
         exe = self.tmp / "bin" / name
         exe.parent.mkdir(exist_ok=True)
         shutil.copy(shutil.which("sleep"), exe)
@@ -160,7 +167,7 @@ class Native(unittest.TestCase):
         args = self.tmp / "args.txt"
         exe = self.tmp / "eden"
         # a stand-in that records its argv, then becomes a long-lived "eden"
-        exe.write_text(f'#!/bin/bash\necho "$@" > {args}\nexec -a eden {shutil.which("sleep")} 30\n')
+        exe.write_text(f'#!/bin/bash\necho "$@" > {args}\nexec -a {FAKE} {shutil.which("sleep")} 30\n')
         exe.chmod(0o755)
         with _env(EDEN_EXE=str(exe), EDEN_USER_DIR=str(user), EDEN_GAME_PATH="/mnt/d/roms/g.xci"), \
                 mock.patch.object(eden, "process", side_effect=lambda: {"pid": 1, "mem_mb": 99, "started": None}):
