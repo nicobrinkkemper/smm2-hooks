@@ -230,6 +230,10 @@ class LevelBuilder:
         self.ground_tiles: List[Tuple[int, int]] = []   # (x, y); build() picks the ids
         self.start_y = 5  # tiles
         self.goal_y = None  # auto-calculated if None
+        # The area header's flag word (area+0x18, level.ksy `unk_flag`): bit 1
+        # is night (SMM2Reversing's LevelFormat.md; the uploaded corpus sets it
+        # in 9.3% of courses, bit 0 in 0.08%).
+        self.area_flag = 0
         
     def add_ground_fill(self, x_start: int, x_end: int, y: int):
         """Add a row of ground tiles from x_start to x_end at height y."""
@@ -433,6 +437,7 @@ class LevelBuilder:
         data[area + 0x03] = 1 if self.vertical else 0
         struct.pack_into('<i', data, area + 0x08, self.width * 16)
         struct.pack_into('<i', data, area + 0x0C, self.height * 16)
+        struct.pack_into('<I', data, area + 0x18, self.area_flag)
         if self.liquid is not None:
             data[area + 0x04], data[area + 0x05], data[area + 0x06], data[area + 0x07] = self.liquid
         
@@ -2014,6 +2019,54 @@ def level_nsmbu_flat() -> LevelBuilder:
     b = LevelBuilder("NSMBU Flat", "NSMBU", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_y = 5
+    return b
+
+
+def _runway(name: str, style: str, theme: str = 'Ground') -> LevelBuilder:
+    """A 100-tile flat runway: room for a run to full speed, a running turn and
+    jumps that land at rest."""
+    b = LevelBuilder(name, style, theme)
+    b.width = 100
+    b.add_ground_block(7, 89, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(92, "Landings NSMBU")
+def level_landings_nsmbu() -> LevelBuilder:
+    """Recording batch 1 (smm2-decomp tasks/todo.md 5h): an NSMBU landing at
+    rest (the sim predicts 9 rows of Landing, "jumped" 8 frames), a running
+    jump with run held through 0.5..1.5 in the air (the air run row's 0.06),
+    a second jump's landing, and a running turn ("turned"'s length)."""
+    return _runway("Landings NSMBU", "NSMBU")
+
+
+@test_level(93, "Landings SMW")
+def level_landings_smw() -> LevelBuilder:
+    """Recording batch 1: SMW landings at rest (1 row predicted) and with a
+    direction held (Landing's phase 3, 4 rows predicted), a running jump and
+    a running turn."""
+    return _runway("Landings SMW", "SMW")
+
+
+@test_level(94, "Sky Night")
+def level_sky_night() -> LevelBuilder:
+    """Recording batch 1: the Sky theme at night (area flag bit 1) in SMB1:
+    the move's night sky gives a fifth of the gravity and half the floor."""
+    b = _runway("Sky Night", "SMB1", "Sky")
+    b.area_flag = 2
+    return b
+
+
+@test_level(95, "Crouch Jumps")
+def level_crouch_jumps() -> LevelBuilder:
+    """Recording batch 1: big Mario's crouch jumps in SMB1, one in the open
+    with down released while rising, one under a block row (tiles 30..34,
+    row 8: three free rows over the ground), where the head room keeps him
+    crouched. A mushroom at tile 8 makes him big."""
+    b = _runway("Crouch Jumps", "SMB1")
+    b.add_actor(OBJ_MUSHROOM, 8, 5)
+    b.add_ground_block(30, 34, y_surface=8, height=1)
     return b
 
 
