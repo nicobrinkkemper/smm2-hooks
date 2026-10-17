@@ -2082,6 +2082,38 @@ def level_ice_runway() -> LevelBuilder:
     return b
 
 
+def _ice_runway(name: str, style: str, theme: str = 'Ground', night: bool = False) -> LevelBuilder:
+    b = LevelBuilder(name, style, theme)
+    b.width = 100
+    b.add_ground_block(7, 12, y_surface=4, height=5)
+    b.add_ice(13, 70, 4)
+    b.add_ground_block(71, 89, y_surface=4, height=5)
+    b.goal_y = 5
+    if night:
+        b.area_flag = 2
+    return b
+
+
+@test_level(103, "Ice Runway NSMBU")
+def level_ice_runway_nsmbu() -> LevelBuilder:
+    """Recording batch 4 (smm2-decomp Turn): Ice Runway in NSMBU, a running
+    turn on the ice ("ice_turned"'s length in NSMBU)."""
+    return _ice_runway("Ice Runway NSMBU", "NSMBU")
+
+
+@test_level(104, "Ice Runway 3DW")
+def level_ice_runway_3dw() -> LevelBuilder:
+    """Recording batch 4: Ice Runway in 3D World ("ice_turned" in 3DW)."""
+    return _ice_runway("Ice Runway 3DW", "3DW")
+
+
+@test_level(105, "Snow Night Ice NSMBU")
+def level_snow_night_ice_nsmbu() -> LevelBuilder:
+    """Recording batch 4: ice blocks in the Snow theme at night (NSMBU): the
+    turn's rate times 0.8 on ice when the night's ground is slippery too."""
+    return _ice_runway("Snow Night Ice NSMBU", "NSMBU", "Snow", night=True)
+
+
 def _night(name: str, theme: str) -> LevelBuilder:
     b = _runway(name, "SMB1", theme)
     b.area_flag = 2
