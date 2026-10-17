@@ -38,7 +38,7 @@ def _save_dir() -> str | None:
     creates it on its first boot, which may come after this server started
     (a fresh Eden user dir)."""
     global P
-    if not _save_dir():
+    if not P.save_dir:
         P = eden.paths()
     return P.save_dir
 os.environ["EDEN_SD_PATH"] = P.sd_hooks_dir          # smm2.Game reads this
