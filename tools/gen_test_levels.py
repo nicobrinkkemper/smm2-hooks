@@ -2056,6 +2056,70 @@ def level_landings_3dw() -> LevelBuilder:
     return _runway("Landings 3DW", "3DW")
 
 
+@test_level(97, "Star Runway")
+def level_star_runway() -> LevelBuilder:
+    """Recording batch 3: the runway with a Super Star (35) on the floor at
+    tile 9 (slot 29's "Star Run" places id 29, a hidden block): does
+    invincibility set +0x27D4, the speed tables' second rows?"""
+    b = _runway("Star Runway", "SMB1")
+    b.add_actor(OBJ_SUPER_STAR, 9, 5)
+    # A one-row tunnel (a ceiling at row 6, tiles 8..30): the star cannot
+    # bounce over a small Mario running at it.
+    b.add_ground_block(8, 30, y_surface=6, height=1)
+    return b
+
+
+@test_level(98, "Ice Runway")
+def level_ice_runway() -> LevelBuilder:
+    """Recording batch 3: the floor is ice blocks from tile 13 to 70 (ground
+    before and after): the ground speed's slippery tables."""
+    b = LevelBuilder("Ice Runway", "SMB1", "Ground")
+    b.width = 100
+    b.add_ground_block(7, 12, y_surface=4, height=5)
+    b.add_ice(13, 70, 4)
+    b.add_ground_block(71, 89, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
+def _night(name: str, theme: str) -> LevelBuilder:
+    b = _runway(name, "SMB1", theme)
+    b.area_flag = 2
+    return b
+
+
+@test_level(99, "Snow Night")
+def level_snow_night() -> LevelBuilder:
+    """Recording batch 3: the Snow theme at night, whose ground is slippery
+    (the ground speed's area kind 6 with +0x2C 1)."""
+    return _night("Snow Night", "Snow")
+
+
+@test_level(100, "Underground Night")
+def level_underground_night() -> LevelBuilder:
+    """Recording batch 3: the Underground theme at night, where the pad
+    refresh negates the stick's y (PlayerPad.cpp: area +0x28 and +0x2C 1)."""
+    return _night("Underground Night", "Underground")
+
+
+@test_level(101, "Desert Night")
+def level_desert_night() -> LevelBuilder:
+    """Recording batch 3: the Desert theme at night, its wind (the move's
+    area push, [area +0x48] +0xC)."""
+    return _night("Desert Night", "Desert")
+
+
+@test_level(102, "Wall Ledge NSMBU")
+def level_wall_ledge_nsmbu() -> LevelBuilder:
+    """Recording batch 3: NSMBU, a raised floor at tiles 15..25 (3 rows up) to
+    jump onto, ground-pound on and walk off its right edge, then a wall 12
+    rows high at tiles 40..41 to slide down and jump off."""
+    b = _runway("Wall Ledge NSMBU", "NSMBU")
+    b.add_ground_block(15, 25, y_surface=7, height=3)
+    b.add_ground_block(40, 41, y_surface=16, height=12)
+    return b
+
+
 @test_level(94, "Sky Night")
 def level_sky_night() -> LevelBuilder:
     """Recording batch 1: the Sky theme at night (area flag bit 1) in SMB1:

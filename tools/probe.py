@@ -693,6 +693,48 @@ field player jumpc u32 0x2738
 field player landp u32 0x2488
 field player phase u32 0x2478
 """,
+    # The player preset with what the speed tables and the jump chain read:
+    # the jump count +0x2738, the counter +0x27D4 that switches slot 82/83 to
+    # their second rows (sub_71015E0870 counts it down), the dash +0x288C,
+    # the walk's frames +0x27B8 (3DW's run limit), the ground's kind +0x22E4
+    # (bits 27..31: 9 is slippery) and the power-up +0x4A8. Exactly the 24
+    # fields a hook takes; use it alone.
+    "moves": """\
+# Player trace: hook the horizontal movement step, x0 = player
+hook player 0x71015D3CC0
+field player pos_x f32 0x230
+field player pos_y f32 0x234
+field player vel_x f32 0x23C
+field player vel_y f32 0x240
+field player grav  f32 0x640
+# The state machine is embedded at PlayerObject+0x3F0 (confirmed-states.md):
+# the current state id at +0x3F8, its frame counter at +0x3FC, and the
+# previous state id at +0x400. Recordings made before 2026-09-03 carried
+# +0x400 as "st_e": read those as the previous state.
+field player state  u32 0x3F8
+field player stfr   u32 0x3FC
+field player prev   u32 0x400
+# The collision pass's water word and the surface it measured (swim.md):
+# water & 1 = the body is under the surface, & 0x80 = a ceiling over the head.
+field player water u32 0x230C
+field player surf  f32 0x2338
+# The pad object at player+0x550 (the gravity selector reads +22/+30 to
+# pick the held table): a spread of its bytes around those flags.
+field player pad14 u8 0x550>0x14
+field player pad15 u8 0x550>0x15
+field player pad16 u8 0x550>0x16
+field player pad17 u8 0x550>0x17
+field player pad1c u8 0x550>0x1C
+field player pad1d u8 0x550>0x1D
+field player pad1e u8 0x550>0x1E
+field player pad1f u8 0x550>0x1F
+field player jumpc u32 0x2738
+field player f27d4 u32 0x27D4
+field player dash  u32 0x288C
+field player walkf u32 0x27B8
+field player gkind u32 0x22E4
+field player power u32 0x4A8
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
