@@ -31,6 +31,16 @@ from gdbsession import GdbSession  # noqa: E402
 from mcp.server.fastmcp import FastMCP, Image  # noqa: E402
 
 P = eden.paths()
+
+
+def _save_dir() -> str | None:
+    """The save directory, looked up again while it is missing: the game
+    creates it on its first boot, which may come after this server started
+    (a fresh Eden user dir)."""
+    global P
+    if not _save_dir():
+        P = eden.paths()
+    return P.save_dir
 os.environ["EDEN_SD_PATH"] = P.sd_hooks_dir          # smm2.Game reads this
 os.environ.setdefault("EDEN_EXE", P.exe)
 
@@ -210,7 +220,7 @@ def _directboot_coursebot(slot: int, timeout: int) -> dict:
     play buffer and starts Coursebot play — no TAS menu walk (docs/direct-boot.md)."""
     from directboot_cfg import write_slot_boot  # noqa: WPS433
 
-    if not P.save_dir:
+    if not _save_dir():
         return {"ok": False, "pending": False, "error": "no save dir found"}
     bcd = Path(P.save_dir) / f"course_data_{slot:03d}.bcd"
     if not bcd.exists():
@@ -322,7 +332,7 @@ def game_boot(
 
 def _registered_slots() -> set[int] | None:
     """Slots Coursebot lists: the used_flag per record in save.dat. The .bcd files on disk are not consulted by the game."""
-    if not P.save_dir:
+    if not _save_dir():
         return None
     path = Path(P.save_dir) / "save.dat"
     if not path.exists():
@@ -340,7 +350,7 @@ def levels_list() -> dict:
     g = importlib.reload(g)   # levels added since the server started must show up
     import parse_course as pc  # noqa: WPS433
     gen = {slot: name for slot, (name, _) in sorted(g.TEST_LEVELS.items())}
-    if not P.save_dir:
+    if not _save_dir():
         return {"generators": gen, "save_dir": None, "registered": None, "slots": None}
     registered = _registered_slots()
     slots = []
@@ -446,7 +456,7 @@ def level_install(slot: int, level: str, companions_from: int | None = None) -> 
     sys.argv = ["x"]
     import importlib, gen_test_levels as g  # noqa: WPS433
     g = importlib.reload(g)   # levels added since the server started must show up
-    if not P.save_dir:
+    if not _save_dir():
         return {"error": "no save dir found"}
     path = Path(level)
     if path.suffix in (".zlib", ".bcd") and path.exists():
@@ -563,7 +573,7 @@ RECORD_FILE = "record.json"
 
 def _course_mtimes() -> dict[str, int]:
     """mtime_ns of every course_data_NNN.bcd in the save dir, keyed by slot."""
-    if not P.save_dir:
+    if not _save_dir():
         return {}
     import save_dat  # noqa: WPS433
     out = {}
@@ -597,7 +607,7 @@ def _save_courses(state: dict, stem: Path) -> dict:
     recording or that were named with `slot`. With none known, the registered slots whose
     course file changed since start are copied and `courses_unknown` says so."""
     out: dict = {"courses": [], "notes": []}
-    if not P.save_dir:
+    if not _save_dir():
         out["courses_unknown"] = "no save dir found; no course saved"
         return out
     sd = Path(P.save_dir)
