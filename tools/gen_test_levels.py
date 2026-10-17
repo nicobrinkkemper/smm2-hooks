@@ -2049,6 +2049,13 @@ def level_landings_smw() -> LevelBuilder:
     return _runway("Landings SMW", "SMW")
 
 
+@test_level(96, "Landings 3DW")
+def level_landings_3dw() -> LevelBuilder:
+    """Recording batch 2: a 3D World landing at rest (its landing animation's
+    length is not known to the sim) and running ones."""
+    return _runway("Landings 3DW", "3DW")
+
+
 @test_level(94, "Sky Night")
 def level_sky_night() -> LevelBuilder:
     """Recording batch 1: the Sky theme at night (area flag bit 1) in SMB1:
