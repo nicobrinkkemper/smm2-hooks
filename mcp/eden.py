@@ -4,13 +4,26 @@ Truthful Eden state for SMM2 debugging, read from where Eden actually keeps it.
 Eden (yuzu family) runs "portable" when a `user/` directory sits next to
 eden.exe; its qt-config.ini then names the NAND, SD and mod (`load`)
 directories explicitly, which may still live under AppData. Everything here
-derives from that ini, never from guesses in .env (only EDEN_EXE and
-EDEN_GAME_PATH come from there).
+derives from that ini, never from guesses in .env (only EDEN_EXE,
+EDEN_GAME_PATH and EDEN_USER_DIR come from there).
+
+Two hosts are supported, told apart by EDEN_EXE:
+- **Windows Eden driven from WSL** (EDEN_EXE ends in `.exe`, the default):
+  paths convert with win_to_wsl, the process is found and stopped through
+  PowerShell, the GDB stub is on the Windows host's IP.
+- **Native Linux Eden** (any other EDEN_EXE, e.g. an extracted AppImage or a
+  launcher script): paths are used as they are, the process is found in /proc
+  and stopped with signals, the stub is on 127.0.0.1. On Linux, Eden's
+  portable directory is `./user` in its *working directory* (not next to the
+  binary), so name it with EDEN_USER_DIR and start Eden from its parent (a
+  launcher script can do the cd); without it Eden uses
+  $XDG_DATA_HOME/eden and $XDG_CONFIG_HOME/eden.
 """
 from __future__ import annotations
 
 import os
 import re
+import signal
 import struct
 import subprocess
 import sys
@@ -40,6 +53,21 @@ def _dotenv() -> dict[str, str]:
     return out
 
 
+def native(exe: str | None = None) -> bool:
+    """Is Eden a native (Linux) program here, rather than eden.exe driven from WSL?"""
+    if exe is None:
+        exe = os.environ.get("EDEN_EXE") or _dotenv().get("EDEN_EXE", DEFAULT_EXE)
+    return not exe.lower().endswith(".exe")
+
+
+def process_name() -> str:
+    """The program name to look for: EDEN_PROCESS_NAME, else `eden`."""
+    return os.environ.get("EDEN_PROCESS_NAME") or _dotenv().get("EDEN_PROCESS_NAME", "eden")
+
+
+DEFAULT_EXE = "/mnt/c/Users/nico/Documents/eden/eden.exe"
+
+
 def win_to_wsl(p: str) -> str:
     p = p.replace("\\", "/")
     m = re.match(r"^([A-Za-z]):/(.*)$", p)
@@ -52,11 +80,19 @@ def wsl_to_win(p: str) -> str:
 
 
 def windows_host_ip() -> str:
-    out = subprocess.run(["ip", "route"], capture_output=True, text=True).stdout
+    try:
+        out = subprocess.run(["ip", "route"], capture_output=True, text=True).stdout
+    except FileNotFoundError:   # no iproute2 (a bare container)
+        return "127.0.0.1"
     for line in out.splitlines():
         if line.startswith("default"):
             return line.split()[2]
     return "127.0.0.1"
+
+
+def gdb_host() -> str:
+    """Where Eden's GDB stub listens: this machine for a native Eden, the Windows host from WSL."""
+    return "127.0.0.1" if native() else windows_host_ip()
 
 
 @dataclass
@@ -89,20 +125,37 @@ def _read_ini(path: str) -> dict[str, str]:
     return vals
 
 
+def _xdg(var: str, fallback: str) -> str:
+    return os.environ.get(var) or str(Path.home() / fallback)
+
+
 def paths() -> EdenPaths:
     env = _dotenv()
     # The process environment wins over .env: a worktree has no .env.
-    exe = os.environ.get("EDEN_EXE") or env.get("EDEN_EXE", "/mnt/c/Users/nico/Documents/eden/eden.exe")
+    exe = os.environ.get("EDEN_EXE") or env.get("EDEN_EXE", DEFAULT_EXE)
     game = os.environ.get("EDEN_GAME_PATH") or env.get("EDEN_GAME_PATH", "")
+    user_env = os.environ.get("EDEN_USER_DIR") or env.get("EDEN_USER_DIR", "")
     exe_dir = str(Path(exe).parent)
-    portable_user = f"{exe_dir}/user"
-    portable = os.path.isdir(portable_user)
-    user_dir = portable_user if portable else win_to_wsl(os.environ.get("EDEN_APPDATA", "C:/Users/nico/AppData/Roaming/eden"))
-    ini = f"{user_dir}/config/qt-config.ini"
+    if native(exe):
+        # Linux Eden keeps everything under one dir only in portable mode
+        # (./user in its working directory); otherwise config is apart from data.
+        to_local = to_ini = lambda q: q  # noqa: E731
+        if user_env:
+            user_dir, portable = user_env, True
+            ini = f"{user_dir}/config/qt-config.ini"
+        else:
+            user_dir, portable = f"{_xdg('XDG_DATA_HOME', '.local/share')}/eden", False
+            ini = f"{_xdg('XDG_CONFIG_HOME', '.config')}/eden/qt-config.ini"
+    else:
+        to_local, to_ini = win_to_wsl, wsl_to_win
+        portable_user = win_to_wsl(user_env) if user_env else f"{exe_dir}/user"
+        portable = os.path.isdir(portable_user)
+        user_dir = portable_user if portable else win_to_wsl(os.environ.get("EDEN_APPDATA", "C:/Users/nico/AppData/Roaming/eden"))
+        ini = f"{user_dir}/config/qt-config.ini"
     vals = _read_ini(ini)
-    nand = win_to_wsl(vals.get("nand_directory", f"{wsl_to_win(user_dir)}/nand"))
-    sdmc = win_to_wsl(vals.get("sdmc_directory", f"{wsl_to_win(user_dir)}/sdmc"))
-    load = win_to_wsl(vals.get("load_directory", f"{wsl_to_win(user_dir)}/load"))
+    nand = to_local(vals.get("nand_directory", f"{to_ini(user_dir)}/nand"))
+    sdmc = to_local(vals.get("sdmc_directory", f"{to_ini(user_dir)}/sdmc"))
+    load = to_local(vals.get("load_directory", f"{to_ini(user_dir)}/load"))
     save_dir = None
     for p in Path(f"{nand}/user/save").glob(f"*/*/{TITLE_ID}"):
         save_dir = str(p)
@@ -113,7 +166,8 @@ def paths() -> EdenPaths:
         log_file=f"{user_dir}/log/eden_log.txt", save_dir=save_dir,
         sd_hooks_dir=f"{sdmc}/smm2-hooks",
         mods_dir=f"{load}/{TITLE_ID}/smm2-hooks/exefs",
-        alt_mods_dir=f"{exe_dir}/load/{TITLE_ID}/smm2-hooks/exefs",
+        # Windows Eden also looks next to eden.exe; a native one has no such copy.
+        alt_mods_dir=f"{load}/{TITLE_ID}/smm2-hooks/exefs" if native(exe) else f"{exe_dir}/load/{TITLE_ID}/smm2-hooks/exefs",
     )
 
 
@@ -173,7 +227,87 @@ def ensure_docked(p: EdenPaths) -> bool:
 
 # ── process ───────────────────────────────────────────────────────────────
 
+def _proc_cmdline(pid: str) -> list[str]:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return []
+    return [a.decode("utf-8", "replace") for a in raw.split(b"\0") if a]
+
+
+def _is_eden(argv: list[str], name: str) -> bool:
+    """argv of an Eden process: the program itself, or a dynamic loader running it.
+
+    An extracted AppImage built with sharun runs Eden as
+    `<appdir>/shared/lib/ld-linux-x86-64.so.2 --library-path ... <appdir>/shared/bin/eden`,
+    so the process's own name is the loader's; look for the binary among its
+    arguments then. Scripts that merely mention eden (eden.py, this server)
+    have other basenames and never match.
+    """
+    if not argv:
+        return False
+    first = os.path.basename(argv[0])
+    if first == name:
+        return True
+    return first.startswith("ld-") and any(os.path.basename(a) == name for a in argv[1:])
+
+
+def native_pids(name: str | None = None) -> list[int]:
+    """PIDs of native Eden processes (read from /proc; no pgrep needed)."""
+    name = name or process_name()
+    me = os.getpid()
+    out = []
+    for d in Path("/proc").iterdir():
+        if d.name.isdigit() and int(d.name) != me and _is_eden(_proc_cmdline(d.name), name):
+            out.append(int(d.name))
+    return sorted(out)
+
+
+def _native_process() -> dict | None:
+    best = None
+    try:
+        boot = next(float(l.split()[1]) for l in Path("/proc/stat").read_text().splitlines() if l.startswith("btime "))
+        hz = os.sysconf("SC_CLK_TCK")
+    except (OSError, StopIteration, ValueError):
+        boot, hz = None, 100
+    for pid in native_pids():
+        try:
+            rss_kb = next(int(l.split()[1]) for l in Path(f"/proc/{pid}/status").read_text().splitlines() if l.startswith("VmRSS:"))
+        except (OSError, StopIteration):
+            rss_kb = 0
+        started = None
+        if boot is not None:
+            try:
+                stat = Path(f"/proc/{pid}/stat").read_text()
+                ticks = int(stat.rsplit(")", 1)[1].split()[19])   # field 22, starttime
+                started = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(boot + ticks / hz))
+            except (OSError, IndexError, ValueError):
+                pass
+        cand = {"pid": pid, "mem_mb": rss_kb // 1024, "started": started}
+        if best is None or cand["mem_mb"] > best["mem_mb"]:
+            best = cand
+    return best
+
+
+def _native_listening(port: int) -> bool | None:
+    """Is a TCP socket on this machine listening on `port`? (/proc/net/tcp*, state 0A.)"""
+    seen = False
+    for table in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            lines = Path(table).read_text().splitlines()[1:]
+        except OSError:
+            continue
+        seen = True
+        for line in lines:
+            parts = line.split()
+            if len(parts) > 3 and parts[3] == "0A" and int(parts[1].rsplit(":", 1)[1], 16) == port:
+                return True
+    return False if seen else None
+
+
 def process() -> dict | None:
+    if native():
+        return _native_process()
     ps = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
     cmd = ("Get-Process eden -ErrorAction SilentlyContinue | Select-Object Id,WorkingSet64,"
            "@{n='Start';e={$_.StartTime.ToString('yyyy-MM-ddTHH:mm:ss')}} | ConvertTo-Json -Compress")
@@ -192,7 +326,9 @@ def process() -> dict | None:
 
 
 def stub_listening(port: int) -> bool | None:
-    """Is anything listening on the GDB port on the Windows side? (Never connects to it.)"""
+    """Is anything listening on the GDB port on Eden's side? (Never connects to it.)"""
+    if native():
+        return _native_listening(port)
     ps = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
     cmd = f"(Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | Measure-Object).Count"
     try:
@@ -211,8 +347,13 @@ def launch(p: EdenPaths, gdb: bool) -> dict:
     status = Path(p.sd_hooks_dir) / "status.bin"
     if status.exists():
         status.unlink()
-    game_win = p.game if re.match(r"^[A-Za-z]:", p.game) else wsl_to_win(p.game)
-    subprocess.Popen([p.exe, "-g", game_win], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if native(p.exe):
+        # Own session: Eden outlives the tool that started it, as on Windows.
+        subprocess.Popen([p.exe, "-g", p.game], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+    else:
+        game_win = p.game if re.match(r"^[A-Za-z]:", p.game) else wsl_to_win(p.game)
+        subprocess.Popen([p.exe, "-g", game_win], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     deadline = time.time() + 25
     proc = None
     while time.time() < deadline:
@@ -225,7 +366,28 @@ def launch(p: EdenPaths, gdb: bool) -> dict:
             "note": "paused until a debugger attaches and continues" if gdb else "booting to the title screen (~25 s)"}
 
 
+def _native_kill(grace: float = 3.0) -> None:
+    """SIGTERM every Eden process, then SIGKILL what is left after `grace` seconds
+    (the Windows path is Stop-Process -Force, which does not wait either)."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        pids = native_pids()
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                pass
+        deadline = time.time() + grace
+        while pids and time.time() < deadline:
+            time.sleep(0.2)
+            pids = native_pids()
+        if not pids:
+            return
+
+
 def kill() -> dict:
+    if native():
+        _native_kill()
+        return {"process": process()}
     ps = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
     subprocess.run([ps, "-NoProfile", "-Command", "Stop-Process -Name eden -Force -ErrorAction SilentlyContinue"], capture_output=True, timeout=20)
     time.sleep(1)
@@ -374,7 +536,7 @@ def state(p: EdenPaths | None = None) -> dict:
         "edit_time": bool(st and st["fresh"] and st["edit_time"]),
         "run_time": bool(st and st["fresh"] and st["run_time"]),
         "process": proc,
-        "gdb": {**cfg, "stub_listening": listening, "host_ip": windows_host_ip()},
+        "gdb": {**cfg, "stub_listening": listening, "host_ip": gdb_host()},
         "status": st,
         "paths": asdict(p),
         "mods": mods(p),

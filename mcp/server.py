@@ -130,7 +130,10 @@ def eden_log(lines: int = 20, grep: str | None = None) -> dict:
 
 @tool()
 def eden_screenshot() -> Image:
-    """Screenshot of the Eden window (PowerShell PrintWindow)."""
+    """Screenshot of the Eden window (PowerShell PrintWindow from WSL; X11 on a native Eden)."""
+    if eden.native():
+        import x11shot  # noqa: WPS433
+        return Image(data=x11shot.grab_window_png(eden.native_pids()), format="png")
     path = Path(f"/mnt/c/temp/smm2_debug/capture-{uuid.uuid4().hex}.png")  # one file per call: concurrent calls never see each other's picture
     try:
         r = subprocess.run([sys.executable, str(TOOLS / "automate.py"), "--eden", "screenshot"], capture_output=True, text=True, timeout=30,
@@ -489,9 +492,9 @@ def level_restore(slot: int) -> dict:
 
 @tool(exclusive=True)
 def gdb_attach() -> dict:
-    """Attach gdb-multiarch to Eden's stub (real ini port, Windows host IP). Leaves the target stopped; call gdb_continue."""
+    """Attach gdb-multiarch to Eden's stub (real ini port; the Windows host IP from WSL, 127.0.0.1 for a native Eden). Leaves the target stopped; call gdb_continue."""
     cfg = eden.gdb_config(P)
-    out = GDB.attach(eden.windows_host_ip(), cfg["port"])
+    out = GDB.attach(eden.gdb_host(), cfg["port"])
     return {"attached": GDB.alive(), "output": out, "port": cfg["port"]}
 
 

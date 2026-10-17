@@ -55,6 +55,7 @@ def main() -> int:
     args = ap.parse_args()
 
     sd = sd_dir(args.target)
+    os.environ.setdefault("EDEN_SD_PATH", str(sd))   # smm2.Game reads it; mcp/server.py sets it the same way
     if args.preset:
         cfg = sd / "probe.txt"
         cfg.write_text(subprocess.run([sys.executable, str(HERE / "probe.py"), "preset", args.preset],

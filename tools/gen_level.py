@@ -22,6 +22,7 @@ OBJECT IDs (from bcd-format.ksy):
 """
 
 import struct
+import sys
 import zlib
 import os
 import argparse
@@ -318,8 +319,13 @@ def encrypt_course(data: bytes) -> bytes:
 
 
 def get_eden_save_path():
-    """Get Eden's SMM2 save path."""
-    base = Path("/mnt/c/Users/nico/AppData/Roaming/eden/nand/user/save")
+    """Get Eden's SMM2 save path: the one mcp/eden.py reads from Eden's config, else the WSL default."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "mcp"))
+    import eden  # noqa: WPS433
+    p = eden.paths()
+    if p.save_dir:
+        return Path(p.save_dir)
+    base = Path(p.nand_dir) / "user" / "save" if eden.native() else Path("/mnt/c/Users/nico/AppData/Roaming/eden/nand/user/save")
     # Find the save directory with course files
     for p in base.rglob("course_data_000.bcd"):
         return p.parent

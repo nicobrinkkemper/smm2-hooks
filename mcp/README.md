@@ -29,7 +29,7 @@ SD and `load` directories and the GDB stub setting, and derives everything else
 
     python3 mcp/eden.py            # full state as JSON
     python3 mcp/eden.py --brief    # one line: pid, memory, start time, scene, frame; exit 1 when off
-    python3 mcp/eden.py --kill     # Stop-Process eden; exit 1 if it is still there afterwards
+    python3 mcp/eden.py --kill     # Stop-Process eden (SIGTERM, then SIGKILL, on Linux); exit 1 if it is still there afterwards
     python3 mcp/eden.py --launch   # start Eden with the game (no GDB stub); exit 1 if already running or it never came up
 
 `--brief` reads only the process list and `status.bin` (no GDB port probe), so
@@ -42,6 +42,31 @@ Register it for Claude Code on the machine that has Eden and the game (local
 scope: this project on this machine, not the project's shared `.mcp.json`):
 
     claude mcp add -s local smm2-hooks -- "$PWD/mcp/.venv/bin/python" "$PWD/mcp/server.py"
+
+## Native Linux Eden
+
+`eden.py` treats Eden as a native program whenever `EDEN_EXE` does not end in
+`.exe` (the default is still the Windows `eden.exe` driven from WSL, which is
+unchanged). Then:
+
+| | WSL + eden.exe | native Linux |
+|---|---|---|
+| user dir | `user/` next to eden.exe, else `EDEN_APPDATA` | `EDEN_USER_DIR`, else `$XDG_DATA_HOME/eden` (config in `$XDG_CONFIG_HOME/eden`) |
+| paths | `win_to_wsl` | as written |
+| process | PowerShell `Get-Process eden` | `/proc`: argv[0] named `eden`, or a dynamic loader running a binary named `eden` (an extracted sharun AppImage); `EDEN_PROCESS_NAME` overrides the name |
+| kill | `Stop-Process -Force` | SIGTERM, SIGKILL after 3 s |
+| GDB stub | Windows host IP | 127.0.0.1, listening checked in `/proc/net/tcp*` |
+| screenshot | PowerShell PrintWindow | the window whose `_NET_WM_PID` is Eden, cut from an X11 root grab (`mcp/x11shot.py`; `EDEN_LIBX11` if libX11 is not on the loader path) |
+
+Linux Eden is portable when `./user` exists in its **working directory** (not
+next to the binary, unlike Windows), so start it from the parent of
+`EDEN_USER_DIR`; a small launcher script that `cd`s there and `exec`s Eden
+works as `EDEN_EXE`. For example:
+
+    EDEN_EXE=/path/to/eden-launcher EDEN_USER_DIR=/path/to/state/user \
+    EDEN_GAME_PATH=/path/to/smm2-3.0.3.xci mcp/.venv/bin/python mcp/server.py --selftest
+
+`tools/test_eden_native.py` covers this without an emulator.
 
 ## The panel
 
