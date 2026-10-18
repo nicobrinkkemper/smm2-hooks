@@ -2094,6 +2094,41 @@ def _ice_runway(name: str, style: str, theme: str = 'Ground', night: bool = Fals
     return b
 
 
+@test_level(106, "Slide Ledge SMB3")
+def level_slide_ledge_smb3() -> LevelBuilder:
+    """Slip in the air (smm2-decomp, Slip's execute off the ground): in SMB3, a
+    gentle ramp up to the right (object 87 at 12,4, as Gentle Slope's), a
+    plateau at tiles 20..24 (top row 7), a gentle ramp down to the right
+    (25,4, flag 0x100000), a floor at tile 33, a pit at 34..35 and a lower
+    floor from 36 (top row 1). A slide down the second ramp runs on over the
+    floor and off its edge."""
+    b = LevelBuilder("Slide Ledge 3", "SMB3", "Ground")
+    b.width = 100
+    b.add_ground_block(7, 11, y_surface=4, height=5)
+    b.add_ground_block(12, 19, y_surface=3, height=4)
+    b.objects.append({'id': OBJ_SLIGHT_SLOPE, 'x': 12, 'y': 4, 'width': 8, 'height': 4,
+                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_ground_block(20, 24, y_surface=7, height=8)
+    b.add_ground_block(25, 32, y_surface=3, height=4)
+    b.objects.append({'id': OBJ_SLIGHT_SLOPE, 'x': 25, 'y': 4, 'width': 8, 'height': 4,
+                      'flags': 0x06100040, '_half_tile_offset': True})
+    b.add_ground_block(33, 33, y_surface=4, height=5)
+    b.add_ground_block(36, 89, y_surface=1, height=2)
+    b.goal_y = 2
+    return b
+
+
+def level_theme_probe(theme: str, night: bool) -> LevelBuilder:
+    """A short SMB1 runway in any theme, by day or at night (slot 107 by
+    hand, one theme at a time): the ground's kind word (+0x22E4) standing on
+    it carries the theme's sound bits in its top five bits (smm2-decomp
+    BlockColliderKind.cpp, the area's sound table by the collider's name)."""
+    b = _runway(f"Theme {theme} {'N' if night else 'D'}", "SMB1", theme)
+    if night:
+        b.area_flag = 2
+    return b
+
+
 @test_level(103, "Ice Runway NSMBU")
 def level_ice_runway_nsmbu() -> LevelBuilder:
     """Recording batch 4 (smm2-decomp Turn): Ice Runway in NSMBU, a running
