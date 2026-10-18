@@ -106,7 +106,10 @@ class Native(unittest.TestCase):
         self.assertEqual(p.sdmc_dir, str(self.tmp / "d" / "eden" / "sdmc"))
 
     def test_windows_paths_unchanged(self):
-        with _env(EDEN_EXE="/mnt/c/Users/nico/Documents/eden/eden.exe"):
+        # The portable check looks at the real disk; hold it to "no user/ dir"
+        # so the test reads the same on a machine that has one.
+        with _env(EDEN_EXE="/mnt/c/Users/nico/Documents/eden/eden.exe"), \
+                mock.patch("os.path.isdir", return_value=False):
             p = eden.paths()
         self.assertEqual(p.user_dir, "/mnt/c/Users/nico/AppData/Roaming/eden")   # no portable dir here
         self.assertEqual(p.sdmc_dir, "/mnt/c/Users/nico/AppData/Roaming/eden/sdmc")
