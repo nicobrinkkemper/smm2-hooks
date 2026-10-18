@@ -2609,6 +2609,22 @@ def level_json(builder_func):
         course = parse_course.parse_course(parse_course.decrypt_course(path))
     return json.dumps(course, indent=2, default=str) + '\n'
 
+@test_level(107, "Water Jump")
+def level_water_jump() -> LevelBuilder:
+    """Into the water at speed: a dry ledge four rows over the surface to
+    walk or run along, then a pool to jump into. What the swim's enter does
+    with a speed past 1.125 and a fall past -1.5 (sub_71015E8AC0), and the
+    air's last frames above the surface. SMB1 Forest, still water with its
+    surface at row 5 (y 92), the ledge's top at row 9 (y 144), the pool's
+    floor at row 1."""
+    b = LevelBuilder("Water Jump", "SMB1", "Forest")
+    b.width = 60
+    b.start_y = 9
+    b.liquid = (5, 0, 0, 5)
+    b.add_ground_block(7, 16, y_surface=8, height=9)   # x 0..6 is the generated start area; feet at row 9
+    b.add_ground_block(17, b.width - 11, y_surface=1, height=1)
+    b.goal_y = 1
+    return b
 
 def main():
     parser = argparse.ArgumentParser(description='Generate SMM2 test levels')
