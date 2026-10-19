@@ -8,6 +8,7 @@ picture.
 """
 import os
 import sys
+import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -31,6 +32,18 @@ class DecryptThumb(unittest.TestCase):
 
     def test_too_short(self):
         self.assertIsNone(ct.decrypt_thumb(self.data[-0x30:]))
+
+
+class CopiedFrom(unittest.TestCase):
+    def test_equal_files_are_copies(self):
+        with tempfile.TemporaryDirectory() as d:
+            for name, body in [('course_thumb_036.btl', b'a' * 64), ('course_thumb_005.btl.orig', b'a' * 64),
+                               ('course_thumb_001.btl', b'b' * 64), ('course_data_000.bcd', b'a' * 64)]:
+                with open(os.path.join(d, name), 'wb') as f:
+                    f.write(body)
+            self.assertEqual(ct.copied_from(os.path.join(d, 'course_thumb_036.btl'), b'a' * 64),
+                             ['course_thumb_005.btl.orig'])
+            self.assertEqual(ct.copied_from(os.path.join(d, 'course_thumb_001.btl'), b'b' * 64), [])
 
 
 if __name__ == '__main__':

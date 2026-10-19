@@ -8,12 +8,18 @@ config (iv, random state, cmac) at the end of the file. The decrypted area
 is the JPEG, zeros up to a 0x34-byte trailer, then the trailer. The thumbnail key
 table sits 0x610 bytes after the course one in the v3.0.3 main executable.
 
+A slot written by level_install has a thumbnail copied from another slot,
+not a picture of its own course: the CLI refuses a thumbnail that is byte for
+byte another slot's (the game encrypts each save with a fresh iv, so equal
+files are copies) unless --allow-copy is given.
+
 Usage:
     python3 course_thumb.py 36 /tmp/slot_36.jpg
     python3 course_thumb.py 36 /tmp/slot_36.jpg --save-dir /path/to/save
 """
 
 import argparse
+import glob
 import os
 import struct
 import sys
@@ -62,11 +68,21 @@ def decrypt_thumb(data):
     return jpeg if jpeg.startswith(b'\xff\xd8\xff') else None
 
 
+def copied_from(path, data):
+    """The other thumbnail files in the save that hold exactly these bytes."""
+    others = glob.glob(os.path.join(os.path.dirname(path), 'course_thumb_*.btl*'))
+    return sorted(os.path.basename(o) for o in others
+                  if os.path.abspath(o) != os.path.abspath(path)
+                  and os.path.getsize(o) == len(data) and open(o, 'rb').read() == data)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Decrypt an SMM2 course thumbnail to JPEG')
     parser.add_argument('slot', type=int, help='Course slot number')
     parser.add_argument('out', help='JPEG to write')
     parser.add_argument('--save-dir', type=str, help='Override save directory')
+    parser.add_argument('--allow-copy', action='store_true',
+                        help="Write it even when it is a copy of another slot's thumbnail")
     args = parser.parse_args()
 
     save_dir = args.save_dir or get_save_path()
@@ -78,7 +94,14 @@ def main():
         print(f"Error: {path} not found", file=sys.stderr)
         sys.exit(1)
     with open(path, 'rb') as f:
-        jpeg = decrypt_thumb(f.read())
+        data = f.read()
+    copies = [] if args.allow_copy else copied_from(path, data)
+    if copies:
+        print(f"Error: {os.path.basename(path)} is the same file as {', '.join(copies[:3])}"
+              f"{' ...' if len(copies) > 3 else ''}: a copied thumbnail, not this course's"
+              " (--allow-copy writes it anyway)", file=sys.stderr)
+        sys.exit(1)
+    jpeg = decrypt_thumb(data)
     if jpeg is None:
         print(f"Error: {path} holds no JPEG (a blank thumbnail or not a thumbnail)", file=sys.stderr)
         sys.exit(1)
