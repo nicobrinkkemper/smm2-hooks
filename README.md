@@ -113,7 +113,7 @@ and is wrong about the GDB stub until it is switched to `mcp/eden.py`.
 | `docs/botting-patches.md` | Patches used by the automation |
 | `docs/patches.md` | pchtxt patches versioned in `patches/`, toggled with `eden.py --enable/--disable` or MCP `eden_patches` |
 | `docs/theme-override.md` | `theme.txt`: every course loads with that theme (reaches a theme installed in slot 10) |
-| `docs/direct-boot.md` | `boot.txt` + `file`: boot straight into a chosen course from the play buffer (~16 s); `game_boot` / `tools/trace.py` use it by default |
+| `docs/direct-boot.md` | `boot.txt` + `file`: boot straight into a chosen course from the play buffer (~16 s), or a course file into the editor; `game_boot` / `tools/trace.py` use it by default; slot backups around Coursebot; `tools/hf_course.py` fetches uploaded courses |
 | `docs/frame-capture.md` | `hold.txt`: the game waits after each frame until the host grabs the window; a frame-exact Eden capture beside smm2-sim frames (`tools/frame_capture.ps1`, `tools/sim_frames.mjs`, `tools/side_by_side.py`) |
 
 ## Adding Hooks

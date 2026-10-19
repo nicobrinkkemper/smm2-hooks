@@ -233,10 +233,10 @@ class Game:
                 raise ValueError(f"Unknown button: {name}. Valid: {', '.join(sorted(BTN))}")
         return mask
 
-    def press(self, buttons, ms=100):
-        """Press button(s) for duration then release. Accepts 'A', 'L+R', 0x4000, etc."""
+    def press(self, buttons, ms=100, lx=0, ly=0):
+        """Press button(s), and the left stick at (lx, ly), for duration then release. Accepts 'A', 'L+R', 0x4000, etc."""
         mask = self._parse_buttons(buttons)
-        self._write_input(mask)
+        self._write_input(mask, lx, ly)
         time.sleep(ms / 1000)
         self._write_input(0)
 
@@ -246,9 +246,7 @@ class Game:
 
     def stick(self, lx=0, ly=0, ms=100):
         """Push analog stick for duration."""
-        self._write_input(0, lx, ly)
-        time.sleep(ms / 1000)
-        self._write_input(0)
+        self.press(0, ms, lx, ly)
 
     def release(self):
         """Release all inputs."""

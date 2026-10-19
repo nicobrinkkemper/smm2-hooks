@@ -34,6 +34,31 @@ Remove or empty `boot.txt` for a normal title boot (`tools/trace.py` and
 (coursebot, default) writes the pair and relaunches Eden; pass
 `via_menu=true` for the old button-injection walk.
 
+## A course file into the editor
+
+`game_boot(target="editor", file=<course>)` boots any course straight into the
+editor (kind 3, scene_mode 1, ~15 s): a `.bcd`, the sim dataset's `.zlib`, or a
+plain body. It never passes Coursebot, so nothing is installed into a slot and
+nothing can be deleted as invalid. `sub_area=true` swaps the two areas
+(`0x2DEE0` each at body `+0x200`) so the sub area opens. In the editor, press X
+for the finger cursor, then hold the stick to scroll:
+`game_input(stick="0,32767", ms=5000)` scrolls up.
+
+A real uploaded course passes the game's own checks. `tools/hf_course.py
+<data_id> -o <dir>` fetches one from the TheGreatRambler/mm2_level dataset
+(26.6M courses, through 2022) by binary search over huggingface's
+datasets-server, with no dump to download.
+
+## Slot backups around Coursebot
+
+A Coursebot visit deletes the installed courses it finds invalid ("Corrupt data
+was found"), registered or not, the one you asked for or another. Before every
+`game_boot(target="coursebot")` every slot's `course_data_NNN.bcd` is copied to
+`~/.cache/smm2-hooks/slot-backups/pool/<sha1>.bcd` (each content once), with
+`<stamp>.json` mapping slots to files. The result names that manifest, and
+`slots_changed` / `slots_unregistered` plus a `warning` appear when the visit
+changed one.
+
 ## One-shot recordings
 
 `tools/trace.py` writes `boot.txt` (+ `file` from the slot's `.bcd` when
