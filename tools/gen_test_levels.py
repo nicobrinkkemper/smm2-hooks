@@ -2763,5 +2763,28 @@ def level_wall_3dw() -> LevelBuilder:
     return b
 
 
+OBJ_BIG_MUSHROOM = 44   # the style's own power-up: SMB3's leaf, SMW's feather, NSMBU's propeller, 3D World's bell
+
+
+@test_level(125, "Cape SMW")
+def level_cape_smw() -> LevelBuilder:
+    """Recording batch 7 (smm2-decomp todo item 9, the suits): the 120-tile
+    runway in SMW with the style's own power-up (object 44, the Cape
+    Feather) at tile 8: the cape's spin, its flight from a full run, its
+    float."""
+    b = _long_run("Cape SMW", "SMW")
+    b.add_actor(OBJ_BIG_MUSHROOM, 8, 8)   # a feather sways down through the ground: walk to it at once
+    return b
+
+
+@test_level(126, "Propeller NSMBU")
+def level_propeller_nsmbu() -> LevelBuilder:
+    """Recording batch 7: the 120-tile runway in NSMBU with object 44 (the
+    Propeller Mushroom) at tile 8: the propeller's flight and its drill."""
+    b = _long_run("Propeller NSMBU", "NSMBU")
+    b.add_actor(OBJ_BIG_MUSHROOM, 8, 5)
+    return b
+
+
 if __name__ == '__main__':
     exit(main())
