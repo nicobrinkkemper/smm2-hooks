@@ -2753,5 +2753,15 @@ def level_tunnel_3dw() -> LevelBuilder:
     return b
 
 
+@test_level(124, "Wall 3DW")
+def level_wall_3dw() -> LevelBuilder:
+    """Recording batch 6: the runway in 3D World with a wall 12 rows high at
+    tiles 20..21, for the spin high jump into a wall and the wall slide in
+    3D World."""
+    b = _runway("Wall 3DW", "3DW")
+    b.add_ground_block(20, 21, y_surface=16, height=12)
+    return b
+
+
 if __name__ == '__main__':
     exit(main())
