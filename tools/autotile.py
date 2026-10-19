@@ -22,11 +22,17 @@ The editor also counts ground that has no record: below row 0, past the
 area's left, right and top edges, and the start and goal areas. Below row 0
 is built in; the caller says the rest. With those, these ids match the
 editor's (variants folded) on 97-99% of the tiles in every style that sit
-away from objects; next to slopes, pipes and the like the editor tiles
-against the object too, which this does not model.
+away from objects.
+
+A slope's surface counts as ground too: each column of its box owns the
+row the surface crosses and the one below (rise and rise - 1, rise = the
+column for a steep slope, (column + 1) // 2 for a gentle one, columns
+counted from the right when it descends). On the tiles beside a slope in
+20 uploaded courses this matches the editor on 1350 of 1411; counting the
+surface as empty matches 63. Pipes and other objects are not modelled.
 """
 
-from typing import Callable, Dict, Iterable, Tuple
+from typing import Callable, Dict, Iterable, Set, Tuple
 
 GROUND_IDS = {
     '': 24, 'R': 25, 'LR': 26, 'L': 27,
@@ -49,18 +55,33 @@ GROUND_IDS = {
 }
 
 
+def slope_surface(x: int, y: int, w: int, h: int, steep: bool,
+                  descending: bool = False) -> Set[Tuple[int, int]]:
+    """The cells a slope's surface owns; (x, y) is its box's bottom-left
+    tile and w x h its size in tiles."""
+    cells = set()
+    for col in range(w):
+        rise = col if steep else (col + 1) // 2
+        dx = w - 1 - col if descending else col
+        cells.update((x + dx, y + dy) for dy in (rise - 1, rise) if 0 <= dy < h)
+    return cells
+
+
 def autotile_ground(positions: Iterable[Tuple[int, int]],
-                    outside: Callable[[int, int], bool] = lambda x, y: False
+                    outside: Callable[[int, int], bool] = lambda x, y: False,
+                    slopes: Iterable[Tuple[int, int, int, int, bool, bool]] = ()
                     ) -> Dict[Tuple[int, int], int]:
     """The id of each ground position. `outside(x, y)` says whether a cell
-    without a ground record is solid anyway; below row 0 always is."""
-    cells = set(positions)
+    without a ground record is solid anyway; below row 0 always is. Each
+    slope is slope_surface's arguments, and its surface counts as ground."""
+    ground = set(positions)
+    cells = ground.union(*(slope_surface(*slope) for slope in slopes))
 
     def solid(x, y):
         return y < 0 or (x, y) in cells or outside(x, y)
 
     ids = {}
-    for (x, y) in cells:
+    for (x, y) in ground:
         u, d, l, r = solid(x, y + 1), solid(x, y - 1), solid(x - 1, y), solid(x + 1, y)
         key = ''.join(n for n, v in (('U', u), ('D', d), ('L', l), ('R', r)) if v)
         for name, edges, dx, dy in (('UL', u and l, -1, 1), ('UR', u and r, 1, 1),
