@@ -254,6 +254,31 @@ field player st_e  u32 0x400
     # position at +0x230. x0 = the enemy (EnemyUber +0x40 per frame). The
     # `lift` hook is the plain Actor per-frame (vtable +0x40 of every actor
     # that does not override it: lifts, blocks, ...), x0 = the actor.
+    # The player model's animation (smm2-decomp src/game/player/
+    # PlayerWalkAnimation.cpp): the rate setter sub_710155ECB0 (x0 = the
+    # model; Walk calls it every frame) reads the first body's (+0x18)
+    # playing entry -- NSMBU's body keeps them at +0x160 by the index +0x384
+    # (3D World's at +0x1A0 by +0x59C): its frame controller (+0x10: frame
+    # +4, rate +8, read after the call: the rate it set) and the name it was
+    # played by (+0x28, its first 16 characters). The play sub_710155E870
+    # (x0 = the model, x1 = the name) logs each name played. And the players
+    # object's +0x58, which the 2D styles' walk rate is 0 without.
+    "anim": """\
+hook animrate 0x710155ECB0
+field animrate idx     u32 0x18>0x384
+field animrate aframe  f32 0x18>0x160>0x10>0x4
+field animrate rate    f32 0x18>0x160>0x10>0x8
+field animrate name0   u64 0x18>0x160>0x28>0x0
+field animrate name8   u64 0x18>0x160>0x28>0x8
+field animrate idx3w   u32 0x18>0x59C
+field animrate aframe3w f32 0x18>0x1A0>0x10>0x4
+field animrate rate3w  f32 0x18>0x1A0>0x10>0x8
+field animrate name3w  u64 0x18>0x1A0>0x28>0x0
+field animrate p58     u64 @0x7102C19290>0x58
+hook animplay 0x710155E870
+field animplay play0   u64 x1:0x0
+field animplay play8   u64 x1:0x8
+""",
     "surface": """\
 hook foot 0x710128A2D0
 field foot pos_x   f32 0x230

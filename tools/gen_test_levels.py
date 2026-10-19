@@ -2712,5 +2712,33 @@ def main():
     return 0
 
 
+def _long_run(name: str, style: str) -> LevelBuilder:
+    b = LevelBuilder(name, style, "Ground")
+    b.width = 120
+    b.add_ground_block(7, 109, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(120, "Long Run NSMBU")
+def level_long_run_nsmbu() -> LevelBuilder:
+    """Recording batch 5 (smm2-decomp item 4, Walk's clips): the 120-tile
+    runway in NSMBU: walk, run to the full dash, stop, stand."""
+    return _long_run("Long Run NSMBU", "NSMBU")
+
+
+@test_level(121, "Long Run 3DW")
+def level_long_run_3dw() -> LevelBuilder:
+    """Recording batch 5: the runway in 3D World (its clips and its rate)."""
+    return _long_run("Long Run 3DW", "3DW")
+
+
+@test_level(122, "Long Run SMB1")
+def level_long_run_smb1() -> LevelBuilder:
+    """Recording batch 5: the runway in SMB1 (the 2D styles' walk rate and
+    the players object's +0x58)."""
+    return _long_run("Long Run SMB1", "SMB1")
+
+
 if __name__ == '__main__':
     exit(main())
