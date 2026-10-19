@@ -46,6 +46,7 @@ class TraceRecordCourses(unittest.TestCase):
             self.course(slot, b"course %d" % slot)
         paths = dataclasses.replace(server.P, save_dir=str(self.save), sd_hooks_dir=str(self.sd))
         self.patch(server, "P", paths)
+        self.patch(server, "SLOT_BACKUPS", root / "slot-backups")
         self.patch(server.time, "sleep", lambda _s: None)
         self.patch(server, "_probe_module", lambda: FakeProbe)
         self.patch(server.eden, "read_status", lambda _p: {"frame": 1, "scene": "coursebot_play"})
@@ -86,7 +87,7 @@ class TraceRecordCourses(unittest.TestCase):
         self.start()
         game = types.SimpleNamespace(to_coursebot_play=lambda slot, timeout: True)
         with mock.patch.object(server, "_game", lambda: game):
-            PLAIN["game_boot"](target="coursebot", slot=3, budget=5)
+            PLAIN["game_boot"](target="coursebot", slot=3, budget=5, via_menu=True)
         self.course(7, b"saved over during the session")   # another slot changing does not count
         result = self.stop()
         saved = self.out / "walk_course_003.bcd"

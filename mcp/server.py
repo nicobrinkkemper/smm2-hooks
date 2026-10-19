@@ -189,12 +189,18 @@ def ui_screen(full: bool = False) -> dict:
 
 
 @tool(exclusive=True)
-def game_input(buttons: str, ms: int = 120) -> dict:
-    """Press buttons through the hook mod, e.g. 'A', 'B', 'MINUS', 'L+R', 'RIGHT', 'B+MINUS'. Works in every scene. 'ui' is ui_screen from the first snapshot taken after the press was released."""
+def game_input(buttons: str = "", ms: int = 120, stick: str = "") -> dict:
+    """Press buttons through the hook mod, e.g. 'A', 'B', 'MINUS', 'L+R', 'RIGHT', 'B+MINUS', and/or hold the left stick at stick='lx,ly' (each -32767..32767; '32767,0' is full right; in the editor, X first gives the finger cursor that the stick scrolls). Works in every scene. 'ui' is ui_screen from the first snapshot taken after the press was released."""
     import ui_probe  # noqa: WPS433
+    try:
+        lx, ly = (int(v) for v in stick.split(",")) if stick else (0, 0)
+    except ValueError:
+        return {"error": f"stick {stick!r}: want 'lx,ly', e.g. '32767,0'"}
+    if not (-32767 <= lx <= 32767 and -32767 <= ly <= 32767):
+        return {"error": f"stick {stick!r}: each axis is -32767..32767"}
     before = ui_probe.observe(_ui_screen())
     g = _game()
-    g.press(buttons, ms=ms)
+    g.press(buttons or 0, ms=ms, lx=lx, ly=ly)
     ui = None
     if before.get("tick") is not None:
         released = before["tick"] + ms * 60 // 1000
@@ -204,7 +210,7 @@ def game_input(buttons: str, ms: int = 120) -> dict:
             if (ui.get("tick") or 0) > released:
                 break
             time.sleep(0.05)
-    return {"pressed": buttons, "ms": ms, "status": eden.read_status(P), "ui": ui}
+    return {"pressed": buttons, "stick": stick or None, "ms": ms, "status": eden.read_status(P), "ui": ui}
 
 
 _NAV: dict = {}  # the navigation still running after game_boot returned pending, if any
@@ -215,21 +221,15 @@ def _nav_running() -> bool:
     return bool(t and t.is_alive())
 
 
-def _directboot_coursebot(slot: int, timeout: int) -> dict:
-    """Relaunch Eden with boot.txt so the mod loads the slot's course into the
-    play buffer and starts Coursebot play — no TAS menu walk (docs/direct-boot.md)."""
-    from directboot_cfg import write_slot_boot  # noqa: WPS433
+def _directboot(image: bytes, *, slot: int, kind: int, scene: int, name: str, timeout: int) -> dict:
+    """Relaunch Eden with boot.txt so the mod loads `image` into the play
+    buffer and fires the transition `kind` from the title: 4 starts Coursebot
+    play (scene_mode 7), 3 opens the editor (scene_mode 1) — no TAS menu walk
+    (docs/direct-boot.md)."""
+    from directboot_cfg import write_boot  # noqa: WPS433
 
-    if not _save_dir():
-        return {"ok": False, "pending": False, "error": "no save dir found"}
-    bcd = Path(P.save_dir) / f"course_data_{slot:03d}.bcd"
-    if not bcd.exists():
-        return {"ok": False, "pending": False, "error": f"no course file for slot {slot} ({bcd.name})"}
     sd = Path(P.sd_hooks_dir)
-    try:
-        boot_txt, boot_bin = write_slot_boot(sd, bcd, slot=slot, kind=4)
-    except ValueError as e:
-        return {"ok": False, "pending": False, "error": str(e)}
+    boot_txt, boot_bin = write_boot(sd, image, slot=slot, kind=kind, boot_name=name)
 
     if eden.process():
         eden.kill()
@@ -245,13 +245,13 @@ def _directboot_coursebot(slot: int, timeout: int) -> dict:
     g = _game()
     # Cold boot: title ~8 s, play ~16 s with skip_intro (docs/direct-boot.md).
     wait = max(timeout, 90)
-    st = g.wait_for(lambda s: s and s.get("scene_mode") == 7, timeout=wait)
+    st = g.wait_for(lambda s: s and s.get("scene_mode") == scene, timeout=wait)
     if not st:
         log = sd / "directboot.log"
         return {
             "ok": False,
             "pending": False,
-            "error": f"no Coursebot play within {wait} s",
+            "error": f"no scene_mode {scene} within {wait} s",
             "directboot_log": log.read_text() if log.exists() else None,
             "boot_bin": str(boot_bin),
             "status": eden.read_status(P),
@@ -265,6 +265,77 @@ def _directboot_coursebot(slot: int, timeout: int) -> dict:
     }
 
 
+def _boot_image(target: str, slot: int | None, file: str | None, sub_area: bool) -> tuple[bytes, str] | dict:
+    """The boot.bin image and its name for a direct boot: `file` (a .bcd, a
+    .zlib or a plain body), else the slot's .bcd."""
+    import directboot_cfg as db  # noqa: WPS433
+
+    if file:
+        path = Path(file)
+    else:
+        if not _save_dir():
+            return {"ok": False, "pending": False, "error": "no save dir found"}
+        path = Path(P.save_dir) / SLOT_FILES[0].format(slot)
+    if not path.exists():
+        return {"ok": False, "pending": False, "error": f"no course file {path}"}
+    try:
+        plain = db.course_body(path)
+    except ValueError as e:
+        return {"ok": False, "pending": False, "error": str(e)}
+    if sub_area:
+        plain = db.swap_areas(plain)
+    name = f"{path.stem}.{target}.boot.bin" if file else f"course_{slot:03d}.boot.bin"
+    return db.boot_bin_from_body(plain), name
+
+
+SLOT_BACKUPS = Path.home() / ".cache" / "smm2-hooks" / "slot-backups"
+
+
+def _backup_slots() -> dict | None:
+    """Copy every slot's course file before a Coursebot visit, which deletes
+    the courses it finds invalid (registered or not). Files are kept once per
+    content under pool/<sha1>.bcd; <stamp>.json maps slots to them."""
+    import hashlib  # noqa: WPS433
+
+    if not _save_dir():
+        return None
+    pool = SLOT_BACKUPS / "pool"
+    pool.mkdir(parents=True, exist_ok=True)
+    slots = {}
+    for bcd in sorted(Path(P.save_dir).glob("course_data_[0-9][0-9][0-9].bcd")):
+        data = bcd.read_bytes()
+        digest = hashlib.sha1(data).hexdigest()
+        kept = pool / f"{digest}.bcd"
+        if not kept.exists():
+            kept.write_bytes(data)
+        slots[int(bcd.stem[-3:])] = digest
+    registered = _registered_slots()
+    manifest = SLOT_BACKUPS / f"{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 10**9:09d}.json"
+    manifest.write_text(json.dumps({"save_dir": P.save_dir, "slots": slots,
+                                    "registered": sorted(registered) if registered is not None else None}, indent=1))
+    return {"manifest": manifest, "slots": slots, "registered": registered}
+
+
+def _slots_lost(before: dict) -> dict:
+    """Slots a Coursebot visit changed or unregistered since `before` (_backup_slots)."""
+    import hashlib  # noqa: WPS433
+
+    changed = []
+    for slot, digest in before["slots"].items():
+        bcd = Path(P.save_dir) / SLOT_FILES[0].format(slot)
+        if not bcd.exists() or hashlib.sha1(bcd.read_bytes()).hexdigest() != digest:
+            changed.append(slot)
+    registered = _registered_slots()
+    unregistered = sorted(before["registered"] - registered) if before["registered"] is not None and registered is not None else []
+    out = {"slot_backup": str(before["manifest"])}
+    if changed or unregistered:
+        out["slots_changed"] = changed
+        out["slots_unregistered"] = unregistered
+        out["warning"] = (f"the visit changed or unregistered slots {sorted(set(changed) | set(unregistered))}; "
+                          f"the files before it are in {before['manifest']} (pool/<sha1>.bcd)")
+    return out
+
+
 @tool(exclusive=True)
 def game_boot(
     target: str = "coursebot",
@@ -272,6 +343,8 @@ def game_boot(
     timeout: int = 45,
     budget: int = 120,
     via_menu: bool = False,
+    file: str | None = None,
+    sub_area: bool = False,
 ) -> dict:
     """Boot into play or the editor.
 
@@ -279,18 +352,39 @@ def game_boot(
     that slot's .bcd, relaunches Eden, and lets the mod start Coursebot play from
     the title (scene_mode 7) — no TAS Coursebot UI walk. Pass via_menu=true to
     keep the old button-injection navigation (slower; needs a live session already
-    past the title). target 'editor' / 'editor_play' still navigate the menus.
+    past the title). target 'editor' with a `file` (a .bcd, the sim dataset's
+    .zlib, or a plain body) or a slot opens that course straight in the editor
+    the same way (scene_mode 1): no Coursebot list, no slot to install, nothing
+    the game can delete. sub_area=true swaps the areas first so the sub area
+    opens. The editor is opened as Coursebot entry `slot` (0 without one), so
+    saving there can write that slot: leave without saving. 'editor' without
+    a file or slot, and 'editor_play', navigate the menus.
+    Before a Coursebot boot every slot's course file is backed up
+    (~/.cache/smm2-hooks/slot-backups); the result names the backup and warns
+    when a slot changed or was unregistered by the time the boot finished (a
+    deletion when play later returns to the Coursebot list comes after that:
+    compare against the manifest).
     The call returns within `budget` seconds; if work is still going it returns
     pending=true and game_status carries the outcome under 'boot'. The final
     result reports 'registered' as save.dat stands after the visit.
     """
-    if target == "coursebot" and slot is None:
-        return {"error": "slot required"}
     if target not in ("coursebot", "editor", "editor_play"):
         return {"error": f"unknown target {target}"}
+    if target == "coursebot" and slot is None:
+        return {"error": "slot required"}
+    if (file or sub_area) and (via_menu or target == "editor_play"):
+        return {"error": "file and sub_area need a direct boot: target 'coursebot' or 'editor', via_menu false"}
+    direct_editor = target == "editor" and (file is not None or slot is not None)
+    image = None
+    if target == "coursebot" and not via_menu or direct_editor:
+        image = _boot_image(target, slot, file, sub_area)
+        if isinstance(image, dict):
+            return image
     g = _game()
+    backup = None
     if target == "coursebot":
         _note_played(slot, "game_boot")
+        backup = _backup_slots()
 
     def with_registration(result: dict) -> dict:
         registered = _registered_slots() if target == "coursebot" else None
@@ -298,12 +392,17 @@ def game_boot(
             result["registered"] = slot in registered
             if slot not in registered and result.get("method") != "directboot":
                 result["note"] = "slot is not in save.dat, so this is editor test-play of a default course, not the installed level; level_install registers a slot (the course must pass validation)"
+        if backup:
+            result.update(_slots_lost(backup))
         return result
 
     def navigate():
         try:
-            if target == "coursebot" and not via_menu:
-                _NAV["result"] = with_registration(_directboot_coursebot(slot, timeout))
+            if image is not None:
+                data, name = image
+                kind, scene = (4, 7) if target == "coursebot" else (3, 1)
+                _NAV["result"] = with_registration(
+                    _directboot(data, slot=slot or 0, kind=kind, scene=scene, name=name, timeout=timeout))
                 return
             if target == "coursebot":
                 ok = g.to_coursebot_play(slot=slot, timeout=timeout)
@@ -320,7 +419,7 @@ def game_boot(
     t = threading.Thread(target=navigate, name="game_boot", daemon=True)
     _NAV.update(
         thread=t,
-        result={"ok": False, "pending": True, "target": target, "slot": slot, "via_menu": via_menu},
+        result={"ok": False, "pending": True, "target": target, "slot": slot, "file": file, "via_menu": via_menu},
     )
     t.start()
     # Plain join: @tool runs this in a worker thread, so waiting here does not
@@ -463,16 +562,14 @@ def level_install(slot: int, level: str, companions_from: int | None = None) -> 
         # A course file: the sim's dataset keeps decrypted course data zlib-
         # compressed (public/courses/hf/<id>.zlib); a .bcd is taken as is
         # when it decrypts, else as decrypted data to encrypt.
+        import directboot_cfg as db  # noqa: WPS433
         import parse_course as pc  # noqa: WPS433
-        raw = path.read_bytes()
-        if path.suffix == ".zlib":
-            import zlib  # noqa: WPS433
-            raw = zlib.decompress(raw)
-        dec = pc.decrypt_course(str(path)) if path.suffix == ".bcd" else None
-        plain = dec if dec is not None else raw
-        if len(plain) != 0x5BFC0:
-            return {"error": f"{path}: {len(plain)} bytes of course data, expected {0x5BFC0}"}
-        course = raw if dec is not None else g.encrypt_course(plain)
+        try:
+            plain = db.course_body(path)
+        except ValueError as e:
+            return {"error": str(e)}
+        encrypted = path.suffix == ".bcd" and pc.decrypt_course(str(path)) is not None
+        course = path.read_bytes() if encrypted else g.encrypt_course(plain)
         out = _install_slot(slot, course, companions_from)
         return {"level": pc.parse_header(plain)["name"], "file": str(path), **out}
     match = [(s, n, f) for s, (n, f) in g.TEST_LEVELS.items() if n == level]

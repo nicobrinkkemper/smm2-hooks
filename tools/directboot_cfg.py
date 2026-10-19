@@ -14,6 +14,7 @@ from pathlib import Path
 
 COURSE_BODY = 0x5BFC0
 COURSE_BYTES = 0x10 + COURSE_BODY  # header + decrypted body
+AREA = 0x200, 0x2DEE0  # main area offset in the body, and each area's size
 
 
 def boot_bin_from_bcd(bcd: Path) -> bytes:
@@ -29,19 +30,74 @@ def boot_bin_from_bcd(bcd: Path) -> bytes:
         raise ValueError(f"decrypted body is {len(plain)} bytes, want {COURSE_BODY}")
     # Rebuild the header so the CRC matches the plaintext we load (same shape
     # as gen_test_levels.encrypt_course's header).
+    rebuilt = boot_bin_from_body(plain)
+    # Prefer the on-disk header when its CRC already matches the plaintext.
+    if (
+        len(raw) >= 0x10
+        and raw[0x0C:0x10] == b"SCDL"
+        and raw[0x08:0x0C] == rebuilt[0x08:0x0C]
+    ):
+        return raw[:0x10] + plain
+    return rebuilt
+
+
+def course_body(path: Path) -> bytes:
+    """The decrypted course body from any course file: an encrypted .bcd, the
+    sim dataset's .zlib (the mm2_level layout), or the plain body."""
+    import parse_course as pc  # noqa: WPS433
+
+    path = Path(path)
+    raw = path.read_bytes()
+    if path.suffix == ".zlib":
+        try:
+            raw = zlib.decompress(raw)
+        except zlib.error as e:
+            raise ValueError(f"{path}: {e}") from e
+    plain = pc.decrypt_course(str(path)) if path.suffix == ".bcd" else None
+    if plain is None:
+        plain = raw
+    if len(plain) != COURSE_BODY:
+        raise ValueError(f"{path}: {len(plain)} bytes of course data, want {COURSE_BODY}")
+    return plain
+
+
+def swap_areas(plain: bytes) -> bytes:
+    """The body with its main and sub areas swapped, so the sub area opens."""
+    start, size = AREA
+    main, sub = plain[start:start + size], plain[start + size:start + 2 * size]
+    return plain[:start] + sub + main + plain[start + 2 * size:]
+
+
+def boot_bin_from_body(plain: bytes) -> bytes:
+    """The play-buffer image for a decrypted body: a fresh 0x10 header + the body."""
     header = bytearray(0x10)
     struct.pack_into("<I", header, 0x00, 1)
     struct.pack_into("<I", header, 0x04, 0x00010010)
     struct.pack_into("<I", header, 0x08, zlib.crc32(plain) & 0xFFFFFFFF)
     header[0x0C:0x10] = b"SCDL"
-    # Prefer the on-disk header when its CRC already matches the plaintext.
-    if (
-        len(raw) >= 0x10
-        and raw[0x0C:0x10] == b"SCDL"
-        and raw[0x08:0x0C] == header[0x08:0x0C]
-    ):
-        return raw[:0x10] + plain
     return bytes(header) + plain
+
+
+def write_boot(
+    sd_dir: Path,
+    image: bytes,
+    *,
+    slot: int,
+    kind: int = 4,
+    boot_name: str,
+    two_phase: bool = False,
+) -> tuple[Path, Path]:
+    """Write boot.txt + the boot.bin `image` under sd_dir. Returns (boot.txt, boot.bin)."""
+    sd = Path(sd_dir)
+    sd.mkdir(parents=True, exist_ok=True)
+    boot_bin = sd / boot_name
+    boot_bin.write_bytes(image)
+    # Mod paths are Switch SD paths; the host tree is mirrored under sdmc.
+    sd_path = f"sd:/smm2-hooks/{boot_name}"
+    boot_txt = sd / "boot.txt"
+    keyword = "coursebot2" if two_phase else "coursebot"
+    boot_txt.write_text(f"{keyword} {slot} {kind}\nfile {sd_path}\n")
+    return boot_txt, boot_bin
 
 
 def write_slot_boot(
@@ -54,14 +110,5 @@ def write_slot_boot(
     two_phase: bool = False,
 ) -> tuple[Path, Path]:
     """Write boot.txt + a boot.bin for `slot` under sd_dir. Returns (boot.txt, boot.bin)."""
-    sd = Path(sd_dir)
-    sd.mkdir(parents=True, exist_ok=True)
-    name = boot_name or f"course_{slot:03d}.boot.bin"
-    boot_bin = sd / name
-    boot_bin.write_bytes(boot_bin_from_bcd(bcd))
-    # Mod paths are Switch SD paths; the host tree is mirrored under sdmc.
-    sd_path = f"sd:/smm2-hooks/{name}"
-    boot_txt = sd / "boot.txt"
-    keyword = "coursebot2" if two_phase else "coursebot"
-    boot_txt.write_text(f"{keyword} {slot} {kind}\nfile {sd_path}\n")
-    return boot_txt, boot_bin
+    return write_boot(sd_dir, boot_bin_from_bcd(bcd), slot=slot, kind=kind,
+                      boot_name=boot_name or f"course_{slot:03d}.boot.bin", two_phase=two_phase)
