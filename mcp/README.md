@@ -47,7 +47,8 @@ scope: this project on this machine, not the project's shared `.mcp.json`):
 
 `game_boot` is the way in. With `target: "editor"` and a `file` (or a `slot`), it
 opens that course straight in the editor through the mod's direct boot. No
-Coursebot visit, no install; `sub_area: true` opens the sub area. With
+Coursebot visit, so nothing is deleted as invalid; it opens as slot 0 (or
+`slot`), so leave without saving; `sub_area: true` opens the sub area. With
 `target: "coursebot"` and a slot, it starts Coursebot play after backing up
 every slot (`~/.cache/smm2-hooks/slot-backups`), since a visit deletes invalid
 courses. `tools/hf_course.py` fetches real uploaded courses to boot.

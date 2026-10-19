@@ -51,7 +51,7 @@ mcp = FastMCP("smm2-hooks", instructions=(
     "editor, editor_play, coursebot_play, loading). edit_time = the Course Maker editor; run_time = "
     "editor_play or coursebot_play, the only modes where actors update and a player exists. "
     "To look at a course, open it in the editor with game_boot(target='editor', file=...): no Coursebot "
-    "visit, nothing installed or deleted; tools/hf_course.py fetches real uploaded courses. "
+    "visit, so nothing is deleted as invalid (it opens as slot 0: leave without saving); tools/hf_course.py fetches real uploaded courses. "
     "GDB: hardware breakpoints/watchpoints only; the target must be stopped to send commands."
 ))
 GDB = GdbSession()

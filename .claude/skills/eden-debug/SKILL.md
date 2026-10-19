@@ -69,11 +69,13 @@ run, kill both first: `python3 emu_session.py kill eden` and
 To look at a course (how the game draws it, where things sit), open it in the
 editor instead of installing it: `game_boot(target="editor", file=<.bcd|.zlib>,
 sub_area=...)`. That never passes Coursebot, so an invalid course is not
-deleted, and other slots are untouched. For a layout the game is known to
+deleted. The editor opens as Coursebot entry 0 (or `slot`): leave without
+saving, or that slot is written. For a layout the game is known to
 accept, fetch a real upload: `python3 tools/hf_course.py <data_id> -o <dir>`.
 Install into a slot only when the course must run in Coursebot play.
-`game_boot(target="coursebot")` backs up every slot first and warns when the
-visit changed one.
+`game_boot(target="coursebot")` backs up every slot first and warns about
+slots changed by the time the boot finished; for a deletion later in the
+session, compare against the backup manifest.
 
     python3 gen_test_levels.py --list
     python3 gen_test_levels.py --slot N --target eden    # writes course_data_00N.bcd, backs up the old one
