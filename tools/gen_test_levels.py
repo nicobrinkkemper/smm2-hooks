@@ -32,7 +32,7 @@ from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
 import random
 
-from autotile import autotile_ground
+from autotile import autotile_ground, slope_surface
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Constants (from gen_level.py)
@@ -409,6 +409,16 @@ class LevelBuilder:
         if bad:
             raise ValueError(f"{self.name}: " + "; ".join(bad))
 
+    def unrecorded(self, x: int, y: int) -> bool:
+        """Whether the editor tiles the overworld against ground that has no
+        record at (x, y): the start and goal areas (a block's column 7 at row
+        start_y - 1 is a plain top in editor-made courses, not a left corner,
+        and the same on the goal side at goal_y - 1) and the area's edges."""
+        goal_y = self.goal_y if self.goal_y else self.start_y
+        return ((x < self.START_AREA_TILES and y < self.start_y)
+                or (x >= self.goal_area_start() and y < goal_y)
+                or _beyond(x, y, self.width, self.height))
+
     def build(self) -> bytes:
         """Build the course data."""
         self.preflight()
@@ -444,16 +454,7 @@ class LevelBuilder:
         
         # NOTE: Do NOT add goal object - game auto-generates from header goal_x/goal_y
         
-        # The editor tiles against ground that has no record: the start and
-        # goal areas (a block's column 7 at row start_y - 1 is a plain top in
-        # editor-made courses, not a left corner, and the same on the goal
-        # side at goal_y - 1) and the area's edges.
-        goal_y = data[0x01]
-        g = self.goal_area_start()
-        def unrecorded(x, y):
-            return ((x < self.START_AREA_TILES and y < self.start_y) or (x >= g and y < goal_y)
-                    or _beyond(x, y, self.width, self.height))
-        _write_area(data, area, self.objects, _tiled(self.ground_tiles, unrecorded),
+        _write_area(data, area, self.objects, _tiled(self.ground_tiles, self.unrecorded, self.objects),
                     getattr(self, 'tracks', []))
 
         # Area 1, the subworld. Vertical areas live here: a vertical area has
@@ -471,7 +472,7 @@ class LevelBuilder:
         struct.pack_into('<i', data, area1 + 0x08, self.sub_width * 16)
         struct.pack_into('<i', data, area1 + 0x0C, self.sub_height * 16)
         _write_area(data, area1, self.sub_objects, _tiled(self.sub_ground_tiles,
-                    lambda x, y: _beyond(x, y, self.sub_width, self.sub_height)),
+                    lambda x, y: _beyond(x, y, self.sub_width, self.sub_height), self.sub_objects),
                     self.sub_tracks)
 
         return bytes(data)
@@ -491,37 +492,27 @@ def slope_width(rise: int, steep: bool) -> int:
     return rise + 1 if steep else 2 * rise
 
 
-def slope_band(x: int, y: int, width: int, height: int, steep: bool,
-               descending: bool) -> set:
-    """The cells a slope's surface owns, which ground must leave empty (no
-    game-saved course has a ground tile on one): counted from the low end,
-    column c owns rows rise and rise - 1 of the box, rise = c steep and
-    (c + 1) // 2 gentle."""
-    cells = set()
-    for dx in range(width):
-        c = width - 1 - dx if descending else dx
-        rise = c if steep else (c + 1) // 2
-        cells.update((x + dx, y + dy) for dy in (rise, rise - 1) if 0 <= dy < height)
-    return cells
+def slopes(objects: list) -> list:
+    """slope_surface's arguments for each slope record in `objects`."""
+    return [(o['x'], o['y'], o.get('width', 1), o.get('height', 1), o['id'] == OBJ_STEEP_SLOPE,
+             bool(o.get('flags', 0) & FLAG_DESCENDING))
+            for o in objects if o['id'] in (OBJ_STEEP_SLOPE, OBJ_SLIGHT_SLOPE)]
 
 
 def slope_errors(objects: list, ground: list) -> list:
     """What is wrong with an area's slope records: a width the game never
-    writes for the height, a slope under two rows, ground on its surface."""
+    writes for the height, a slope under two rows, ground on its surface
+    (no game-saved course has a ground tile on one)."""
     tiles = set(ground)
     bad = []
-    for o in objects:
-        if o['id'] not in (OBJ_STEEP_SLOPE, OBJ_SLIGHT_SLOPE):
-            continue
-        steep = o['id'] == OBJ_STEEP_SLOPE
-        w, h = o.get('width', 1), o.get('height', 1)
-        at = f"{'steep' if steep else 'gentle'} slope at ({o['x']}, {o['y']}) {w}x{h}"
+    for slope in slopes(objects):
+        x, y, w, h, steep, _ = slope
+        at = f"{'steep' if steep else 'gentle'} slope at ({x}, {y}) {w}x{h}"
         if h < 2:
             bad.append(f"{at} is under two rows tall")
         if w != slope_width(h, steep):
             bad.append(f"{at} is not {slope_width(h, steep)} wide")
-        on = sorted(tiles & slope_band(o['x'], o['y'], w, h, steep,
-                                       bool(o.get('flags', 0) & FLAG_DESCENDING)))
+        on = sorted(tiles & slope_surface(*slope))
         if on:
             bad.append(f"{at} has ground on its surface at {on}")
     return bad
@@ -532,10 +523,11 @@ def _beyond(x, y, width, height):
     return x < 0 or x >= width or y >= height
 
 
-def _tiled(positions, outside):
-    """(x, y, id) ground records, one per position, with the editor's ids."""
+def _tiled(positions, outside, objects):
+    """(x, y, id) ground records, one per position, with the editor's ids;
+    the editor counts the slopes among `objects` as ground there."""
     positions = list(dict.fromkeys(positions))
-    ids = autotile_ground(positions, outside)
+    ids = autotile_ground(positions, outside, slopes(objects))
     return [(x, y, ids[(x, y)]) for (x, y) in positions]
 
 
