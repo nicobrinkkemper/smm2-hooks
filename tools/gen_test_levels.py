@@ -2781,8 +2781,11 @@ def level_cape_smw() -> LevelBuilder:
 def level_propeller_nsmbu() -> LevelBuilder:
     """Recording batch 7: the 120-tile runway in NSMBU with object 44 (the
     Propeller Mushroom) at tile 8: the propeller's flight and its drill."""
+    # A placed propeller sinks through the ground and drifts off during the
+    # course's intro: it comes out of a ? block just over his head instead,
+    # and he catches it as it floats down.
     b = _long_run("Propeller NSMBU", "NSMBU")
-    b.add_actor(OBJ_BIG_MUSHROOM, 8, 5)
+    b.objects.append({'id': OBJ_QUESTION, 'x': 8, 'y': 7, 'width': 1, 'height': 1, 'contents': OBJ_BIG_MUSHROOM})
     return b
 
 
