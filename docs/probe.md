@@ -32,7 +32,7 @@ field <hook-name> <label> <type> <path>
 - `field`: read after the call, relative to the hook's `x0`. Up to 24 per
   hook. `type` is `u8 u16 u32 u64 f32`. `path` is hex offsets joined by `>`;
   every step but the last dereferences a pointer: `0x230` is `*(x0+0x230)`,
-  `0x530>0x28` is `*(*(x0+0x530)+0x28)`. Depth 4 max. A path may start at a
+  `0x530>0x28` is `*(*(x0+0x530)+0x28)`. Depth 6 max. A path may start at a
   main-module address instead of `x0`: `@0x7102A692C8>0x28>0x04` reads the
   global at `0x7102A692C8` (functions.csv space, relocated at runtime),
   follows it, and reads `+0x04` of the object at `+0x28`. That logs any

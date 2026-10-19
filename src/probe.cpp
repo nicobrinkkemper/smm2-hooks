@@ -21,7 +21,7 @@ namespace probe {
 constexpr int MAX_HOOKS = 8;
 constexpr int MAX_FIELDS = 24;
 constexpr int MAX_CALLERS = 8;
-constexpr int MAX_DEPTH = 4;
+constexpr int MAX_DEPTH = 6;
 constexpr uintptr_t MAIN_BASE = 0x7100000000ull;
 static const char* CONFIG_PATH = "sd:/smm2-hooks/probe.txt";
 

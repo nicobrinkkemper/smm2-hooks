@@ -1020,8 +1020,8 @@ def cmd_check(args) -> int:
         if re.match(r"^x[0-7]:", path):   # x1:0x70 -- the chain starts at argument register x1
             path = path[3:]
         steps = path.split(">")
-        if len(steps) > 4:
-            print(f"line {f['line']}: field {f['label']}: path deeper than 4")
+        if len(steps) > 6:   # src/probe.cpp MAX_DEPTH
+            print(f"line {f['line']}: field {f['label']}: path deeper than 6")
             rc = 1
         try:
             [int(s.lstrip("@") if i == 0 and s.startswith("@") else s, 16) for i, s in enumerate(steps)]
