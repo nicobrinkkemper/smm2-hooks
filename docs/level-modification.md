@@ -117,6 +117,7 @@ This allows live editing workflows!
 ## Tools
 
 - `tools/parse_course.py` - Decrypt and parse .bcd files
+- `tools/course_thumb.py` - Decrypt a slot's course_thumb .btl to its JPEG
 - `tools/gen_level.py` - Encrypt course data (includes `encrypt_course()`)
 
 ## References
