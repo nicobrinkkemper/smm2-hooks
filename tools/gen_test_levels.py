@@ -286,7 +286,9 @@ class LevelBuilder:
         writes every steep slope rise + 1 wide, its last column the top end
         cap, and every gentle one 2 * rise wide. Without `descending` it
         rises to the right; with it, flag 0x100000 (uploaded courses: every
-        slope of the SMB3 slide 4067530 carries it and descends).
+        slope of the SMB3 slide 4067530 carries it and descends). Coursebot
+        deleted a slope with flags 0x4, 0x8, 0x10, 0x18, 0x20, 0x40000 or
+        0x400000 added, ex 1, or child flags 0x10 / 0x20 (2026-09-03).
         """
         self.objects.append({
             'id': OBJ_STEEP_SLOPE if steep else OBJ_SLIGHT_SLOPE,
