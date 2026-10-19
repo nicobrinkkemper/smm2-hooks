@@ -192,7 +192,12 @@ def ui_screen(full: bool = False) -> dict:
 def game_input(buttons: str = "", ms: int = 120, stick: str = "") -> dict:
     """Press buttons through the hook mod, e.g. 'A', 'B', 'MINUS', 'L+R', 'RIGHT', 'B+MINUS', and/or hold the left stick at stick='lx,ly' (each -32767..32767; '32767,0' is full right; in the editor, X first gives the finger cursor that the stick scrolls). Works in every scene. 'ui' is ui_screen from the first snapshot taken after the press was released."""
     import ui_probe  # noqa: WPS433
-    lx, ly = (int(v) for v in stick.split(",")) if stick else (0, 0)
+    try:
+        lx, ly = (int(v) for v in stick.split(",")) if stick else (0, 0)
+    except ValueError:
+        return {"error": f"stick {stick!r}: want 'lx,ly', e.g. '32767,0'"}
+    if not (-32767 <= lx <= 32767 and -32767 <= ly <= 32767):
+        return {"error": f"stick {stick!r}: each axis is -32767..32767"}
     before = ui_probe.observe(_ui_screen())
     g = _game()
     g.press(buttons or 0, ms=ms, lx=lx, ly=ly)
@@ -305,7 +310,7 @@ def _backup_slots() -> dict | None:
             kept.write_bytes(data)
         slots[int(bcd.stem[-3:])] = digest
     registered = _registered_slots()
-    manifest = SLOT_BACKUPS / f"{time.strftime('%Y%m%d-%H%M%S')}.json"
+    manifest = SLOT_BACKUPS / f"{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 10**9:09d}.json"
     manifest.write_text(json.dumps({"save_dir": P.save_dir, "slots": slots,
                                     "registered": sorted(registered) if registered is not None else None}, indent=1))
     return {"manifest": manifest, "slots": slots, "registered": registered}
@@ -351,10 +356,14 @@ def game_boot(
     .zlib, or a plain body) or a slot opens that course straight in the editor
     the same way (scene_mode 1): no Coursebot list, no slot to install, nothing
     the game can delete. sub_area=true swaps the areas first so the sub area
-    opens. 'editor' without either, and 'editor_play', navigate the menus.
+    opens. The editor is opened as Coursebot entry `slot` (0 without one), so
+    saving there can write that slot: leave without saving. 'editor' without
+    a file or slot, and 'editor_play', navigate the menus.
     Before a Coursebot boot every slot's course file is backed up
     (~/.cache/smm2-hooks/slot-backups); the result names the backup and warns
-    when the visit changed or unregistered a slot.
+    when a slot changed or was unregistered by the time the boot finished (a
+    deletion when play later returns to the Coursebot list comes after that:
+    compare against the manifest).
     The call returns within `budget` seconds; if work is still going it returns
     pending=true and game_status carries the outcome under 'boot'. The final
     result reports 'registered' as save.dat stands after the visit.

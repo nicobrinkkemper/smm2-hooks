@@ -25,31 +25,34 @@ DATASET = "dataset=TheGreatRambler/mm2_level"
 ROWS = f"{SERVER}/rows?{DATASET}&config=default&split=train"
 
 
-def row(offset: int, tries: int = 8) -> dict:
-    """The dataset row at `offset`, retried: the server answers 429 to a burst
-    of requests and 5xx under load."""
-    url = f"{ROWS}&offset={offset}&length=1"
+def get(url: str, tries: int = 8) -> dict:
+    """GET json, retried on 429 (a burst of requests), 5xx (load) and network errors."""
     for attempt in range(tries):
         try:
             with urllib.request.urlopen(url, timeout=60) as r:
-                rows = json.load(r)["rows"]
-            if not rows:
-                raise IndexError(f"no row at offset {offset}")
-            return rows[0]["row"]
-        except (OSError, ValueError, KeyError) as e:
-            if attempt == tries - 1:
+                return json.load(r)
+        except OSError as e:
+            code = getattr(e, "code", None)
+            if attempt == tries - 1 or (code is not None and code != 429 and code < 500):
                 raise
-            after = getattr(e, "headers", None) and e.headers.get("Retry-After")
+            after = e.headers.get("Retry-After") if code else None
             wait = int(after) if after and after.isdigit() else 5 * 2 ** attempt
-            print(f"offset {offset}: {e}; retrying in {wait} s", file=sys.stderr)
+            print(f"{e}; retrying in {wait} s", file=sys.stderr)
             time.sleep(wait)
     raise AssertionError("unreachable")
 
 
+def row(offset: int) -> dict:
+    """The dataset row at `offset`."""
+    rows = get(f"{ROWS}&offset={offset}&length=1")["rows"]
+    if not rows:
+        raise IndexError(f"no row at offset {offset}")
+    return rows[0]["row"]
+
+
 def find(data_id: int) -> dict:
     """The row with `data_id`: a binary search over the sorted offsets."""
-    with urllib.request.urlopen(f"{SERVER}/size?{DATASET}", timeout=60) as r:
-        rows = json.load(r)["size"]["dataset"]["num_rows"]
+    rows = get(f"{SERVER}/size?{DATASET}")["size"]["dataset"]["num_rows"]
     lo, hi = 0, rows - 1
     while lo <= hi:
         mid = (lo + hi) // 2

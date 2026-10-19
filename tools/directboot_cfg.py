@@ -49,7 +49,10 @@ def course_body(path: Path) -> bytes:
     path = Path(path)
     raw = path.read_bytes()
     if path.suffix == ".zlib":
-        raw = zlib.decompress(raw)
+        try:
+            raw = zlib.decompress(raw)
+        except zlib.error as e:
+            raise ValueError(f"{path}: {e}") from e
     plain = pc.decrypt_course(str(path)) if path.suffix == ".bcd" else None
     if plain is None:
         plain = raw

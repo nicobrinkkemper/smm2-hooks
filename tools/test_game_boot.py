@@ -79,12 +79,37 @@ class GameBoot(unittest.TestCase):
         [(image, _kw)] = self.boots
         self.assertEqual(image, db.boot_bin_from_body(db.swap_areas(plain)))
 
+    def test_slot_opens_in_the_editor(self):
+        plain = g.LevelBuilder(name="Slot", style="SMW", theme="Ground").build()
+        (self.save / "course_data_003.bcd").write_bytes(g.encrypt_course(plain))
+        PLAIN["game_boot"](target="editor", slot=3, budget=5)
+        [(image, kw)] = self.boots
+        self.assertEqual(image, db.boot_bin_from_body(plain))
+        self.assertEqual((kw["kind"], kw["scene"], kw["slot"], kw["name"]), (3, 1, 3, "course_003.boot.bin"))
+
+    def test_direct_coursebot_boot_backs_up_first(self):
+        plain = g.LevelBuilder(name="Slot", style="SMB3", theme="Ground").build()
+        bcd = g.encrypt_course(plain)
+        (self.save / "course_data_003.bcd").write_bytes(bcd)
+        result = PLAIN["game_boot"](target="coursebot", slot=3, budget=5)
+        [(image, kw)] = self.boots
+        self.assertEqual(image, db.boot_bin_from_body(plain))
+        self.assertEqual((kw["kind"], kw["scene"], kw["slot"], kw["name"]), (4, 7, 3, "course_003.boot.bin"))
+        manifest = json.loads(Path(result["slot_backup"]).read_text())
+        kept = self.root / "slot-backups" / "pool" / f"{manifest['slots']['3']}.bcd"
+        self.assertEqual(kept.read_bytes(), bcd)
+        self.assertNotIn("warning", result)
+
     def test_bad_file_is_refused_before_anything_runs(self):
         bad = self.root / "short.bin"
         bad.write_bytes(b"x")
+        corrupt = self.root / "corrupt.zlib"
+        corrupt.write_bytes(b"not zlib")
         for kwargs in ({"target": "editor", "file": str(bad)},
+                       {"target": "editor", "file": str(corrupt)},
                        {"target": "editor", "file": str(self.root / "missing.zlib")},
                        {"target": "editor_play", "file": str(bad)},
+                       {"target": "editor", "file": str(bad), "via_menu": True},
                        {"target": "coursebot", "slot": 3, "via_menu": True, "sub_area": True}):
             self.assertIn("error", PLAIN["game_boot"](budget=5, **kwargs), kwargs)
         self.assertEqual(self.boots, [])
@@ -118,6 +143,9 @@ class GameBoot(unittest.TestCase):
             PLAIN["game_input"](stick="0,32767", ms=6000)
             PLAIN["game_input"]("A")
         self.assertEqual(presses, [(0, 6000, 0, 32767), ("A", 120, 0, 0)])
+        for bad in ("32767", "a,b", "0,40000"):
+            self.assertIn("error", PLAIN["game_input"](stick=bad))
+        self.assertEqual(len(presses), 2)
 
 
 if __name__ == "__main__":

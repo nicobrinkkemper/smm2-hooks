@@ -39,7 +39,8 @@ Remove or empty `boot.txt` for a normal title boot (`tools/trace.py` and
 `game_boot(target="editor", file=<course>)` boots any course straight into the
 editor (kind 3, scene_mode 1, ~15 s): a `.bcd`, the sim dataset's `.zlib`, or a
 plain body. It never passes Coursebot, so nothing is installed into a slot and
-nothing can be deleted as invalid. `sub_area=true` swaps the two areas
+nothing can be deleted as invalid. The editor opens as Coursebot entry `slot`
+(0 without one), so leave without saving. `sub_area=true` swaps the two areas
 (`0x2DEE0` each at body `+0x200`) so the sub area opens. In the editor, press X
 for the finger cursor, then hold the stick to scroll:
 `game_input(stick="0,32767", ms=5000)` scrolls up.
@@ -56,8 +57,9 @@ was found"), registered or not, the one you asked for or another. Before every
 `game_boot(target="coursebot")` every slot's `course_data_NNN.bcd` is copied to
 `~/.cache/smm2-hooks/slot-backups/pool/<sha1>.bcd` (each content once), with
 `<stamp>.json` mapping slots to files. The result names that manifest, and
-`slots_changed` / `slots_unregistered` plus a `warning` appear when the visit
-changed one.
+`slots_changed` / `slots_unregistered` plus a `warning` appear when a slot
+changed by the time the boot finished. A deletion later, when play returns to
+the Coursebot list, is not in that result; the manifest still has the files.
 
 ## One-shot recordings
 
