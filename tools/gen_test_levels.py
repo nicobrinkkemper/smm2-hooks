@@ -2740,5 +2740,18 @@ def level_long_run_smb1() -> LevelBuilder:
     return _long_run("Long Run SMB1", "SMB1")
 
 
+@test_level(123, "Tunnel 3DW")
+def level_tunnel_3dw() -> LevelBuilder:
+    """Recording batch 6 (smm2-decomp todo item 10, 3D World's shoulder
+    moves): the runway in 3D World with a tunnel one row high at tiles
+    25..35 (the ceiling on row 6), where small Mario's long jump is refused
+    by the ceiling's probe, and a mushroom at tile 45, after which big Mario
+    rolls back through the tunnel."""
+    b = _runway("Tunnel 3DW", "3DW")
+    b.add_ground_block(25, 35, y_surface=6, height=1)
+    b.add_actor(OBJ_MUSHROOM, 45, 5)
+    return b
+
+
 if __name__ == '__main__':
     exit(main())
