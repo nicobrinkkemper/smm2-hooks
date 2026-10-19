@@ -11,7 +11,8 @@ table sits 0x610 bytes after the course one in the v3.0.3 main executable.
 A slot written by level_install has a thumbnail copied from another slot,
 not a picture of its own course: the CLI refuses a thumbnail that is byte for
 byte another slot's (the game encrypts each save with a fresh iv, so equal
-files are copies) unless --allow-copy is given.
+files are copies, and which one was the original is not known) unless
+--allow-copy is given.
 
 Usage:
     python3 course_thumb.py 36 /tmp/slot_36.jpg
@@ -98,7 +99,7 @@ def main():
     copies = [] if args.allow_copy else copied_from(path, data)
     if copies:
         print(f"Error: {os.path.basename(path)} is the same file as {', '.join(copies[:3])}"
-              f"{' ...' if len(copies) > 3 else ''}: a copied thumbnail, not this course's"
+              f"{' ...' if len(copies) > 3 else ''}: a copied thumbnail, likely another course's"
               " (--allow-copy writes it anyway)", file=sys.stderr)
         sys.exit(1)
     jpeg = decrypt_thumb(data)
