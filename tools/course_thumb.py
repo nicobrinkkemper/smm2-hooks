@@ -70,11 +70,18 @@ def decrypt_thumb(data):
 
 
 def copied_from(path, data):
-    """The other thumbnail files in the save that hold exactly these bytes."""
-    others = glob.glob(os.path.join(os.path.dirname(path), 'course_thumb_*.btl*'))
-    return sorted(os.path.basename(o) for o in others
-                  if os.path.abspath(o) != os.path.abspath(path)
-                  and os.path.getsize(o) == len(data) and open(o, 'rb').read() == data)
+    """The other slots' thumbnail files in the save that hold exactly these
+    bytes (this slot's own backups, such as .orig, do not count)."""
+    own = os.path.basename(path)
+    found = []
+    for o in glob.glob(os.path.join(os.path.dirname(path), 'course_thumb_*.btl*')):
+        name = os.path.basename(o)
+        if name.startswith(own) or os.path.getsize(o) != len(data):
+            continue
+        with open(o, 'rb') as f:
+            if f.read() == data:
+                found.append(name)
+    return sorted(found)
 
 
 def main():
