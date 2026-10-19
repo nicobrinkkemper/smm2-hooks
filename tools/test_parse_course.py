@@ -6,7 +6,9 @@ import io
 import os
 import sys
 import tempfile
+import json
 import unittest
+from unittest import mock
 from contextlib import redirect_stdout
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -73,6 +75,29 @@ class Parsing(unittest.TestCase):
         for a in course['overworld']['actors']:
             self.assertGreaterEqual(a['w'], 1)
             self.assertGreaterEqual(a['h'], 1)
+
+
+class GeneratorJson(unittest.TestCase):
+    def test_json_matches_parse_course_without_a_save_dir(self):
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(gen, 'get_save_paths', side_effect=AssertionError('save dir touched')), \
+                mock.patch.object(sys, 'argv', ['gen_test_levels.py', '--json', d]), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(gen.main(), 0)
+            slots = sorted(os.listdir(d))
+            self.assertEqual(slots, sorted(f'slot_{n}.json' for n in gen.TEST_LEVELS))
+            for n in (10, min(gen.TEST_LEVELS)):
+                with open(os.path.join(d, f'slot_{n}.json')) as f:
+                    got = json.load(f)
+                want = json.loads(json.dumps(parse_built(gen.TEST_LEVELS[n][1]), default=str))
+                self.assertEqual(got, want)
+
+    def test_slot_writes_only_that_slot(self):
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(sys, 'argv', ['gen_test_levels.py', '--json', d, '--slot', '10']), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(gen.main(), 0)
+            self.assertEqual(os.listdir(d), ['slot_10.json'])
 
 
 class Rendering(unittest.TestCase):
