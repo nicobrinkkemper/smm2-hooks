@@ -2597,8 +2597,23 @@ def level_claw_goomba() -> LevelBuilder:
     return b
 
 
+def level_json(builder_func):
+    """The level as parse_course.py --json prints it, from the generator's own bytes."""
+    import json
+    import tempfile
+    import parse_course
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, 'course_data_000.bcd')
+        with open(path, 'wb') as f:
+            f.write(encrypt_course(builder_func().build()))
+        course = parse_course.parse_course(parse_course.decrypt_course(path))
+    return json.dumps(course, indent=2, default=str) + '\n'
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate SMM2 test levels')
+    parser.add_argument('--json', metavar='DIR',
+                        help="Write each level as DIR/slot_N.json (parse_course --json shape); needs no save dir, writes no save")
     parser.add_argument('--dry-run', action='store_true', help="Preview only")
     parser.add_argument('--list', action='store_true', help="List test levels")
     parser.add_argument('--slot', type=int, help="Generate only this slot")
@@ -2612,6 +2627,18 @@ def main():
             print(f"  {slot}: {name}")
         return 0
     
+    if args.json:
+        out_dir = Path(args.json)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for slot in [args.slot] if args.slot is not None else sorted(TEST_LEVELS):
+            if slot not in TEST_LEVELS:
+                print(f"Slot {slot}: not defined, skipping")
+                continue
+            out_file = out_dir / f"slot_{slot}.json"
+            out_file.write_text(level_json(TEST_LEVELS[slot][1]))
+            print(f"Slot {slot}: Written {out_file}")
+        return 0
+
     save_paths = get_save_paths()
     if not save_paths:
         print("Error: No save paths found!")
