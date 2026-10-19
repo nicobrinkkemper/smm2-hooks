@@ -2766,6 +2766,17 @@ def level_wall_3dw() -> LevelBuilder:
 OBJ_BIG_MUSHROOM = 44   # the style's own power-up: SMB3's leaf, SMW's feather, NSMBU's propeller, 3D World's bell
 
 
+@test_level(127, "Cat 3DW")
+def level_cat_3dw() -> LevelBuilder:
+    """Recording batch 8 (smm2-decomp todo item 9, the Cat): Wall 3DW's runway
+    and wall with the style's own power-up (object 44, the Super Bell) at
+    tile 8: the Cat's scratch, its dive, its slide, the climb up the wall."""
+    b = _runway("Cat 3DW", "3DW")
+    b.add_ground_block(20, 21, y_surface=16, height=12)
+    b.add_actor(OBJ_BIG_MUSHROOM, 8, 5)
+    return b
+
+
 @test_level(125, "Cape SMW")
 def level_cape_smw() -> LevelBuilder:
     """Recording batch 7 (smm2-decomp todo item 9, the suits): the 120-tile
