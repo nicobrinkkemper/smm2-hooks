@@ -95,6 +95,25 @@ Output: `build/exefs/subsdk4` (the mod, also `build/smm2-hooks.nso`) and
 - `tools/` — the scripts the server wraps (`emu_session.py`, `smm2.py`,
   `boot_to_editor.py`, `automate.py`, `gen_test_levels.py`, `parse_course.py`).
 
+Common tasks, from an agent (MCP tools) or a shell (`mcp/ctl.py <tool> '<json args>'`):
+
+- **Look at a course in the editor:** `game_boot` with `target: "editor"`
+  and `file` (a `.bcd`, a dataset `.zlib` or a plain body), plus
+  `sub_area: true` for the sub area. It opens the editor in ~15 s, never passes
+  Coursebot, and installs nothing, so nothing can be deleted:
+
+      mcp/ctl.py game_boot '{"target":"editor","file":"/path/3002534.zlib","sub_area":true}'
+
+- **Get a real uploaded course:** `python3 tools/hf_course.py <data_id> -o <dir>`
+  fetches it from the TheGreatRambler/mm2_level dataset (26.6M courses, up to 2022).
+  Real courses pass the game's own checks; generated ones may not.
+- **Move around the editor:** `game_input` with `"X"` (finger cursor), then
+  `{"stick":"0,32767","ms":5000}` scrolls up.
+- **Play a course in Coursebot:** `level_install` into a slot, then
+  `game_boot` with `target: "coursebot"` and that slot. A Coursebot visit deletes
+  courses the game finds invalid, so every boot first backs up all slots to
+  `~/.cache/smm2-hooks/slot-backups` and warns when one changed.
+
 Eden here runs portable: its config and log live in `Documents/eden/user/`,
 while NAND, SD and mods sit under `AppData/Roaming/eden` as named in that
 config. The MCP reads the config; `emu_session.py` still edits the AppData ini
