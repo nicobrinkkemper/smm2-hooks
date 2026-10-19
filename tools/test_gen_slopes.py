@@ -68,6 +68,16 @@ class SlopeRecords(unittest.TestCase):
                 changed += want[cell] != without[cell]
         self.assertGreater(changed, 0)
 
+    def test_subworld_slope_counts(self):
+        """No course has a subworld slope, so build one: the floor under its
+        foot is not a top, the subworld's own slope covers it."""
+        b = gen.LevelBuilder("x")
+        b.add_slope(12, 4, rise=4, steep=True)
+        b.sub_objects.append(b.objects.pop())
+        b.sub_ground_tiles += [(x, y) for x in range(7, 25) for y in range(5 if x < 12 else 4)]
+        tiles = {(t['x'], t['y']): t['id'] for t in pc.parse_course(b.build())['subworld']['tiles']}
+        self.assertNotEqual(tiles[(12, 3)], autotile.autotile_ground(tiles)[(12, 3)])
+
     def test_preflight_refuses(self):
         def course(*objects, ground=()):
             b = gen.LevelBuilder("x")
