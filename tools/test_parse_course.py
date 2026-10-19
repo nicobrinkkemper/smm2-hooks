@@ -88,8 +88,8 @@ class GeneratorJson(unittest.TestCase):
             self.assertEqual(slots, sorted(f'slot_{n}.json' for n in gen.TEST_LEVELS))
             for n in (10, min(gen.TEST_LEVELS)):
                 with open(os.path.join(d, f'slot_{n}.json')) as f:
-                    got = json.load(f)
-                want = json.loads(json.dumps(parse_built(gen.TEST_LEVELS[n][1]), default=str))
+                    got = f.read()
+                want = json.dumps(parse_built(gen.TEST_LEVELS[n][1]), indent=2, default=str) + '\n'
                 self.assertEqual(got, want)
 
     def test_slot_writes_only_that_slot(self):
