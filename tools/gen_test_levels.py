@@ -85,8 +85,6 @@ OBJ_DOTTED_LINE = 100
 OBJ_FIRE_FLOWER = 34
 OBJ_SUPER_STAR = 35
 OBJ_MUNCHER = 57
-OBJ_SLOPE_GENTLE = 44  # Gentle slope
-OBJ_SLOPE_STEEP = 45   # Steep slope
 OBJ_NOTE_BLOCK = 23    # Note block (music block is the same id with a flag)
 OBJ_DOOR = 55          # Door; doors pair 2k with 2k+1 WITHIN one area
 OBJ_PIPE = 9           # Warp pipe; pipes pair by link (bits 20-23) and are
@@ -98,6 +96,7 @@ PIPE_RIGHT_LINK1 = 0x6140000  # mouth right (bits 5-6 = 0), link 1
 # Object flags (community BCD sheet, "Flags for Objects"). 0x40 and 0x6000000
 # are set on every object; the generator's default 0x06000040 is exactly that.
 FLAG_WINGS = 0x2
+FLAG_DESCENDING = 0x100000  # a slope that descends to the right
 FLAG_ON_TRACK = 0x400
 FLAG_TRACK_LEFT = 0x100000
 FLAG_TRACK_VERTICAL = 0x200000
@@ -278,28 +277,27 @@ class LevelBuilder:
                 '_half_tile_offset': True,
             })
     
-    def add_slope(self, x: int, y: int, width: int, height: int, steep: bool = False,
+    def add_slope(self, x: int, y: int, rise: int, steep: bool = False,
                   descending: bool = False):
-        """Add a slope object.
-        
-        Slopes are objects (not ground tiles) with IDs 87 (slight) or 88 (steep).
-        Coordinates are in tiles. Slopes need +0.5 tile offset (placed at tile centers).
-        (x, y) is the box's bottom-left tile; the surface runs from the box's
-        top corner to the opposite bottom corner, 1:1 steep and 1:2 slight
-        (a steep slope is w x (w-1)). Without `descending` it rises to the
-        right; with it, flag 0x100000 (uploaded courses: every slope of the
-        SMB3 slide 4067530 carries it and descends).
+        """Add a slope object, 88 steep or 87 gentle, climbing `rise` rows.
+
+        (x, y) is the box's bottom-left tile; the record sits at the tile's
+        centre. The width follows from the rise (slope_width): the game
+        writes every steep slope rise + 1 wide, its last column the top end
+        cap, and every gentle one 2 * rise wide. Without `descending` it
+        rises to the right; with it, flag 0x100000 (uploaded courses: every
+        slope of the SMB3 slide 4067530 carries it and descends).
         """
         self.objects.append({
             'id': OBJ_STEEP_SLOPE if steep else OBJ_SLIGHT_SLOPE,
             'x': x,
             'y': y,
-            'width': width,
-            'height': height,
-            'flags': 0x06100040 if descending else 0x06000040,
+            'width': slope_width(rise, steep),
+            'height': rise,
+            'flags': 0x06000040 | (FLAG_DESCENDING if descending else 0),
             '_half_tile_offset': True,  # Flag for build() to add +80 units
         })
-    
+
     def add_coin(self, x: int, y: int):
         """Add a coin."""
         self.objects.append({
@@ -384,7 +382,8 @@ class LevelBuilder:
     def preflight(self):
         """Refuse what Coursebot is known to delete, before an Eden round trip:
         a track piece (its 3x3 box) or an object inside the start area, and
-        any object, tile, slope or track reaching the goal area."""
+        any object, tile, slope or track reaching the goal area; and a slope
+        record the game never writes (slope_errors)."""
         bad = []
         g = self.goal_area_start()
         go = self.goal_area_start(objects=True)
@@ -405,6 +404,8 @@ class LevelBuilder:
         for o in self.objects:
             if o['x'] < self.START_AREA_TILES:
                 bad.append(f"object id {o['id']} at ({o['x']}, {o['y']}) is in the start area (x < {self.START_AREA_TILES})")
+        bad += slope_errors(self.objects, self.ground_tiles)
+        bad += slope_errors(self.sub_objects, self.sub_ground_tiles)
         if bad:
             raise ValueError(f"{self.name}: " + "; ".join(bad))
 
@@ -481,6 +482,50 @@ class LevelBuilder:
 # ═══════════════════════════════════════════════════════════════════════════
 
 TEST_LEVELS = {}
+
+def slope_width(rise: int, steep: bool) -> int:
+    """A slope's width from the rows it climbs, as the game writes it: steep
+    rise + 1 (the last column is the top end cap), gentle 2 * rise (255
+    steep and 235 gentle records in uploaded and editor-saved courses, no
+    exception)."""
+    return rise + 1 if steep else 2 * rise
+
+
+def slope_band(x: int, y: int, width: int, height: int, steep: bool,
+               descending: bool) -> set:
+    """The cells a slope's surface owns, which ground must leave empty (no
+    game-saved course has a ground tile on one): counted from the low end,
+    column c owns rows rise and rise - 1 of the box, rise = c steep and
+    (c + 1) // 2 gentle."""
+    cells = set()
+    for dx in range(width):
+        c = width - 1 - dx if descending else dx
+        rise = c if steep else (c + 1) // 2
+        cells.update((x + dx, y + dy) for dy in (rise, rise - 1) if 0 <= dy < height)
+    return cells
+
+
+def slope_errors(objects: list, ground: list) -> list:
+    """What is wrong with an area's slope records: a width the game never
+    writes for the height, a slope under two rows, ground on its surface."""
+    tiles = set(ground)
+    bad = []
+    for o in objects:
+        if o['id'] not in (OBJ_STEEP_SLOPE, OBJ_SLIGHT_SLOPE):
+            continue
+        steep = o['id'] == OBJ_STEEP_SLOPE
+        w, h = o.get('width', 1), o.get('height', 1)
+        at = f"{'steep' if steep else 'gentle'} slope at ({o['x']}, {o['y']}) {w}x{h}"
+        if h < 2:
+            bad.append(f"{at} is under two rows tall")
+        if w != slope_width(h, steep):
+            bad.append(f"{at} is not {slope_width(h, steep)} wide")
+        on = sorted(tiles & slope_band(o['x'], o['y'], w, h, steep,
+                                       bool(o.get('flags', 0) & FLAG_DESCENDING)))
+        if on:
+            bad.append(f"{at} has ground on its surface at {on}")
+    return bad
+
 
 def _beyond(x, y, width, height):
     """Past the area's left, right or top edge, which the editor tiles as ground."""
@@ -620,25 +665,7 @@ def level_one_slope() -> LevelBuilder:
     """Flat Ground with one steep slope object on the floor."""
     b = LevelBuilder("One Slope", "SMB1", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
-    b.add_slope(12, 5, width=4, height=4, steep=True)
-    b.goal_y = 5
-    return b
-
-
-def _one_slope(name: str, flags: int = 0x06000040, ex: int = 0, cflags: int = 0x06000040, x: int = 12, y: int = 5, res: int = 0) -> LevelBuilder:
-    """A flat floor with one steep slope object. Coursebot accepts only the
-    default flags (0x06000040), the default child flags and ex 0 on a slope:
-    flags 0x4, 0x8, 0x10, 0x18, 0x20, 0x40000, 0x400000, ex 1 and child
-    flags 0x10 / 0x20 were each deleted (2026-09-03), so the slope's
-    direction is not in those fields. Moving the anchor (x 15 keeps the tall
-    face at the anchor column; y 8 floats the slope at rows 8..11) and the
-    16-bit word after y (1 or 2, accepted and ignored) do not turn it
-    either: x is the left column, y the bottom row, and the direction is not
-    in the record's fields."""
-    b = LevelBuilder(name, "SMB1", "Ground")
-    b.add_ground_block(7, 24, y_surface=4, height=5)
-    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': x, 'y': y, 'width': 4, 'height': 4,
-                      'flags': flags, 'ex': ex, 'cflags': cflags, 'res': res, '_half_tile_offset': True})
+    b.add_slope(12, 5, rise=4, steep=True)
     b.goal_y = 5
     return b
 
@@ -646,43 +673,44 @@ def _one_slope(name: str, flags: int = 0x06000040, ex: int = 0, cflags: int = 0x
 @test_level(33, "Steep Slope Up")
 def level_steep_slope_up() -> LevelBuilder:
     """A steep slope rising to the right, drawn into the floor the way the
-    editor does it: the floor under the slope's 4x4 footprint stops at row
-    3, the slope object at (12, 4) supplies the surface row there (its foot
-    tile is a full block, the diagonal rises over the next three columns),
-    and a column at tiles 16..24 with its top at row 7 meets the ramp's
-    top. A slope overlapping ground tiles is deleted by Coursebot."""
+    editor does it (a course re-saved in the editor has the same shape): the
+    slope object at (12, 4) climbs four rows over columns 12..16, its foot
+    tile on the floor's row and its last column the top end cap at (16, 7).
+    The floor under the ramp stops at row 3, the cap's column at row 6 under
+    the cap, and a column from tile 17 with its top at row 7 meets the
+    ramp's top. A slope overlapping ground tiles is deleted by Coursebot."""
     b = LevelBuilder("Steep Slope Up", "SMB1", "Ground")
     b.add_ground_block(7, 11, y_surface=4, height=5)
     b.add_ground_block(12, 15, y_surface=3, height=4)
-    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': 12, 'y': 4, 'width': 4, 'height': 4,
-                      'flags': 0x06000040, '_half_tile_offset': True})
-    b.add_ground_block(16, 24, y_surface=7, height=8)
+    b.add_slope(12, 4, rise=4, steep=True)
+    b.add_ground_block(16, 16, y_surface=6, height=7)
+    b.add_ground_block(17, 24, y_surface=7, height=8)
     b.goal_y = 8
     return b
 
 
 @test_level(34, "Steep Slope, nothing after")
 def level_steep_slope_open() -> LevelBuilder:
-    """The 4x4 steep slope drawn into the floor with nothing at its top:
-    the floor beyond continues one row lower."""
+    """The steep slope of Steep Slope Up drawn into the floor with nothing at
+    its top: the floor beyond continues one row lower, under the end cap."""
     b = LevelBuilder("Steep Slope Open", "SMB1", "Ground")
     b.add_ground_block(7, 11, y_surface=4, height=5)
     b.add_ground_block(12, 24, y_surface=3, height=4)
-    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': 12, 'y': 4, 'width': 4, 'height': 4,
-                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_slope(12, 4, rise=4, steep=True)
     b.goal_y = 4
     return b
 
 
 def _steep_slope(name: str, style: str) -> LevelBuilder:
-    """A 5x5 steep slope drawn into the floor, meeting a column whose top
-    is at the ramp's top row."""
+    """A steep slope climbing five rows (columns 12..17), drawn into the
+    floor, its end cap at (17, 8) over a column topped at row 7, meeting a
+    column whose top is at the ramp's top row."""
     b = LevelBuilder(name, style, "Ground")
     b.add_ground_block(7, 11, y_surface=4, height=5)
     b.add_ground_block(12, 16, y_surface=3, height=4)
-    b.objects.append({'id': OBJ_STEEP_SLOPE, 'x': 12, 'y': 4, 'width': 5, 'height': 5,
-                      'flags': 0x06000040, '_half_tile_offset': True})
-    b.add_ground_block(17, 24, y_surface=8, height=9)
+    b.add_slope(12, 4, rise=5, steep=True)
+    b.add_ground_block(17, 17, y_surface=7, height=8)
+    b.add_ground_block(18, 24, y_surface=8, height=9)
     b.goal_y = 9
     return b
 
@@ -706,8 +734,7 @@ def _gentle_slope(name: str, style: str) -> LevelBuilder:
     b = LevelBuilder(name, style, "Ground")
     b.add_ground_block(7, 11, y_surface=4, height=5)
     b.add_ground_block(12, 19, y_surface=3, height=4)
-    b.objects.append({'id': OBJ_SLIGHT_SLOPE, 'x': 12, 'y': 4, 'width': 8, 'height': 4,
-                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_slope(12, 4, rise=4)
     b.add_ground_block(20, 24, y_surface=7, height=8)
     b.goal_y = 8
     return b
@@ -750,12 +777,15 @@ def level_jump_platforms() -> LevelBuilder:
 def level_slopes() -> LevelBuilder:
     """Slope physics testing using actual slope objects."""
     b = LevelBuilder("Slope Test", "SMB1", "Ground")
-    # Start flat ground
-    b.add_ground_block(7, 10, y_surface=4, height=5)
+    # Start flat ground; under the steep slope's foot (8, 4) and its next
+    # column (9, 4) the floor stops a row lower, out of the slope's surface.
+    b.add_ground_block(7, 7, y_surface=4, height=5)
+    b.add_ground_block(8, 9, y_surface=3, height=4)
+    b.add_ground_block(10, 10, y_surface=4, height=5)
     # Steep slope going up (id=88)
-    b.add_slope(8, 4, width=5, height=4, steep=True)
-    # Slight slope going up (id=87) 
-    b.add_slope(13, 7, width=8, height=4, steep=False)
+    b.add_slope(8, 4, rise=4, steep=True)
+    # Slight slope going up (id=87)
+    b.add_slope(13, 7, rise=4)
     # End ground near goal
     b.add_ground_fill(21, 23, 10)
     b.start_y = 5
@@ -1515,28 +1545,28 @@ def level_slope_walk() -> LevelBuilder:
     for x, top in [(13, 11), (14, 10), (15, 10), (16, 9), (17, 8), (18, 7), (19, 6), (20, 5)]:
         for y in range(0, top + 1):
             b.add_ground_fill(x, x, y)
-    b.add_slope(13, 11, width=4, height=2, steep=False, descending=True)
-    b.add_slope(15, 7, width=6, height=5, steep=True, descending=True)
+    b.add_slope(13, 11, rise=2, descending=True)
+    b.add_slope(15, 7, rise=5, steep=True, descending=True)
     b.add_ground_block(21, 26, y_surface=5, height=6)
     # B: the slope box (rows 4-5) and row 3 stay empty; floor at row 2.
     for x in range(27, 31):
         for y in range(0, 3):
             b.add_ground_fill(x, x, y)
-    b.add_slope(27, 4, width=4, height=2, steep=False, descending=True)
+    b.add_slope(27, 4, rise=2, descending=True)
     b.add_ground_block(31, 38, y_surface=4, height=5)
     # C: rising steep 4x3 at (39,4): the line runs (40,5)->(42,7), column 39
     # is its ledge at 5, the plateau at 7.
     for x, top in [(39, 3), (40, 3), (41, 4), (42, 5)]:
         for y in range(0, top + 1):
             b.add_ground_fill(x, x, y)
-    b.add_slope(39, 4, width=4, height=3, steep=True)
+    b.add_slope(39, 4, rise=3, steep=True)
     b.add_ground_block(43, 48, y_surface=6, height=7)
     # D: rising slight 4x2 at (49,6): column 49 is its ledge at 7 (the
     # plateau height), the line runs (50,7)->(52,8), the goal ground at 8.
     for x, top in [(49, 5), (50, 5), (51, 5), (52, 6)]:
         for y in range(0, top + 1):
             b.add_ground_fill(x, x, y)
-    b.add_slope(49, 6, width=4, height=2, steep=False)
+    b.add_slope(49, 6, rise=2)
     b.add_ground_block(53, 69, y_surface=7, height=8)
     b.goal_y = 8
     return b
@@ -2106,12 +2136,10 @@ def level_slide_ledge_smb3() -> LevelBuilder:
     b.width = 100
     b.add_ground_block(7, 11, y_surface=4, height=5)
     b.add_ground_block(12, 19, y_surface=3, height=4)
-    b.objects.append({'id': OBJ_SLIGHT_SLOPE, 'x': 12, 'y': 4, 'width': 8, 'height': 4,
-                      'flags': 0x06000040, '_half_tile_offset': True})
+    b.add_slope(12, 4, rise=4)
     b.add_ground_block(20, 24, y_surface=7, height=8)
     b.add_ground_block(25, 32, y_surface=3, height=4)
-    b.objects.append({'id': OBJ_SLIGHT_SLOPE, 'x': 25, 'y': 4, 'width': 8, 'height': 4,
-                      'flags': 0x06100040, '_half_tile_offset': True})
+    b.add_slope(25, 4, rise=4, descending=True)
     b.add_ground_block(33, 33, y_surface=4, height=5)
     b.add_ground_block(36, 89, y_surface=1, height=2)
     b.goal_y = 2
