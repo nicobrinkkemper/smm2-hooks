@@ -48,7 +48,7 @@ to turn it off. Without it, the mod behaves as before.
    It saves `<game frame>.png` (the whole client area: Eden's menu bar, the
    picture, the status bar) and writes ack = 0xFFFFFFFF when it is done, so the
    game runs free again.
-4. Boot the course: `mcp/ctl.py game_boot '{"target":"coursebot","slot":<n>}'`
+4. Boot the course: `mcp/.venv/bin/python mcp/ctl.py game_boot '{"target":"coursebot","slot":<n>}'`
    (direct boot). The first held frame is the player's first frame.
 5. Sim frames: serve a smm2-sim build (`npx vite build`, then
    `mcp/scripts/devserver.sh start-static <smm2-sim>/dist/static <port>` from
