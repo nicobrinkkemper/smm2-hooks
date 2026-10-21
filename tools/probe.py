@@ -933,15 +933,17 @@ def mod_hooks() -> dict[int, list[str]]:
         m = re.match(r"\s*(\S+)\s*=\s*(0x[0-9A-Fa-f]+)", line)
         if m:
             syms[m.group(1)] = MAIN_BASE + int(m.group(2), 16)
+    main_cpp = (root / "src/main.cpp").read_text()
+    started = set(re.findall(r"^\s*smm2::(\w+)::init\(", main_cpp, re.M))   # plugins main starts
     found: dict[int, list[str]] = {}
-    for src in sorted((root / "src").glob("*.cpp")):
-        if src.name == "probe.cpp":
+    for src in sorted((root / "src").rglob("*.cpp")):
+        if src.name == "probe.cpp" or src.stem not in started:
             continue
         text = "\n".join(l for l in src.read_text().splitlines() if not l.lstrip().startswith("//"))
         addrs = [syms[n] for n in re.findall(r'installAtSym<"([^"]+)">', text) if n in syms]
         addrs += [MAIN_BASE + int(o, 16) for o in re.findall(r"installAtOffset\(\s*\w+\s*,\s*(0x[0-9A-Fa-f]+)", text)]
         for a in addrs:
-            found.setdefault(a, []).append(f"src/{src.name}")
+            found.setdefault(a, []).append(str(src.relative_to(root)))
     return found
 
 

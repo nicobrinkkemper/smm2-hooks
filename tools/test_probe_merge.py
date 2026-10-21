@@ -48,6 +48,9 @@ class ModHooks(unittest.TestCase):
         self.assertIn("src/status.cpp", taken[0x71015E3FB0])        # PlayerObject_changeState, every boot
         self.assertIn("src/ui_probe.cpp", taken[0x71008B9320])      # StateMachine::changeState, while capturing
         self.assertNotIn(0x71015D3CC0, taken)                      # the presets' player hook is free
+        self.assertIn("src/hooks/rng_trace.cpp", taken[0x710029A0B0])  # a plugin in a subfolder
+        self.assertIn("src/theme_override.cpp", taken[0x7100E3BA90])   # CourseDataCopy, while theme.txt is set
+        self.assertFalse(any("func_trace" in f for files in taken.values() for f in files))  # main never starts it
 
 
 if __name__ == "__main__":
