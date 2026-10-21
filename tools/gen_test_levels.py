@@ -2819,6 +2819,33 @@ def _long_run(name: str, style: str) -> LevelBuilder:
     return b
 
 
+def _goal_pole(name: str, style: str) -> LevelBuilder:
+    b = LevelBuilder(name, style, "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(116, "Goal Pole SMB1")
+def level_goal_pole_smb1() -> LevelBuilder:
+    """smm2-decomp item 6g (the goal as the game's): flat SMB1 ground up to
+    the goal; Mario runs into the pole. Record with `player` and the
+    `goaldemo` preset (the demo, its pole and the player's goal phase)."""
+    return _goal_pole("Goal Pole SMB1", "SMB1")
+
+
+@test_level(117, "Goal Pole NSMBU")
+def level_goal_pole_nsmbu() -> LevelBuilder:
+    """The Goal Pole course in NSMBU: the back jump off the pole."""
+    return _goal_pole("Goal Pole NSMBU", "NSMBU")
+
+
+@test_level(118, "Goal Pole 3DW")
+def level_goal_pole_3dw() -> LevelBuilder:
+    """The Goal Pole course in 3D World: its climb and back jump."""
+    return _goal_pole("Goal Pole 3DW", "3DW")
+
+
 @test_level(120, "Long Run NSMBU")
 def level_long_run_nsmbu() -> LevelBuilder:
     """Recording batch 5 (smm2-decomp item 4, Walk's clips): the 120-tile

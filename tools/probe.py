@@ -760,6 +760,38 @@ field player walkf u32 0x27B8
 field player gkind u32 0x22E4
 field player power u32 0x4A8
 """,
+    # The goal cutscene (smm2-decomp item 6g): the goal demo's execute
+    # sub_71012CA810 (x0 = the demo, vtable 0x7102918FD8: its state machine
+    # +0x70, the state at +0x78; the counters +0xC8/+0xCC/+0xD0 it counts
+    # down after the state ran, +0x58 counted up), its pole (+0xB8,
+    # MapObjGoalPole: the machine +0xB68, state +0xB70; the flag +0xAC4,
+    # the drop +0xB10, the release +0xB40, done +0xB41, the kind +0xB48)
+    # and the first player through the goal record qword_7102C19290 +0x28
+    # (the goal phase +0x2478, its wait +0x247C). Record with 'player,goaldemo'.
+    "goaldemo": """\
+hook goaldemo 0x71012CA810
+field goaldemo dstate u32 0x78
+field goaldemo dstfr  u32 0x7C
+field goaldemo d58    u32 0x58
+field goaldemo dc8    u32 0xC8
+field goaldemo dcc    u32 0xCC
+field goaldemo dd8    u32 0xD8
+field goaldemo pstate u32 0xB8>0xB70
+field goaldemo flag   f32 0xB8>0xAC4
+field goaldemo drop   f32 0xB8>0xB10
+field goaldemo b40    u8  0xB8>0xB40
+field goaldemo b41    u8  0xB8>0xB41
+field goaldemo kind   u32 0xB8>0xB48
+field goaldemo pole_x f32 0xB8>0x230
+field goaldemo pole_y f32 0xB8>0x234
+field goaldemo phase  u32 @0x7102C19290>0x28>0x2478
+field goaldemo wait   u32 @0x7102C19290>0x28>0x247C
+field goaldemo pstat  u32 @0x7102C19290>0x28>0x3F8
+field goaldemo sm2    u32 @0x7102C19290>0x28>0x440
+field goaldemo pl_x   f32 @0x7102C19290>0x28>0x230
+field goaldemo pl_y   f32 @0x7102C19290>0x28>0x234
+field goaldemo f4a0   u32 @0x7102C19290>0x28>0x4A0
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
