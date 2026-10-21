@@ -829,6 +829,35 @@ field item big   u32 0xD24
 field item slot  u32 0xD28
 field item gone  u8  0x52
 """,
+    # The springs (smm2-decomp src/game/mapobj): the spring's execute
+    # sub_71013B8430 (JumpdaiExecute.cpp) and the sideways spring's
+    # sub_71013DA5D0 (SideJumpdaiExecute.cpp), x0 = the actor: its place, the
+    # squash / the push (+0x16A8, +0x16AC). And the player's words the
+    # 'player' preset does not read, after his frame start (slot 8,
+    # sub_710158A3F0): the speed the states drive (+0x274), the facing
+    # (+0x26C), the launch's +0x2E4, the last pass's contact word (+0x2310)
+    # and +0x2728. Record with 'player,spring'.
+    "spring": """\
+hook pstart 0x710158A3F0
+field pstart pos_x f32 0x230
+field pstart pos_y f32 0x234
+field pstart spd   f32 0x274
+field pstart vel_y f32 0x240
+field pstart face  u32 0x26C
+field pstart state u32 0x3F8
+field pstart l2e4  u32 0x2E4
+field pstart w2310 u32 0x2310
+field pstart w2728 u32 0x2728
+hook spring 0x71013B8430
+field spring pos_x  f32 0x230
+field spring pos_y  f32 0x234
+field spring squash f32 0x16AC
+hook sidespring 0x71013DA5D0
+field sidespring pos_x f32 0x230
+field sidespring pos_y f32 0x234
+field sidespring pushx f32 0x16A8
+field sidespring pushy f32 0x16AC
+""",
     # What holds an enemy's move while the player's power changes (the
     # holds actor_move and its move step test, src/game/actor/ActorMove.cpp
     # and ActorMoveStep.cpp in the decomp): +0x52C bits 20 / 22, +0x530

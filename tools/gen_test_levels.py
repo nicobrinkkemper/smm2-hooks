@@ -1857,6 +1857,64 @@ def level_walk_in() -> LevelBuilder:
     return b
 
 
+OBJ_SPRING = 10          # Jumpdai (smm2-decomp MapObjJumpdai, runtime type 48)
+FLAG_SIDE_SPRING = 0x4  # the record's alternate bit: the sideways spring (runtime type 70)
+
+
+def _spring(b: LevelBuilder, x: int, y: int, side: bool = False):
+    """A spring record as Hot Gallery's (level 81) is: a sized object, width
+    and height 1 (add_actor leaves them out, and the game refused the course)."""
+    b.objects.append({'id': OBJ_SPRING, 'x': x, 'y': y, 'width': 1, 'height': 1,
+                      'flags': 0x06000040 | (FLAG_SIDE_SPRING if side else 0), '_half_tile_offset': True})
+
+
+@test_level(110, "Spring Walk")
+def level_spring_walk() -> LevelBuilder:
+    """One spring (record 10) in a one-tile pit at column 9, its top flush
+    with the flat SMB1 ground, four tiles right of the start: walked onto
+    from the start with no jump, for the launch (no button, B held from the
+    landing on it, B pressed after the launch). Record with
+    `player,spring` (smm2-decomp's test_spring)."""
+    b = LevelBuilder("Spring Walk", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 8, y_surface=4, height=5)
+    b.add_ground_block(9, 9, y_surface=3, height=4)
+    b.add_ground_block(10, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    _spring(b, 9, 4)
+    return b
+
+
+@test_level(111, "Side Spring")
+def level_side_spring() -> LevelBuilder:
+    """One sideways spring (record 10 with the alternate bit 0x4) on flat SMB1
+    ground at column 10: walked into from the start and pushed against
+    (smm2-decomp's test_side_spring). Record with `player,spring`."""
+    b = LevelBuilder("Side Spring", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=4, height=5)
+    b.goal_y = 5
+    _spring(b, 10, 5, side=True)
+    return b
+
+
+@test_level(112, "Side Spring Ledge")
+def level_side_spring_ledge() -> LevelBuilder:
+    """The sideways spring on ground two tiles below the start area (surface
+    2, from column 7), at column 10: the player walks off the start ledge and
+    into the spring, whose push slides him back to the ledge's face, where
+    he stops (recorded 2026-10-21: side-spring-push-ledge). Not the far-side
+    wall case (a player already against a wall when pushed): with the spring
+    one tile from the face he fell onto its top instead. Record with
+    `player,spring`."""
+    b = LevelBuilder("Side Spring Ledge", "SMB1", "Ground")
+    b.width = 48
+    b.add_ground_block(7, 30, y_surface=2, height=3)
+    b.goal_y = 3
+    _spring(b, 10, 3, side=True)
+    return b
+
+
 @test_level(77, "Enemy Zoo")
 def level_enemy_zoo() -> LevelBuilder:
     """More walking enemies for the walking-enemy oracle, each boxed in its own
