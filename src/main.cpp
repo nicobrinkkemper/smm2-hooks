@@ -116,8 +116,8 @@ extern "C" void hkMain() {
     smm2::xlink2_enum::init();      // captures xlink2 enum definitions
     smm2::sim_trace::init();        // per-frame player trace for sim comparison
     smm2::placeholder_debug::init(); // force spikeballs into placeholder state
-    smm2::probe::init();
     smm2::theme_override::init();   // sd:/smm2-hooks/theme.txt: every course loads with that theme
     smm2::hold::init();             // sd:/smm2-hooks/hold.txt: wait after each frame for the host
-    smm2::directboot::init();       // sd:/smm2-hooks/boot.txt: skip the title and menus            // sd:/smm2-hooks/probe.txt -> probe.log (docs/probe.md)
+    smm2::directboot::init();       // sd:/smm2-hooks/boot.txt: skip the title and menus
+    smm2::probe::init();            // last: it skips functions the plugins above hooked (docs/probe.md)
 }

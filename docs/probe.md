@@ -62,6 +62,17 @@ course's terrain. Boot the course, let the log flush, quit.
 
 ## Rules
 
+- **One hook per function, the mod's own included.** A plugin of the mod
+  may already hook the function (`status.cpp` hooks the player's
+  change-state entry `0x71015E3FB0` on every boot; `ui_probe.cpp` hooks
+  `Lp::Utl::StateMachine::changeState` and others while `ui-probe.txt`
+  says `capture`). The mod then refuses the probe's hook and the `H` line
+  says `hooked`: a second trampoline would copy the first one's branch into
+  its own pool, where it no longer reaches its target, and the game hangs
+  on the first call. `probe.py check` warns about the addresses the source
+  hooks. Hook a caller or a callee instead: the change-state entry stores
+  its arguments and calls `StateMachine::changeState` with `x1`, `x2`
+  intact, so a probe there sees the same values.
 - **First instruction must not be PC-relative.** hakkun's trampoline copies
   the function's first instruction into the backup verbatim; `adrp`, `b`,
   `bl`, `b.cond`, `cbz`, `tbz` and literal loads would execute from the wrong
