@@ -792,6 +792,31 @@ field goaldemo pl_x   f32 @0x7102C19290>0x28>0x230
 field goaldemo pl_y   f32 @0x7102C19290>0x28>0x234
 field goaldemo f4a0   u32 @0x7102C19290>0x28>0x4A0
 """,
+    # The player's collision pass sub_7101592B70 (x0 = the player), read
+    # after it ran (smm2-decomp 6g g4: where the goal pole's pedestal lifts
+    # his feet 0.176 after the slide): his place and speed, his state, the
+    # contact words +0x2308/+0x230C, +0x49C, and the body block's (+0x1250)
+    # sensor words +0xC..+0x2C (head, foot, wall). Its callers show whether
+    # the pass runs more than once a frame. Record with 'player,goaldemo,goalpass'.
+    "goalpass": """\
+hook pass 0x7101592B70 callers=2
+field pass x      f32 0x230
+field pass y      f32 0x234
+field pass vy     f32 0x240
+field pass state  u32 0x3F8
+field pass c2308  u32 0x2308
+field pass c230c  u32 0x230C
+field pass b49c   u32 0x49C
+field pass s0c    f32 0x125C
+field pass s10    f32 0x1260
+field pass s14    f32 0x1264
+field pass s18    f32 0x1268
+field pass s1c    f32 0x126C
+field pass s20    f32 0x1270
+field pass s24    f32 0x1274
+field pass s28    f32 0x1278
+field pass s2c    f32 0x127C
+""",
     "player": """\
 # Player trace: hook the horizontal movement step, x0 = player
 hook player 0x71015D3CC0
