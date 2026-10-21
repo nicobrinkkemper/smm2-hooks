@@ -13,6 +13,12 @@ the agent's project `.mcp.json`, see `mcp/README.md`): `eden_state` is the truth
 `gdb_module_base`, `gdb_addr`, `gdb_detach`). The scripts below are what those
 tools wrap; use them directly only when the server is not loaded.
 
+Each `game_input` call costs seconds of wall time, so a run of presses drifts
+far behind the game. When timing matters (Lakitu's Cloud blinks away soon after
+the course starts; a moving lift), send the whole run as one `game_sequence`:
+each step holds its buttons until conditions on the live status hold
+(`x>=134`, `state==62`), with no round trip in between.
+
 Eden runs "portable" here: config and log are in `Documents/eden/user/`,
 while NAND, SD and mods stay under `AppData/Roaming/eden` as named in that
 config. `emu_session.py` toggles the wrong ini; `eden_state`/`eden_launch`

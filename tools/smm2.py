@@ -30,6 +30,67 @@ BTN = {
     'LSTICK': 0x20000, 'RSTICK': 0x40000,
 }
 
+def decode_status(d):
+    """status.bin bytes -> dict (the mod's StatusBlock, include/smm2/status.h)."""
+    return {
+        'frame':       struct.unpack_from('<I', d, 0x00)[0],
+        'game_phase':  struct.unpack_from('<I', d, 0x04)[0],
+        'state':       struct.unpack_from('<I', d, 0x08)[0],
+        'powerup':     struct.unpack_from('<I', d, 0x0C)[0],
+        'x':           struct.unpack_from('<f', d, 0x10)[0],
+        'y':           struct.unpack_from('<f', d, 0x14)[0],
+        'vx':          struct.unpack_from('<f', d, 0x18)[0],
+        'vy':          struct.unpack_from('<f', d, 0x1C)[0],
+        'state_frames': struct.unpack_from('<I', d, 0x20)[0],
+        'in_water':    d[0x24],
+        'is_dead':     d[0x25],
+        'is_goal':     d[0x26],
+        'has_player':  d[0x27],
+        'facing':      struct.unpack_from('<f', d, 0x28)[0],
+        'gravity':     struct.unpack_from('<f', d, 0x2C)[0],
+        'buffered':    struct.unpack_from('<I', d, 0x30)[0],
+        'polls':       struct.unpack_from('<I', d, 0x34)[0],
+        'real_phase':  struct.unpack_from('<i', d, 0x38)[0],
+        'theme':       d[0x3C],
+        'style':       struct.unpack_from('<I', d, 0x40)[0],
+        'scene_mode':  struct.unpack_from('<I', d, 0x44)[0],
+        'is_playing':  struct.unpack_from('<I', d, 0x48)[0],
+        'scene_change_count': struct.unpack_from('<I', d, 0x8C)[0] if len(d) >= 0x90 else 0,
+        # Collision data (from decomp discovery)
+        'collision_index': struct.unpack_from('<i', d, 0x90)[0] if len(d) >= 0xA0 else -1,
+        'collision_normal': d[0x94] if len(d) >= 0xA0 else 0,
+        'collision_slope': struct.unpack_from('<i', d, 0x98)[0] if len(d) >= 0xA0 else 0,
+    }
+
+
+STATUS_FIELDS = frozenset(decode_status(bytes(0xA0)))
+MAX_STEP_S = 60.0   # one step; the MCP server holds its game lock for the whole sequence
+
+
+_OPS = {"==": lambda a, b: a == b, "!=": lambda a, b: a != b, ">=": lambda a, b: a >= b,
+        "<=": lambda a, b: a <= b, ">": lambda a, b: a > b, "<": lambda a, b: a < b}
+
+
+def parse_until(text):
+    """'x>=134 & state==62' -> [('x', '>=', 134.0), ('state', '==', 62.0)]."""
+    import re
+    conds = []
+    for part in filter(None, (p.strip() for p in (text or "").split("&"))):
+        m = re.fullmatch(r"(\w+)\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)", part)
+        if not m:
+            raise ValueError(f"condition {part!r}: want <status field> <op> <number>, e.g. x>=134")
+        if m.group(1) not in STATUS_FIELDS:
+            raise ValueError(f"condition {part!r}: no status field {m.group(1)!r} (have: {', '.join(sorted(STATUS_FIELDS))})")
+        conds.append((m.group(1), m.group(2), float(m.group(3))))
+    return conds
+
+
+def _cond_holds(status, cond):
+    field, op, value = cond
+    v = status.get(field)
+    return v is not None and _OPS[op](float(v), value)
+
+
 # Scene mode values from GPM inner struct +0x14
 SCENE_EDITOR = 1
 SCENE_PLAY = 5      # Editor test-play
@@ -137,35 +198,7 @@ class Game:
         if len(d) < 100:
             return None
 
-        return {
-            'frame':       struct.unpack_from('<I', d, 0x00)[0],
-            'game_phase':  struct.unpack_from('<I', d, 0x04)[0],
-            'state':       struct.unpack_from('<I', d, 0x08)[0],
-            'powerup':     struct.unpack_from('<I', d, 0x0C)[0],
-            'x':           struct.unpack_from('<f', d, 0x10)[0],
-            'y':           struct.unpack_from('<f', d, 0x14)[0],
-            'vx':          struct.unpack_from('<f', d, 0x18)[0],
-            'vy':          struct.unpack_from('<f', d, 0x1C)[0],
-            'state_frames': struct.unpack_from('<I', d, 0x20)[0],
-            'in_water':    d[0x24],
-            'is_dead':     d[0x25],
-            'is_goal':     d[0x26],
-            'has_player':  d[0x27],
-            'facing':      struct.unpack_from('<f', d, 0x28)[0],
-            'gravity':     struct.unpack_from('<f', d, 0x2C)[0],
-            'buffered':    struct.unpack_from('<I', d, 0x30)[0],
-            'polls':       struct.unpack_from('<I', d, 0x34)[0],
-            'real_phase':  struct.unpack_from('<i', d, 0x38)[0],
-            'theme':       d[0x3C],
-            'style':       struct.unpack_from('<I', d, 0x40)[0],
-            'scene_mode':  struct.unpack_from('<I', d, 0x44)[0],
-            'is_playing':  struct.unpack_from('<I', d, 0x48)[0],
-            'scene_change_count': struct.unpack_from('<I', d, 0x8C)[0] if len(d) >= 0x90 else 0,
-            # Collision data (from decomp discovery)
-            'collision_index': struct.unpack_from('<i', d, 0x90)[0] if len(d) >= 0xA0 else -1,
-            'collision_normal': d[0x94] if len(d) >= 0xA0 else 0,
-            'collision_slope': struct.unpack_from('<i', d, 0x98)[0] if len(d) >= 0xA0 else 0,
-        }
+        return decode_status(d)
 
     def scene(self):
         """Current screen: 'editor', 'play', 'coursebot', 'title', 'loading', or 'unknown'."""
@@ -247,6 +280,43 @@ class Game:
     def stick(self, lx=0, ly=0, ms=100):
         """Push analog stick for duration."""
         self.press(0, ms, lx, ly)
+
+    def sequence(self, steps):
+        """Run input steps back to back, each closed on the live status.
+
+        A step is {"buttons": "A+RIGHT", "until": "x>=134 & state==62",
+        "max_s": 2}: hold the buttons until every condition holds or max_s
+        passes (no "until": hold for max_s). Conditions compare a status
+        field with a number (== != >= <= > <). Nothing waits on a tool round
+        trip between steps, so a step lands within a frame or two of its
+        condition: what a timed jump onto a short-lived object needs.
+        Returns one row per step: hit or time, and the status it ended on."""
+        parsed = []
+        for st in steps:
+            conds = parse_until(st.get("until", ""))
+            max_s = float(st.get("max_s", 1.0))
+            if not 0 <= max_s <= MAX_STEP_S:
+                raise ValueError(f"max_s {max_s}: a step holds 0..{MAX_STEP_S} s")
+            parsed.append((self._parse_buttons(st.get("buttons") or 0), conds, max_s, st))
+        out, t0 = [], time.time()
+        try:
+            for mask, conds, max_s, st in parsed:
+                self._write_input(mask)
+                end = time.time() + max_s
+                hit = False
+                while time.time() < end:
+                    s = self.status()
+                    if conds and s and all(_cond_holds(s, c) for c in conds):
+                        hit = True
+                        break
+                    time.sleep(0.004)
+                s = self.status() or {}
+                out.append({"buttons": st.get("buttons", ""), "until": st.get("until", ""),
+                            "ended": "hit" if hit else "time", "t": round(time.time() - t0, 2),
+                            **{k: s.get(k) for k in ("frame", "scene_mode", "state", "powerup", "x", "y")}})
+        finally:
+            self._write_input(0)
+        return out
 
     def release(self):
         """Release all inputs."""
