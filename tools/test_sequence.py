@@ -31,6 +31,9 @@ class Sequence(unittest.TestCase):
         self.assertEqual(smm2.parse_until(""), [])
         with self.assertRaises(ValueError):
             smm2.parse_until("x=>1")
+        with self.assertRaises(ValueError):
+            smm2.parse_until("stat==62")   # a typo must not hold silently until max_s
+        self.assertEqual(smm2.parse_until("vx<-0.5"), [("vx", "<", -0.5)])
 
     def test_steps_end_on_their_condition(self):
         g = FakeGame()
@@ -51,6 +54,20 @@ class Sequence(unittest.TestCase):
         with self.assertRaises(ValueError):
             g.sequence([{"buttons": "RIGHT", "until": "x>=1"}, {"buttons": "A", "until": "bad"}])
         self.assertEqual(g.writes, [])
+
+
+    def test_the_pad_is_let_go_when_a_step_fails(self):
+        g = FakeGame()
+        def broken(allow_stale=False):
+            raise OSError("status.bin vanished")
+        g.status = broken
+        with self.assertRaises(OSError):
+            g.sequence([{"buttons": "RIGHT", "until": "x>=30", "max_s": 5}])
+        self.assertEqual(g.writes, [smm2.BTN["RIGHT"], 0])
+
+    def test_a_step_is_bounded(self):
+        with self.assertRaises(ValueError):
+            FakeGame().sequence([{"buttons": "RIGHT", "max_s": 3600}])
 
 
 if __name__ == "__main__":
