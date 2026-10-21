@@ -30,6 +30,28 @@ BTN = {
     'LSTICK': 0x20000, 'RSTICK': 0x40000,
 }
 
+_OPS = {"==": lambda a, b: a == b, "!=": lambda a, b: a != b, ">=": lambda a, b: a >= b,
+        "<=": lambda a, b: a <= b, ">": lambda a, b: a > b, "<": lambda a, b: a < b}
+
+
+def parse_until(text):
+    """'x>=134 & state==62' -> [('x', '>=', 134.0), ('state', '==', 62.0)]."""
+    import re
+    conds = []
+    for part in filter(None, (p.strip() for p in (text or "").split("&"))):
+        m = re.fullmatch(r"(\w+)\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)", part)
+        if not m:
+            raise ValueError(f"condition {part!r}: want <status field> <op> <number>, e.g. x>=134")
+        conds.append((m.group(1), m.group(2), float(m.group(3))))
+    return conds
+
+
+def _cond_holds(status, cond):
+    field, op, value = cond
+    v = status.get(field)
+    return v is not None and _OPS[op](float(v), value)
+
+
 # Scene mode values from GPM inner struct +0x14
 SCENE_EDITOR = 1
 SCENE_PLAY = 5      # Editor test-play
@@ -247,6 +269,40 @@ class Game:
     def stick(self, lx=0, ly=0, ms=100):
         """Push analog stick for duration."""
         self.press(0, ms, lx, ly)
+
+    def sequence(self, steps):
+        """Run input steps back to back, each closed on the live status.
+
+        A step is {"buttons": "A+RIGHT", "until": "x>=134 & state==62",
+        "max_s": 2}: hold the buttons until every condition holds or max_s
+        passes (no "until": hold for max_s). Conditions compare a status
+        field with a number (== != >= <= > <). Nothing waits on a tool round
+        trip between steps, so a step lands within a frame or two of its
+        condition: what a timed jump onto a short-lived object needs.
+        Returns one row per step: hit or time, and the status it ended on."""
+        parsed = []
+        for st in steps:
+            conds = parse_until(st.get("until", ""))
+            parsed.append((self._parse_buttons(st.get("buttons") or 0), conds, float(st.get("max_s", 1.0)), st))
+        out, t0 = [], time.time()
+        try:
+            for mask, conds, max_s, st in parsed:
+                self._write_input(mask)
+                end = time.time() + max_s
+                hit = False
+                while time.time() < end:
+                    s = self.status()
+                    if conds and s and all(_cond_holds(s, c) for c in conds):
+                        hit = True
+                        break
+                    time.sleep(0.004)
+                s = self.status() or {}
+                out.append({"buttons": st.get("buttons", ""), "until": st.get("until", ""),
+                            "ended": "hit" if hit else "time", "t": round(time.time() - t0, 2),
+                            **{k: s.get(k) for k in ("frame", "scene_mode", "state", "powerup", "x", "y")}})
+        finally:
+            self._write_input(0)
+        return out
 
     def release(self):
         """Release all inputs."""

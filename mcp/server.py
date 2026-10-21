@@ -215,6 +215,16 @@ def game_input(buttons: str = "", ms: int = 120, stick: str = "") -> dict:
     return {"pressed": buttons, "stick": stick or None, "ms": ms, "status": eden.read_status(P), "ui": ui}
 
 
+@tool(exclusive=True)
+def game_sequence(steps: list[dict]) -> dict:
+    """Run input steps back to back with no round trip between them, each held until conditions on the live status hold: [{"buttons": "RIGHT", "until": "x>=134", "max_s": 5}, {"buttons": "A+RIGHT", "until": "state==62", "max_s": 1.5}, {"buttons": "", "max_s": 0.4}]. `until` joins `<field> <op> <number>` with '&' over game_status fields (frame, scene_mode, has_player, state, powerup, x, y, vx, vy, ...); without it a step holds for max_s. Use it when timing matters (a cloud that blinks away, a jump onto a moving lift); game_input costs seconds per call. Returns one row per step: hit or time, and where it ended."""
+    try:
+        rows = _game().sequence(steps)
+    except ValueError as e:
+        return {"error": str(e)}
+    return {"steps": rows, "status": eden.read_status(P)}
+
+
 _NAV: dict = {}  # the navigation still running after game_boot returned pending, if any
 
 
