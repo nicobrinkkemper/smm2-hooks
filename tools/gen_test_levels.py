@@ -1915,6 +1915,47 @@ def level_side_spring_ledge() -> LevelBuilder:
     return b
 
 
+@test_level(113, "Fire Throw")
+def level_fire_throw() -> LevelBuilder:
+    """A Fire Flower at column 9 on flat SMB1 ground, then a long run: small
+    Mario takes it and throws standing, running and in the air (the Fire
+    state, 45; smm2-decomp's PlayerStateFire.cpp). Record with `player`."""
+    b = LevelBuilder("Fire Throw", "SMB1", "Ground")
+    b.width = 64
+    b.add_ground_block(7, 50, y_surface=4, height=5)
+    b.add_actor(OBJ_FIRE_FLOWER, 9, 5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(114, "Fire Swim")
+def level_fire_swim() -> LevelBuilder:
+    """The Fire Throw course under water (SMB1 Underwater): the flower taken
+    swimming, then throws in the water (FireSwim, 46). Record with
+    `player`."""
+    b = LevelBuilder("Fire Swim", "SMB1", "Underwater")
+    b.width = 64
+    b.add_ground_block(7, 50, y_surface=4, height=5)
+    b.add_actor(OBJ_FIRE_FLOWER, 9, 5)
+    b.goal_y = 5
+    return b
+
+
+@test_level(115, "Wall Hit 3DW")
+def level_wall_hit_3dw() -> LevelBuilder:
+    """3D World flat ground with a wall ten tiles high at columns 34..36: a
+    run at full speed into it bonks him off (WallHitLand, 38, on the
+    ground; WallHit, 37, jumped into it; smm2-decomp's
+    PlayerStateWallHit.cpp). Record with `player`."""
+    b = LevelBuilder("Wall Hit 3DW", "3DW", "Ground")
+    b.width = 64
+    b.add_ground_block(7, 33, y_surface=4, height=5)
+    b.add_ground_block(34, 36, y_surface=14, height=15)
+    b.add_ground_block(37, 50, y_surface=4, height=5)
+    b.goal_y = 5
+    return b
+
+
 @test_level(77, "Enemy Zoo")
 def level_enemy_zoo() -> LevelBuilder:
     """More walking enemies for the walking-enemy oracle, each boxed in its own
