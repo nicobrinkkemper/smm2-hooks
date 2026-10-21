@@ -920,6 +920,31 @@ def merge_presets(keys: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def mod_hooks() -> dict[int, list[str]]:
+    """Addresses the mod's own plugins hook (src/*.cpp), with the files that do.
+
+    A probe on one of them is logged as `hooked` and records nothing: the
+    mod refuses a second trampoline on a function another plugin patched.
+    Some plugins only hook when their SD config turns them on (ui_probe), so
+    this is what the source can hook, not what a given boot did."""
+    root = HERE.parent
+    syms = {}
+    for line in (root / "syms/main.sym").read_text().splitlines():
+        m = re.match(r"\s*(\S+)\s*=\s*(0x[0-9A-Fa-f]+)", line)
+        if m:
+            syms[m.group(1)] = MAIN_BASE + int(m.group(2), 16)
+    found: dict[int, list[str]] = {}
+    for src in sorted((root / "src").glob("*.cpp")):
+        if src.name == "probe.cpp":
+            continue
+        text = "\n".join(l for l in src.read_text().splitlines() if not l.lstrip().startswith("//"))
+        addrs = [syms[n] for n in re.findall(r'installAtSym<"([^"]+)">', text) if n in syms]
+        addrs += [MAIN_BASE + int(o, 16) for o in re.findall(r"installAtOffset\(\s*\w+\s*,\s*(0x[0-9A-Fa-f]+)", text)]
+        for a in addrs:
+            found.setdefault(a, []).append(f"src/{src.name}")
+    return found
+
+
 def cmd_check(args) -> int:
     hooks, fields = parse_config(Path(args.config).read_text())
     if len(hooks) > 8:
@@ -933,6 +958,12 @@ def cmd_check(args) -> int:
             print(f"line {h['line']}: {h['name']} hooks {h['vaddr']:#x}, already hooked as {by_addr[h['vaddr']]}: the mod hooks an address once (merge the presets)")
             rc = 1
         by_addr.setdefault(h["vaddr"], h["name"])
+    taken = mod_hooks()
+    for h in hooks:
+        if h["vaddr"] in taken:
+            print(f"warn line {h['line']}: {h['name']} {h['vaddr']:#x} is hooked by the mod itself "
+                  f"({', '.join(sorted(set(taken[h['vaddr']])))}): with that plugin on, the probe logs it as "
+                  f"'hooked' and records nothing; hook a callee or caller instead")
     for h in hooks:
         try:
             word = read_word(h["vaddr"])

@@ -42,5 +42,13 @@ class MergePresets(unittest.TestCase):
                              [(f["hook"], f["label"], f["type"], f["path"]) for f in b[1]])
 
 
+class ModHooks(unittest.TestCase):
+    def test_the_mods_own_hooks_are_known(self):
+        taken = probe.mod_hooks()
+        self.assertIn("src/status.cpp", taken[0x71015E3FB0])        # PlayerObject_changeState, every boot
+        self.assertIn("src/ui_probe.cpp", taken[0x71008B9320])      # StateMachine::changeState, while capturing
+        self.assertNotIn(0x71015D3CC0, taken)                      # the presets' player hook is free
+
+
 if __name__ == "__main__":
     unittest.main()

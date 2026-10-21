@@ -138,6 +138,15 @@ HkTrampoline<uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_
         return r;
     });
 
+// Another plugin's hook already patched the function's first instruction into
+// a branch. A second trampoline would copy that branch into its own pool,
+// where it no longer reaches its target, and the game hangs on the first call.
+static bool already_hooked(uintptr_t vaddr) {
+    const hk::ro::RoModule* mod = hk::ro::getMainModule();
+    uint32_t word = *reinterpret_cast<const uint32_t*>(mod->range().start() + (vaddr - MAIN_BASE));
+    return (word & 0xFC000000u) == 0x14000000u;
+}
+
 static bool install_slot(int idx, uintptr_t vaddr) {
     const hk::ro::RoModule* mod = hk::ro::getMainModule();
     ptr off = vaddr - MAIN_BASE;
@@ -303,8 +312,10 @@ void init() {
     load_config();
     for (int i = 0; i < s_nhooks; i++) {
         Hook& h = s_hooks[i];
-        bool ok = install_slot(i, h.vaddr);
-        s_log.writef("H,%d,%s,%llx,%s", i, h.name, (unsigned long long)h.vaddr, ok ? "ok" : "failed");
+        const bool taken = already_hooked(h.vaddr);
+        const bool ok = !taken && install_slot(i, h.vaddr);
+        s_log.writef("H,%d,%s,%llx,%s", i, h.name, (unsigned long long)h.vaddr,
+                     ok ? "ok" : taken ? "hooked" : "failed");
         for (int j = 0; j < h.nfields; j++)
             s_log.writef(",%s:%s", h.fields[j].name, type_name(h.fields[j].type));
         for (int j = 0; j < h.callers; j++)
