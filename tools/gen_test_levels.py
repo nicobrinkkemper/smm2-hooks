@@ -2725,6 +2725,46 @@ def level_water_jump() -> LevelBuilder:
     b.goal_y = 1
     return b
 
+@test_level(128, "Vertical Entry Riders")
+def level_vertical_entry_riders() -> LevelBuilder:
+    """Note blocks on tracks above a pipe exit in a vertical subworld.
+
+    A community melody loop ('melody only2', smm2-decomp
+    marble-melody-loop_course_045.bcd) has its note blocks in a vertical
+    subworld 48 x 168 tiles, reached by a pipe whose exit is at (312, 2376).
+    On the first frame recorded there the game already runs riders up to
+    ~330 units above the player, mid-path; the sim never spawns the ones
+    above y 2528. This keeps that geometry and nothing else: Stack Drop's
+    crossing (a mouth-up pipe on the overworld, link 1) into the column, the
+    exit mouth right at the same place with a floor under it, and a note
+    block on a lone horizontal piece every 3 rows from row 150 to 165, by the
+    exit (column 8) and across the column (column 36), so a recording of the
+    crossing shows which riders the game runs, and from which frame.
+    """
+    b = LevelBuilder("Vertical Entry Riders", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    b.objects.append({'id': OBJ_PIPE, 'x': 10, 'y': 5, 'width': 2, 'height': 2,
+                      'flags': PIPE_UP_LINK1})
+
+    b.sub_vertical = True
+    b.sub_width = 48
+    b.sub_height = 168
+    b.sub_objects.append({'id': OBJ_PIPE, 'x': 19, 'y': 148, 'width': 2, 'height': 2,
+                          'flags': PIPE_RIGHT_LINK1})
+    for x in range(14, 34):
+        b.sub_ground_tiles.append((x, 144))            # the floor under the exit
+    for col in (8, 36):
+        for row in range(150, 166, 3):
+            i = len(b.sub_tracks)
+            b.sub_tracks.append({'x': col - 1, 'y': row - 1, 'type': TRACK_SHAPE_HORIZONTAL,
+                                 'lid': i + 1, 'has_object': True, 'tail': TRACK_END_FREE_H})
+            b.sub_objects.append({'id': OBJ_NOTE_BLOCK, 'x': col, 'y': row,
+                                  'flags': 0x06000040 | FLAG_ON_TRACK, 'lid': i,
+                                  '_half_tile_offset': True})
+    return b
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate SMM2 test levels')
     parser.add_argument('--json', metavar='DIR',
