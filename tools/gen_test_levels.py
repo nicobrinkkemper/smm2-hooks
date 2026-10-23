@@ -2765,6 +2765,27 @@ def level_vertical_entry_riders() -> LevelBuilder:
     return b
 
 
+@test_level(129, "Vertical Entry Stars")
+def level_vertical_entry_stars() -> LevelBuilder:
+    """Vertical Entry Riders with a Super Star on the three high blocks by the exit.
+
+    The melody loop's 24 high note blocks each carry a Super Star one tile
+    above them, and those blocks are running when the player comes out of
+    the pipe although they are above the activation box. Here the blocks at
+    rows 159, 162 and 165 by the exit get a star (at rows 160, 163, 166);
+    the column across stays without, as the control. Recorded in smm2recomp
+    with the same pad as level 128: the game runs five riders from the first
+    frame after landing, the three in the box and the starred ones at rows
+    159 and 162; the one at 165, whose star is higher, stays unloaded.
+    """
+    b = level_vertical_entry_riders()
+    b.name = "Vertical Entry Stars"
+    for row in (159, 162, 165):
+        b.sub_objects.append({'id': OBJ_SUPER_STAR, 'x': 8, 'y': row + 1,
+                              'flags': 0x06000040, '_half_tile_offset': True})
+    return b
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate SMM2 test levels')
     parser.add_argument('--json', metavar='DIR',
