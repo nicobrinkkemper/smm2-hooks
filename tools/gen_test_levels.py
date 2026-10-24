@@ -1928,6 +1928,31 @@ def level_fire_throw() -> LevelBuilder:
     return b
 
 
+@test_level(133, "Fire Bounce")
+def level_fire_bounce() -> LevelBuilder:
+    """Fire Throw's flower, then ground for the fireball to bounce on: flat
+    to column 15, a rising slight slope (4x2 at column 16, laid as Slope
+    Walk's D: its box on the ground's top row, a staircase under it), a
+    plateau one row higher from column 20, and a wall of hard blocks four
+    high at column 34 on it. Thrown from the flower, a fireball bounces
+    along the flat, up the slope and across the plateau into the wall;
+    thrown on the plateau, it meets the wall a few tiles out."""
+    b = LevelBuilder("Fire Bounce", "SMB1", "Ground")
+    b.width = 64
+    b.add_ground_block(7, 15, y_surface=4, height=5)
+    for x, top in [(16, 3), (17, 3), (18, 3), (19, 4)]:
+        for y in range(0, top + 1):
+            b.add_ground_fill(x, x, y)
+    b.add_slope(16, 4, rise=2)
+    b.add_ground_block(20, 50, y_surface=5, height=6)
+    b.add_actor(OBJ_FIRE_FLOWER, 9, 5)
+    for row in range(6, 10):
+        b.objects.append({'id': OBJ_HARD_BLOCK, 'x': 34, 'y': row, 'width': 1, 'height': 1,
+                          '_half_tile_offset': True})
+    b.goal_y = 6
+    return b
+
+
 @test_level(114, "Fire Swim")
 def level_fire_swim() -> LevelBuilder:
     """The Fire Throw course under water (SMB1 Underwater): the flower taken
