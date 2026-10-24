@@ -2786,6 +2786,84 @@ def level_vertical_entry_stars() -> LevelBuilder:
     return b
 
 
+def pipe_flags(link: int, mouth: int) -> int:
+    """A warp pipe's flag word: Lost Woods' pipe bits with the link in bits
+    20-23 and the mouth in bits 5-6 (0 right, 1 left, 2 up, 3 down)."""
+    return 0x6040000 | (link << 20) | (mouth << 5)
+
+
+@test_level(130, "Pipe Trip")
+def level_pipe_trip() -> LevelBuilder:
+    """Both ways through a pipe, to the subworld and back.
+
+    Overworld: a mouth-up pipe (link 1) at column 10, two tiles out of the
+    ground; the player stands on it and presses down. Subworld (horizontal,
+    the builder's 84 x 27): he rises out of a mouth-up pipe at column 6 (link
+    1), walks right into the mouth of a sideways pipe lying on the floor with
+    its mouth left at column 19 (link 2), and comes back up out of a mouth-up
+    pipe at column 20 in the overworld (link 2). So one run has a downward
+    entry, an upward exit, a sideways entry and the area change both ways.
+    """
+    b = LevelBuilder("Pipe Trip", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    b.objects.append({'id': OBJ_PIPE, 'x': 10, 'y': 5, 'width': 2, 'height': 2,
+                      'flags': pipe_flags(1, 2)})
+    b.objects.append({'id': OBJ_PIPE, 'x': 20, 'y': 5, 'width': 2, 'height': 2,
+                      'flags': pipe_flags(2, 2)})
+    for x in range(0, 40):
+        b.sub_ground_tiles.append((x, 4))
+    b.sub_objects.append({'id': OBJ_PIPE, 'x': 6, 'y': 5, 'width': 2, 'height': 2,
+                          'flags': pipe_flags(1, 2)})
+    # a sideways pipe's record sits on a tile centre, as The Lost Woods' do
+    b.sub_objects.append({'id': OBJ_PIPE, 'x': 20, 'y': 5, 'width': 2, 'height': 2,
+                          'flags': pipe_flags(2, 1), '_half_tile_offset': True})
+    return b
+
+
+@test_level(132, "Pipe Sides")
+def level_pipe_sides() -> LevelBuilder:
+    """The pipe directions Pipe Trip leaves out: spat out sideways, entered
+    upward and dropped out of a ceiling pipe.
+
+    Overworld: Pipe Trip's mouth-up pipe at column 10 (link 1). Subworld: he
+    comes out of a mouth-right pipe on the floor at columns 6-7 (link 1),
+    walks under a mouth-down pipe hanging with its mouth at row 7 (columns
+    16-17, link 2) and jumps up into it; in the overworld he drops out of a
+    mouth-down pipe hanging at row 8 (columns 19-20, link 2) onto the ground.
+    """
+    b = LevelBuilder("Pipe Sides", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    b.objects.append({'id': OBJ_PIPE, 'x': 10, 'y': 5, 'width': 2, 'height': 2,
+                      'flags': pipe_flags(1, 2)})
+    b.objects.append({'id': OBJ_PIPE, 'x': 20, 'y': 9, 'width': 2, 'height': 2,
+                      'flags': pipe_flags(2, 3), '_half_tile_offset': True})
+    for x in range(0, 40):
+        b.sub_ground_tiles.append((x, 4))
+    b.sub_objects.append({'id': OBJ_PIPE, 'x': 6, 'y': 6, 'width': 2, 'height': 2,
+                          'flags': pipe_flags(1, 0), '_half_tile_offset': True})
+    b.sub_objects.append({'id': OBJ_PIPE, 'x': 17, 'y': 8, 'width': 2, 'height': 2,
+                          'flags': pipe_flags(2, 3), '_half_tile_offset': True})
+    return b
+
+
+@test_level(131, "Door Pair")
+def level_door_pair() -> LevelBuilder:
+    """Two doors on the ground, paired 0 and 1 in the overworld (doors pair
+    2k with 2k+1 within one area; the flag words are The Lost Woods' own
+    pair): the player walks to the door at column 10, presses up, comes out
+    of the one at column 22, and goes back through it."""
+    b = LevelBuilder("Door Pair", "SMB1", "Ground")
+    b.add_ground_block(7, 24, y_surface=4, height=5)
+    b.goal_y = 5
+    b.objects.append({'id': OBJ_DOOR, 'x': 10, 'y': 5, 'width': 1, 'height': 2,
+                      'flags': 0x6000040, '_half_tile_offset': True})
+    b.objects.append({'id': OBJ_DOOR, 'x': 22, 'y': 5, 'width': 1, 'height': 2,
+                      'flags': 0x6100040, '_half_tile_offset': True})
+    return b
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate SMM2 test levels')
     parser.add_argument('--json', metavar='DIR',
