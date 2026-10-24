@@ -1953,6 +1953,28 @@ def level_fire_bounce() -> LevelBuilder:
     return b
 
 
+@test_level(134, "Fire Piranha")
+def level_fire_piranha() -> LevelBuilder:
+    """Two fire piranhas (record 2 with the alternate bit 0x4: runtime type
+    123, GameEnemyFirePakkun), for where their shots aim. One stands in a
+    dip three rows deep (columns 18-22, the plant at column 20 on row 2),
+    so the player passes above it on both sides; the other sits in a
+    mouth-up pipe at columns 27-28 (Plant Pipe Near's pipe and in-pipe
+    record), level with him."""
+    b = LevelBuilder("Fire Piranha", "SMB1", "Ground")
+    b.width = 64
+    b.add_ground_block(7, 17, y_surface=4, height=5)
+    b.add_ground_block(18, 22, y_surface=1, height=2)
+    b.add_ground_block(23, 50, y_surface=4, height=5)
+    b.add_actor(2, 20, 2, flags=0x06000044)
+    b.objects.append({'id': 9, 'x': 27, 'y': 5, 'width': 2, 'height': 2, 'flags': 0x060400C0,
+                      'lid': 1, '_half_tile_offset': True})
+    b.objects.append({'id': 2, 'x': 28, 'y': 7, 'width': 1, 'height': 1, 'flags': 0x06000045,
+                      'lid': 1, '_half_tile_offset': False})
+    b.goal_y = 5
+    return b
+
+
 @test_level(114, "Fire Swim")
 def level_fire_swim() -> LevelBuilder:
     """The Fire Throw course under water (SMB1 Underwater): the flower taken
