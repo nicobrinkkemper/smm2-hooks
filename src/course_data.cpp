@@ -4,6 +4,7 @@
 #include "hk/hook/Trampoline.h"
 #include "hk/ro/RoUtil.h"
 #include "smm2/frame.h"
+#include <cstring>
 
 namespace smm2 {
 namespace course_data {
@@ -130,6 +131,59 @@ static HkTrampoline<uint32_t, nn::fs::FileHandle, int64_t, const void*, size_t, 
         
         return write_hook.orig(fh, offset, data, size, opt);
     });
+
+// sd:/smm2-hooks/edit_records.req present: the records the editor holds now
+// go to edit_records.bin and the request is removed (checked every 15
+// frames). The editor's course areas sit at [qword_7102B2B718] + 0x28 +
+// area * 0xC70; each starts with a sead OffsetList of record objects (count
+// +0x10, node offset +0x14) that EditActor's constructor (sub_7100E8DAE0)
+// fills through sub_7100FDD920. An object holds x, y (f32, the .bcd's
+// tenths divided by 10) at +0x08, w, h (f32, tiles) at +0x14, then from
+// +0x1c the .bcd record's own words: flags, child flags, extended flags,
+// type, child type, link id, sub id (s16 each). Out: per area a u32 count,
+// then count records of those 0x28 bytes from +0x08.
+constexpr const char* RECORDS_REQ = "sd:/smm2-hooks/edit_records.req";
+constexpr const char* RECORDS_OUT = "sd:/smm2-hooks/edit_records.bin";
+constexpr uintptr_t OFF_EDIT_AREAS = 0x2B2B718;
+constexpr int MAX_RECORDS = 2600;
+constexpr size_t RECORD_BYTES = 0x28;
+
+static bool heap_ptr(uintptr_t p) { return p >= 0x1000000ull && p < 0x3000000000ull; }
+
+void poll_records(uint32_t frame) {
+    if (frame % 15) return;
+    nn::fs::FileHandle f;
+    if (nn::fs::OpenFile(&f, RECORDS_REQ, nn::fs::MODE_READ) != 0) return;
+    nn::fs::CloseFile(f);
+    nn::fs::DeleteFile(RECORDS_REQ);
+    uintptr_t areas = *reinterpret_cast<uintptr_t*>(hk::ro::getMainModule()->range().start() + OFF_EDIT_AREAS);
+    if (!heap_ptr(areas)) return;
+    static uint8_t out[2 * (4 + MAX_RECORDS * RECORD_BYTES)];
+    size_t n = 0;
+    for (int area = 0; area < 2; area++) {
+        uintptr_t list = areas + 0x28 + area * 0xC70;
+        int32_t count = *reinterpret_cast<int32_t*>(list + 0x10);
+        int32_t offset = *reinterpret_cast<int32_t*>(list + 0x14);
+        if (count < 0 || count > MAX_RECORDS) count = 0;
+        size_t at = n;
+        n += 4;
+        uint32_t written = 0;
+        uintptr_t node = *reinterpret_cast<uintptr_t*>(list + 8);
+        while ((int32_t)written < count && heap_ptr(node) && node != list) {
+            std::memcpy(out + n, reinterpret_cast<const void*>(node - offset + 8), RECORD_BYTES);
+            n += RECORD_BYTES;
+            written++;
+            node = *reinterpret_cast<uintptr_t*>(node + 8);
+        }
+        std::memcpy(out + at, &written, 4);
+    }
+    nn::fs::DeleteFile(RECORDS_OUT);
+    nn::fs::CreateFile(RECORDS_OUT, n);
+    if (nn::fs::OpenFile(&f, RECORDS_OUT, nn::fs::MODE_WRITE) != 0) return;
+    nn::fs::WriteOption opt = { .flags = nn::fs::WRITE_OPTION_FLUSH };
+    nn::fs::WriteFile(f, 0, out, n, opt);
+    nn::fs::CloseFile(f);
+}
 
 void init() {
     open_hook.installAtSym<"_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci">();

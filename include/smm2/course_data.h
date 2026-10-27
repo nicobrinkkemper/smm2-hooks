@@ -19,6 +19,10 @@ uint16_t gamestyle();
 // Returns the last-seen course name (UTF-16LE decoded to ASCII), or empty string.
 const char* course_name();
 
+// Write the editor's records to sd:/smm2-hooks/edit_records.bin when
+// edit_records.req is present (checked every 15 frames).
+void poll_records(uint32_t frame);
+
 // Dump collected OpenFile paths to log (call after status system is running)
 void dump_open_log();
 

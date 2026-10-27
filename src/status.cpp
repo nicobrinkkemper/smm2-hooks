@@ -85,6 +85,7 @@ void update_from_input_poll() {
 
 void update(uint32_t frame) {
     ui_probe::poll();
+    course_data::poll_records(frame);
     s_last_procframe = frame;
     
     // Dump OpenFile log once after system is stable (frame 100)

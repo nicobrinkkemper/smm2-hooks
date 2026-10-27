@@ -190,6 +190,40 @@ def ui_screen(full: bool = False) -> dict:
     return {**ui_probe.summary(view), "status": result["status"], "rows": view["rows"]}
 
 
+@tool()
+def edit_records(type: int | None = None, timeout: float = 5.0) -> dict:
+    """The course's records as the editor holds them now (edit_time only), without saving: per
+    area (0 main, 1 sub) each record's type, x, y (the .bcd's tenths / 10), w, h (tiles), flags,
+    cflags (a contained object's flags), ext, ctype (the contained object's type, -1 none), lid
+    (link id) and sid. type= keeps one record type. The mod walks the editor's record list
+    (src/course_data.cpp, poll_records) when sd:/smm2-hooks/edit_records.req appears."""
+    import struct  # noqa: WPS433
+    sd = Path(P.sd_hooks_dir)
+    req, out = sd / "edit_records.req", sd / "edit_records.bin"
+    out.unlink(missing_ok=True)
+    req.touch()
+    deadline = time.time() + timeout
+    while req.exists() or not out.exists():
+        if time.time() > deadline:
+            req.unlink(missing_ok=True)
+            return {"error": f"no edit_records.bin within {timeout} s (is the game running with this mod?)"}
+        time.sleep(0.05)
+    data = out.read_bytes()
+    areas, at = [], 0
+    for _ in range(2):
+        (count,) = struct.unpack_from("<I", data, at)
+        at += 4
+        records = []
+        for _ in range(count):
+            x, y, _unk, w, h, flags, cflags, ext, t, ct, lid, sid = struct.unpack_from("<fffffIIIhhhh", data, at)
+            at += 0x28
+            if type is None or t == type:
+                records.append({"type": t, "x": x, "y": y, "w": w, "h": h, "flags": f"0x{flags:08x}",
+                                "cflags": f"0x{cflags:08x}", "ext": f"0x{ext:x}", "ctype": ct, "lid": lid, "sid": sid})
+        areas.append({"count": count, "records": records})
+    return {"areas": areas}
+
+
 @tool(exclusive=True)
 def game_input(buttons: str = "", ms: int = 120, stick: str = "") -> dict:
     """Press buttons through the hook mod, e.g. 'A', 'B', 'MINUS', 'L+R', 'RIGHT', 'B+MINUS', and/or hold the left stick at stick='lx,ly' (each -32767..32767; '32767,0' is full right; in the editor, X first gives the finger cursor that the stick scrolls). Works in every scene. 'ui' is ui_screen from the first snapshot taken after the press was released."""
