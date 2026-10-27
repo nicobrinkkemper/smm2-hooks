@@ -190,37 +190,48 @@ def ui_screen(full: bool = False) -> dict:
     return {**ui_probe.summary(view), "status": result["status"], "rows": view["rows"]}
 
 
-@tool()
+@tool(exclusive=True)
 def edit_records(type: int | None = None, timeout: float = 5.0) -> dict:
-    """The course's records as the editor holds them now (edit_time only), without saving: per
-    area (0 main, 1 sub) each record's type, x, y (the .bcd's tenths / 10), w, h (tiles), flags,
-    cflags (a contained object's flags), ext, ctype (the contained object's type, -1 none), lid
-    (link id) and sid. type= keeps one record type. The mod walks the editor's record list
-    (src/course_data.cpp, poll_records) when sd:/smm2-hooks/edit_records.req appears."""
+    """The course's records as the editor holds them now (scene mode 1, the editor, also during
+    its test play), without saving: per area (0 main, 1 sub) each record's type, x, y (the .bcd's
+    tenths / 10), w, h (tiles), flags, cflags (a contained object's flags), ext, ctype (the
+    contained object's type, -1 none), lid (link id) and sid. type= keeps one record type. The
+    mod walks the editor's record list (src/course_data.cpp, poll_records) when
+    sd:/smm2-hooks/edit_records.req appears, and removes the request once the file is whole."""
     import struct  # noqa: WPS433
     sd = Path(P.sd_hooks_dir)
     req, out = sd / "edit_records.req", sd / "edit_records.bin"
     out.unlink(missing_ok=True)
     req.touch()
     deadline = time.time() + timeout
-    while req.exists() or not out.exists():
+    while req.exists():
         if time.time() > deadline:
             req.unlink(missing_ok=True)
-            return {"error": f"no edit_records.bin within {timeout} s (is the game running with this mod?)"}
+            return {"error": f"the mod did not answer within {timeout} s (is the game running with this mod?)"}
         time.sleep(0.05)
+    if not out.exists():
+        return {"error": "the mod could not write edit_records.bin"}
     data = out.read_bytes()
-    areas, at = [], 0
+    (status,) = struct.unpack_from("<I", data, 0)
+    if status:
+        return {"error": {1: "not in the editor (scene mode 1)", 2: "no course loaded"}.get(status, f"status {status}")}
+    areas, at = [], 4
     for _ in range(2):
-        (count,) = struct.unpack_from("<I", data, at)
-        at += 4
+        listed, written = struct.unpack_from("<II", data, at)
+        at += 8
+        if len(data) < at + written * 0x28:
+            return {"error": f"edit_records.bin is {len(data)} bytes, short of {written} records"}
         records = []
-        for _ in range(count):
+        for _ in range(written):
             x, y, _unk, w, h, flags, cflags, ext, t, ct, lid, sid = struct.unpack_from("<fffffIIIhhhh", data, at)
             at += 0x28
             if type is None or t == type:
                 records.append({"type": t, "x": x, "y": y, "w": w, "h": h, "flags": f"0x{flags:08x}",
                                 "cflags": f"0x{cflags:08x}", "ext": f"0x{ext:x}", "ctype": ct, "lid": lid, "sid": sid})
-        areas.append({"count": count, "records": records})
+        area = {"count": listed, "records": records}
+        if written < listed:
+            area["truncated"] = written
+        areas.append(area)
     return {"areas": areas}
 
 

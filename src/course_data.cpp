@@ -133,15 +133,19 @@ static HkTrampoline<uint32_t, nn::fs::FileHandle, int64_t, const void*, size_t, 
     });
 
 // sd:/smm2-hooks/edit_records.req present: the records the editor holds now
-// go to edit_records.bin and the request is removed (checked every 15
-// frames). The editor's course areas sit at [qword_7102B2B718] + 0x28 +
-// area * 0xC70; each starts with a sead OffsetList of record objects (count
-// +0x10, node offset +0x14) that EditActor's constructor (sub_7100E8DAE0)
-// fills through sub_7100FDD920. An object holds x, y (f32, the .bcd's
-// tenths divided by 10) at +0x08, w, h (f32, tiles) at +0x14, then from
-// +0x1c the .bcd record's own words: flags, child flags, extended flags,
-// type, child type, link id, sub id (s16 each). Out: per area a u32 count,
-// then count records of those 0x28 bytes from +0x08.
+// go to edit_records.bin, and the request is removed once the file is
+// complete (checked every 15 frames). The editor's course areas sit at
+// [qword_7102B2B718] + 0x28 + area * 0xC70; each starts with a sead
+// OffsetList of record objects (count +0x10, node offset +0x14) that
+// EditActor's constructor (sub_7100E8DAE0) fills through sub_7100FDD920.
+// The same global holds the course in play too, so the list is walked only
+// in scene mode 1 (the editor). An object holds x, y (f32, the .bcd's tenths
+// divided by 10) at +0x08, w, h (f32, tiles) at +0x14, then from +0x1c the
+// .bcd record's own words: flags, child flags, extended flags, type, child
+// type, link id, sub id (s16 each). Out: a u32 status (0 read, 1 not in the
+// editor, 2 no course), then per area the list's u32 count, the u32 number
+// written (at most MAX_RECORDS) and that many records of those 0x28 bytes
+// from +0x08.
 constexpr const char* RECORDS_REQ = "sd:/smm2-hooks/edit_records.req";
 constexpr const char* RECORDS_OUT = "sd:/smm2-hooks/edit_records.bin";
 constexpr uintptr_t OFF_EDIT_AREAS = 0x2B2B718;
@@ -150,39 +154,52 @@ constexpr size_t RECORD_BYTES = 0x28;
 
 static bool heap_ptr(uintptr_t p) { return p >= 0x1000000ull && p < 0x3000000000ull; }
 
-void poll_records(uint32_t frame) {
-    if (frame % 15) return;
-    nn::fs::FileHandle f;
-    if (nn::fs::OpenFile(&f, RECORDS_REQ, nn::fs::MODE_READ) != 0) return;
-    nn::fs::CloseFile(f);
-    nn::fs::DeleteFile(RECORDS_REQ);
-    uintptr_t areas = *reinterpret_cast<uintptr_t*>(hk::ro::getMainModule()->range().start() + OFF_EDIT_AREAS);
-    if (!heap_ptr(areas)) return;
-    static uint8_t out[2 * (4 + MAX_RECORDS * RECORD_BYTES)];
-    size_t n = 0;
+static size_t walk_records(uint8_t* out, uint32_t scene_mode) {
+    uint32_t status = scene_mode != 1 ? 1 : 0;
+    uintptr_t areas = status ? 0 : *reinterpret_cast<uintptr_t*>(hk::ro::getMainModule()->range().start() + OFF_EDIT_AREAS);
+    if (!status && !heap_ptr(areas)) status = 2;
+    std::memcpy(out, &status, 4);
+    if (status) return 4;
+    size_t n = 4;
     for (int area = 0; area < 2; area++) {
         uintptr_t list = areas + 0x28 + area * 0xC70;
         int32_t count = *reinterpret_cast<int32_t*>(list + 0x10);
         int32_t offset = *reinterpret_cast<int32_t*>(list + 0x14);
-        if (count < 0 || count > MAX_RECORDS) count = 0;
-        size_t at = n;
-        n += 4;
+        uint32_t listed = count < 0 ? 0 : (uint32_t)count;
         uint32_t written = 0;
+        size_t at = n;
+        n += 8;
         uintptr_t node = *reinterpret_cast<uintptr_t*>(list + 8);
-        while ((int32_t)written < count && heap_ptr(node) && node != list) {
+        while (offset >= 0 && offset < 0x100 && written < listed && written < (uint32_t)MAX_RECORDS &&
+               heap_ptr(node) && node != list && heap_ptr(node - offset)) {
             std::memcpy(out + n, reinterpret_cast<const void*>(node - offset + 8), RECORD_BYTES);
             n += RECORD_BYTES;
             written++;
             node = *reinterpret_cast<uintptr_t*>(node + 8);
         }
-        std::memcpy(out + at, &written, 4);
+        std::memcpy(out + at, &listed, 4);
+        std::memcpy(out + at + 4, &written, 4);
     }
+    return n;
+}
+
+void poll_records(uint32_t frame, uint32_t scene_mode) {
+    if (frame % 15) return;
+    nn::fs::FileHandle f;
+    if (nn::fs::OpenFile(&f, RECORDS_REQ, nn::fs::MODE_READ) != 0) return;
+    nn::fs::CloseFile(f);
+    static uint8_t out[4 + 2 * (8 + MAX_RECORDS * RECORD_BYTES)];
+    size_t n = walk_records(out, scene_mode);
     nn::fs::DeleteFile(RECORDS_OUT);
     nn::fs::CreateFile(RECORDS_OUT, n);
-    if (nn::fs::OpenFile(&f, RECORDS_OUT, nn::fs::MODE_WRITE) != 0) return;
-    nn::fs::WriteOption opt = { .flags = nn::fs::WRITE_OPTION_FLUSH };
-    nn::fs::WriteFile(f, 0, out, n, opt);
-    nn::fs::CloseFile(f);
+    if (nn::fs::OpenFile(&f, RECORDS_OUT, nn::fs::MODE_WRITE) == 0) {
+        nn::fs::WriteOption opt = { .flags = nn::fs::WRITE_OPTION_FLUSH };
+        nn::fs::WriteFile(f, 0, out, n, opt);
+        nn::fs::CloseFile(f);
+    } else {
+        nn::fs::DeleteFile(RECORDS_OUT);
+    }
+    nn::fs::DeleteFile(RECORDS_REQ);   // last: the request gone means the file is whole
 }
 
 void init() {

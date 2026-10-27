@@ -20,8 +20,9 @@ uint16_t gamestyle();
 const char* course_name();
 
 // Write the editor's records to sd:/smm2-hooks/edit_records.bin when
-// edit_records.req is present (checked every 15 frames).
-void poll_records(uint32_t frame);
+// edit_records.req is present (checked every 15 frames; walked only in
+// scene mode 1, the editor).
+void poll_records(uint32_t frame, uint32_t scene_mode);
 
 // Dump collected OpenFile paths to log (call after status system is running)
 void dump_open_log();
