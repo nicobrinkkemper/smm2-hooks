@@ -125,6 +125,7 @@ void update(uint32_t frame) {
             }
         }
     }
+    course_data::poll_records(frame, blk.scene_mode);
     
     // Track scene changes for instant navigation detection
     static uint32_t s_prev_scene_mode = 0;
