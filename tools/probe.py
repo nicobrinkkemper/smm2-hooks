@@ -356,10 +356,15 @@ field walk nring u32 0x160
 """,
     # The placeholder (docs/re-notes/placeholder.md in the decomp): every
     # enemy's per-frame with its activation flags (+0x52C: 0x20000 offscreen,
-    # 0x40000 activated), the ground-contact activation bit (+0x658 bit 29),
-    # its record link (+0x4E4) and the owner handle of the body under its
-    # foot; the lifts with their own link (+0x350); the surface walk that
-    # sets the activation bit, with who called it.
+    # 0x40000 activated), +0x658 (bit 29 is the squeeze walk's flag, "what
+    # stands on me was stopped by a ceiling", not an activation), its record
+    # link (+0x4E4) and the owner handle of the body under its foot; the
+    # lifts with their own link (+0x350); the squeeze walk sub_7100D81E60
+    # that sets bit 29, with who called it. Contact activation is the calc's
+    # carrier test: an off-screen placeholder stays held only while the shape
+    # under its foot belongs to its own lift group (+0x350 == its +0x4E4);
+    # anything else activates it. The hook keeps the name "activate" because
+    # recording fixtures in the decomp select its rows by that name.
     "placeholder": """\
 hook enemy 0x710128A2D0
 field enemy id    u32 0x40
