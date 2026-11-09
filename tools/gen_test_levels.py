@@ -1057,6 +1057,13 @@ def level_broken_track() -> LevelBuilder:
         (1, 14,  7, 5, 13, 0x104, 0x70),
     ]:
         b.add_track(x, y, shape, ends=(e0, e1), has_object=bool(has), lid=lid)
+    # A rider's link id is a track record's 0-based index, and the block at
+    # (16, 9) names index 13, one past the thirteen copied pieces. The game's
+    # course validator refuses a link group with no host (code 0x80), so the
+    # course would be deleted as corrupt; a lone piece well away from the
+    # others is that host, the way the glitch leaves a block naming an
+    # unrelated piece (Detached Block). The copied pieces stay as they were.
+    b.add_track(30, 9, TRACK_SHAPE_HORIZONTAL, ends=TRACK_END_FREE_H)
     b.add_actor(23, 18, 10, 0x06000444, lid=3)
     b.add_actor(23, 11,  7, 0x06000444, lid=1)
     b.add_actor(23, 13, 13, 0x06000444, lid=11)
@@ -1705,18 +1712,20 @@ def level_lift_tie_rl() -> LevelBuilder:
 def level_surface_kinds() -> LevelBuilder:
     """The guide's 'Ground priority test' surfaces, one per column, each with
     a spike ball dropped on it from two tiles up: a note block (23), a
-    conveyor belt (94), a donut block (21), the other donut id (82), a spike
-    ball resting on the ground (74) and a one-tile ground column. The
+    conveyor belt (53, three tiles wide), a donut block (21), a bumper (82,
+    3x3), a spike ball resting on the ground (74) and a one-tile ground
+    column. The belt and the bumper carry the sizes the game's course
+    validator allows (53: 3..9 x 1; 82: 3x3); id 94 is the sloped belt. The
     `surface` probe logs the kind word of the shape each ball lands on, which
     indexes the game's surface priority table (docs/re-notes/surfaces.md).
     """
     b = LevelBuilder("Surface Kinds", "SMB1", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_y = 5
-    cols = [(9, 23, 0x06000040), (12, 94, 0x06000040), (15, 21, 0x06000040), (18, 82, 0x06000040),
-            (21, 74, 0x06000044)]
-    for x, oid, flags in cols:
-        b.objects.append({'id': oid, 'x': x, 'y': 6, 'width': 1, 'height': 1, 'flags': flags,
+    cols = [(9, 23, 0x06000040, 1, 1), (12, 53, 0x06000040, 3, 1), (15, 21, 0x06000040, 1, 1),
+            (18, 82, 0x06000040, 3, 3), (21, 74, 0x06000044, 1, 1)]
+    for x, oid, flags, w, h in cols:
+        b.objects.append({'id': oid, 'x': x, 'y': 6, 'width': w, 'height': h, 'flags': flags,
                           '_half_tile_offset': True})
         b.objects.append({'id': OBJ_SPIKE_BALL, 'x': x, 'y': 9, 'width': 1, 'height': 1,
                           'flags': 0x06000044, '_half_tile_offset': True})
@@ -1730,15 +1739,17 @@ def level_surface_kinds() -> LevelBuilder:
 def level_switch_gallery() -> LevelBuilder:
     """The blocks a switch flips, one of each look in a row, for reading their
     in-game sprites: dotted-line block (100) plain and alt, P-block (79) plain
-    and alt, ON/OFF block (99) plain and alt. `alt` is flag 0x4 in the record,
-    the editor's second form. Nothing moves, so a play screenshot shows each
+    and alt, and the ON/OFF switch (99). `alt` is flag 0x4 in the record,
+    the editor's second form; the switch has none (its flags mask allows no
+    modifier, so the course validator refuses it with 0x4), so it appears
+    once. Nothing moves, so a play screenshot shows each
     block in its initial look.
     """
     b = LevelBuilder("Switch Gallery", "SMB1", "Ground")
     b.add_ground_block(7, 24, y_surface=4, height=5)
     b.goal_y = 5
     for x, oid, flags in [(9, 100, 0x06000040), (11, 100, 0x06000044), (13, 79, 0x06000040),
-                          (15, 79, 0x06000044), (17, 99, 0x06000040), (19, 99, 0x06000044)]:
+                          (15, 79, 0x06000044), (17, 99, 0x06000040)]:
         b.objects.append({'id': oid, 'x': x, 'y': 6, 'width': 1, 'height': 1, 'flags': flags,
                           '_half_tile_offset': True})
     return b
@@ -2606,8 +2617,8 @@ def level_stack_drop() -> LevelBuilder:
                               'width': 1, 'height': 1, '_half_tile_offset': True})
     b.sub_objects.append({'id': OBJ_NOTE_BLOCK, 'x': col, 'y': top + 1,
                           'flags': 0x06000040})
-    for dy in (2, 4):                                            # the two Bowsers
-        b.sub_objects.append({'id': 62, 'x': col, 'y': top + dy,
+    for dy in (2, 4):                                            # the two Bowsers, 2x2 as the editor writes them
+        b.sub_objects.append({'id': 62, 'x': col, 'y': top + dy, 'width': 2, 'height': 2,
                               'flags': 0x06000040, '_half_tile_offset': True})
     return b
 
@@ -2630,8 +2641,8 @@ def level_detached_block() -> LevelBuilder:
 
     Two blocks, so one run gives both sides:
       A (col 11) a normal block on its own capped piece -- the control.
-      B (col 20) the same record, on-track and linked to A's piece, but placed
-                 nine tiles away over open ground with no rail under it.
+      B (col 20) the same record, on-track and linked to a lone piece at
+                 (14, 11), over open ground with no rail under it.
 
     Record with the `rail` preset and compare B's first frames against A's.
     """
@@ -2642,10 +2653,14 @@ def level_detached_block() -> LevelBuilder:
     first = b.add_track(10, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0090, 0x0070))
     b.add_track(12, 6, TRACK_SHAPE_HORIZONTAL, ends=(0x0071, 0x0104))
     b.add_note_block_on_track(first, travel_left=False)
-    # B: the detached one. Same flags as a rider, linked to A's piece, but its
-    # own position is bare ground -- the state the glitch leaves behind.
+    # B: the detached one. Same flags as a rider, linked to a lone piece
+    # elsewhere, its own position bare ground -- the state the glitch leaves
+    # behind. Not A's piece: a link group holds one host and at most one
+    # other record, and the game's course validator refuses the whole group
+    # otherwise (code 0x80), as Lost Woods' block names a piece nothing rides.
+    lone = b.add_track(14, 11, TRACK_SHAPE_HORIZONTAL, ends=TRACK_END_FREE_H)
     b.objects.append({'id': OBJ_NOTE_BLOCK, 'x': 20, 'y': 8,
-                      'flags': 0x06000040 | FLAG_ON_TRACK, 'lid': first,
+                      'flags': 0x06000040 | FLAG_ON_TRACK, 'lid': lone,
                       '_half_tile_offset': True})
     return b
 
@@ -2818,7 +2833,8 @@ def level_claw_goomba() -> LevelBuilder:
     b.add_ground_block(7, 30, y_surface=4, height=5)
     b.goal_y = 5
     b.add_actor(OBJ_GOOMBA, 22, 5)
-    b.add_actor(105, 18, 6)   # SwingingClaw (course object 105)
+    b.objects.append({'id': 105, 'x': 18, 'y': 6, 'width': 3, 'height': 4,   # SwingingClaw, 3x4 as the
+                      'flags': 0x06000040, '_half_tile_offset': True})       # course validator requires
     return b
 
 
