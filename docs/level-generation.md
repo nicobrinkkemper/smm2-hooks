@@ -56,6 +56,52 @@ Subworld (Area 1) at offset `0x2E0E0` must be initialized:
 
 If subworld is all zeros, pipes to subworld will crash/corrupt.
 
+## Course Header Rules
+
+The game runs every course through `CourseDataValidator::validate`, and
+Coursebot deletes a course that breaks any of its header rules. Addresses,
+error bits and the decomp port: smm2-decomp
+`docs/re-notes/course-validator.md`, section "The header rules". Sizes are
+in pixels (16 per tile) unless a row says tiles.
+
+- **Start row** (`body+0x00`): 1..25, at least 2 in 3D World.
+- **Goal row** (`body+0x01`): 1..15, at least 2 in 3D World.
+- **Goal x** (`body+0x02`, i16, tenths of a tile): `(width - 9.5) * 10`. The
+  pole stands 9.5 tiles from the overworld's right edge.
+- **Timer** (`body+0x04`, u16): a multiple of 10 in 10..500.
+- **Autoscroll**: overworld type (`area+0x01`) at most 4, speed
+  (`body+0x0E`) at most 2, sub area type at most 3.
+- **Theme** (`area+0x00`): below 10 in both areas. No night (area flags
+  `+0x18` bit 1) in 3D World, in either area.
+- **Orientation** (`area+0x03`): the overworld is never vertical; only the
+  sub area can be.
+- **Area size**: the overworld has top 432 (27 rows) and right 384..3840
+  (24..240 tiles). A horizontal sub area the same. A vertical sub area has
+  right 768 (48 tiles) and top 448..2688 (28..168 rows).
+- **Left and bottom** (`+0x10`, `+0x14`): 0 in the overworld. A vertical sub
+  area: left 0 and bottom 0..top - 216; a horizontal one: bottom 0 and left
+  0..right - 384.
+- **Liquid**: end (`+0x04`) and start (`+0x07`) rows within the area,
+  `bottom / 16 .. top / 16`, two rows lower at the top for a horizontal area
+  (so 0..25 at the usual height). Mode (`+0x05`) at most 2, speed (`+0x06`)
+  at most 3.
+- **Per-area counts**: objects (`+0x1C`) 2600, ground tiles (`+0x3C`) 4000,
+  tracks (`+0x40`) 1500, ice (`+0x44`) 300, clear pipes (`+0x28`) 200, snake
+  blocks (`+0x24`) 5, piranha creepers, ! blocks and track blocks
+  (`+0x2C`, `+0x30`, `+0x34`) 10 each; sound effects (`+0x20`) plus linked
+  objects 300.
+- **Per-kind counters**: each object kind also counts against a limit (doors
+  8, checkpoint flags 1, Bowser and Bowser Jr. 3, ...); the table is in the
+  re-note's "The leaves".
+- **Clear condition** (`body+0x10`): must be one the game knows.
+- **`body+0xF0`**: 0xFF or below 0x38.
+
+`LevelBuilder.preflight` in `tools/gen_test_levels.py` refuses a level that
+breaks any of these the builder can produce, naming the rule's error bit
+(`header rule 0x400 (start row): ...`); `header_errors` lists the ones it
+leaves out and why. `python3 -m unittest tools/test_course_header.py`
+checks every generated level and each refused rule.
+
 ## Common Mistakes
 
 ### ❌ Placing Ground Over Start Area

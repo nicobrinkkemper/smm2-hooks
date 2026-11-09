@@ -384,8 +384,10 @@ class LevelBuilder:
     def preflight(self):
         """Refuse what Coursebot is known to delete, before an Eden round trip:
         a track piece (its 3x3 box) or an object inside the start area, and
-        any object, tile, slope or track reaching the goal area; and a slope
-        record the game never writes (slope_errors)."""
+        any object, tile, slope or track reaching the goal area; a slope
+        record the game never writes (slope_errors); and a header that breaks
+        one of the game's header rules (header_errors), read off a build into
+        a scratch copy."""
         bad = []
         g = self.goal_area_start()
         go = self.goal_area_start(objects=True)
@@ -408,6 +410,7 @@ class LevelBuilder:
                 bad.append(f"object id {o['id']} at ({o['x']}, {o['y']}) is in the start area (x < {self.START_AREA_TILES})")
         bad += slope_errors(self.objects, self.ground_tiles)
         bad += slope_errors(self.sub_objects, self.sub_ground_tiles)
+        bad += header_errors(self._write(bytearray(self.data)))
         if bad:
             raise ValueError(f"{self.name}: " + "; ".join(bad))
 
@@ -422,9 +425,12 @@ class LevelBuilder:
                 or _beyond(x, y, self.width, self.height))
 
     def build(self) -> bytes:
-        """Build the course data."""
+        """Build the course data, refused by preflight first."""
         self.preflight()
-        data = self.data
+        return self._write(self.data)
+
+    def _write(self, data: bytearray) -> bytes:
+        """Write the course into `data` and return it as bytes."""
         
         # Header
         data[0x00] = self.start_y
@@ -445,7 +451,7 @@ class LevelBuilder:
         data[0xF4:0xF4+len(name_bytes)] = name_bytes
         
         # Area header
-        area = 0x200
+        area = AREA0
         data[area + 0x00] = self.theme_id
         data[area + 0x03] = 1 if self.vertical else 0
         struct.pack_into('<i', data, area + 0x08, self.width * 16)
@@ -462,7 +468,7 @@ class LevelBuilder:
         # Area 1, the subworld. Vertical areas live here: a vertical area has
         # no goal, the overworld does, so the column is always the sub-area
         # and the player arrives through a door or pipe.
-        area1 = 0x2E0E0
+        area1 = AREA1
         data[area1 + 0x00] = self.sub_theme if self.sub_theme is not None else self.theme_id
         data[area1 + 0x01] = self.sub_autoscroll   # upward in a vertical area
         data[area1 + 0x02] = 1                     # boundary flags (from original)
@@ -517,6 +523,79 @@ def slope_errors(objects: list, ground: list) -> list:
         on = sorted(tiles & slope_surface(*slope))
         if on:
             bad.append(f"{at} has ground on its surface at {on}")
+    return bad
+
+
+AREA0 = 0x200      # the area headers in the body (bcd-format.ksy; the game's file + 0x210 / + 0x2E0F0)
+AREA1 = 0x2E0E0
+
+
+def header_errors(body: bytes) -> list:
+    """The header rules of the game's CourseDataValidator::validate that `body`
+    (the decrypted course, no 0x10 file header) breaks, one message per rule,
+    named by its error bit. The table, its addresses and the decomp port:
+    smm2-decomp docs/re-notes/course-validator.md, "The header rules".
+
+    Not checked, because the builder cannot break them: 0x1 (the per-kind
+    counters; their class comes from each kind's profile, which is not in the
+    file), 0x200 (left and bottom: never written, so 0, and 0x100 keeps them
+    in range), 0x1000 (goal_x is written from the same width as the right
+    edge), 0x2000 (the timer is always 300), 0x4000 (body+0xF0 is always
+    0xFF), the counts at area +0x24 .. +0x34 and +0x44 (snake blocks, clear
+    pipes, creepers, ! blocks, track blocks, ice: never written) and
+    0x2000000 (the clear condition is never written). 0x10000 is checked
+    from the linked records alone (the sound effect count is never written;
+    the class 0x10 kinds the game adds are not known here), so it can only
+    under-refuse."""
+    u8 = lambda off: body[off]
+    i32 = lambda off: struct.unpack_from('<i', body, off)[0]
+    bad = []
+    three_d = bytes(body[0xF1:0xF3]) == STYLE_CODES[STYLES['3DW']]
+
+    def rule(bit, what, msg):
+        bad.append(f"header rule {bit:#x} ({what}): {msg}")
+
+    lo = 2 if three_d else 1
+    if not lo <= u8(0x00) <= 25:
+        rule(0x400, 'start row', f"start row {u8(0x00)} is outside {lo}..25")
+    if not lo <= u8(0x01) <= 15:
+        rule(0x800, 'goal row', f"goal row {u8(0x01)} is outside {lo}..15")
+    if u8(AREA0 + 0x01) > 4 or u8(0x0E) > 2 or u8(AREA1 + 0x01) > 3:
+        rule(0x2, 'autoscroll', f"autoscroll type {u8(AREA0 + 0x01)} (max 4), speed {u8(0x0E)} (max 2), "
+                                f"sub area type {u8(AREA1 + 0x01)} (max 3)")
+    if u8(AREA0 + 0x03):
+        rule(0x8, 'orientation', "the overworld is vertical")
+    for name, a in (('overworld', AREA0), ('subworld', AREA1)):
+        vertical = bool(u8(a + 0x03))
+        right, top, bottom = i32(a + 0x08), i32(a + 0x0C), i32(a + 0x14)
+        if u8(a + 0x00) > 9:
+            rule(0x4, 'theme', f"{name} theme {u8(a)} is past 9")
+        if three_d and i32(a + 0x18) & 2:
+            rule(0x4, 'theme', f"{name} is night in 3D World")
+        if a == AREA1 and vertical:
+            if right != 768 or not 448 <= top <= 2688:
+                rule(0x100, 'area size', f"vertical {name} right {right} (must be 768), top {top} (448..2688)")
+        elif top != 432 or not 384 <= right <= 3840:
+            rule(0x100, 'area size', f"{name} top {top} (must be 432), right {right} (384..3840)")
+        high = int(top / 16) - (0 if vertical else 2)
+        for bit, off, what in ((0x10, 0x04, 'liquid end'), (0x80, 0x07, 'liquid start')):
+            if not int(bottom / 16) <= u8(a + off) <= high:
+                rule(bit, what, f"{name} {what} row {u8(a + off)} is outside {int(bottom / 16)}..{high}")
+        if u8(a + 0x05) > 2:
+            rule(0x20, 'liquid mode', f"{name} liquid mode {u8(a + 0x05)} is past 2")
+        if u8(a + 0x06) > 3:
+            rule(0x40, 'liquid speed', f"{name} liquid speed {u8(a + 0x06)} is past 3")
+        objects = i32(a + 0x1C)
+        if objects > 2600:
+            rule(0x8000, 'objects', f"{name} has {objects} objects (max 2600)")
+        linked = sum(struct.unpack_from('<h', body, a + 0x48 + i * 0x20 + 0x1C)[0] != -1
+                     for i in range(objects))
+        if i32(a + 0x20) + linked > 300:
+            rule(0x10000, 'sounds and links', f"{name} has {linked} linked objects (max 300 with its sound effects)")
+        if i32(a + 0x3C) > 4000:
+            rule(0x400000, 'ground', f"{name} has {i32(a + 0x3C)} ground tiles (max 4000)")
+        if i32(a + 0x40) > 1500:
+            rule(0x800000, 'tracks', f"{name} has {i32(a + 0x40)} tracks (max 1500)")
     return bad
 
 
