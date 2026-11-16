@@ -123,7 +123,7 @@ extern "C" void hkMain() {
     smm2::placeholder_debug::init(); // force spikeballs into placeholder state
     smm2::theme_override::init();   // sd:/smm2-hooks/theme.txt: every course loads with that theme
     smm2::hold::init();             // sd:/smm2-hooks/hold.txt: wait after each frame for the host
-    smm2::place::init();            // sd:/smm2-hooks/ctl.txt: place the player (before boot.txt, which may hold a place line)
+    smm2::place::init();            // sd:/smm2-hooks/ctl.txt: place the player while the game runs
     smm2::directboot::init();       // sd:/smm2-hooks/boot.txt: skip the title and menus
     smm2::probe::init();            // last: it skips functions the plugins above hooked (docs/probe.md)
 }
