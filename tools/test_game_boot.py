@@ -9,11 +9,15 @@ import dataclasses
 import json
 import sys
 import tempfile
+import threading
+import time
 import types
 import unittest
 import zlib
 from pathlib import Path
 from unittest import mock
+
+import anyio
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mcp"))
 
@@ -23,6 +27,7 @@ import save_dat  # noqa: E402
 import server  # noqa: E402
 
 PLAIN = {name: getattr(server, name).__wrapped__ for name in ("game_boot", "game_input")}
+DIRECTBOOT = server._directboot
 
 
 class GameBoot(unittest.TestCase):
@@ -135,6 +140,91 @@ class GameBoot(unittest.TestCase):
             result = PLAIN["game_boot"](target="coursebot", slot=0, via_menu=True, budget=5)
         self.assertIn("slot_backup", result)
         self.assertNotIn("warning", result)
+
+    def test_direct_boot_keeps_the_stub_setting_of_the_last_launch(self):
+        plain = g.LevelBuilder(name="Slot", style="SMB3", theme="Ground").build()
+        (self.save / "course_data_003.bcd").write_bytes(g.encrypt_course(plain))
+        for ini, asked, want in ((True, None, True), (False, None, False), (False, True, True), (True, False, False)):
+            self.patch(server.eden, "gdb_config", lambda _p, ini=ini: {"use_gdbstub": ini, "port": 1})
+            PLAIN["game_boot"](target="coursebot", slot=3, budget=5, gdb=asked)
+            self.assertEqual(self.boots[-1][1]["gdb"], want, (ini, asked))
+
+    def directboot(self, gdb):
+        """The real _directboot around a stand-in Eden whose mod reads boot.txt
+        0.4 s after it starts running: at launch, or with the stub on at the
+        debugger's continue. Returns the result and what happened, in order."""
+        events, boot_txt, log = [], self.sd / "boot.txt", self.sd / "directboot.log"
+        log.write_text("config coursebot 9 kind 4\n")   # the previous boot's
+
+        def mod_init():
+            time.sleep(0.4)
+            events.append(f"mod reads boot.txt: {boot_txt.read_text().splitlines()[0]}" if boot_txt.exists() else "mod finds no boot.txt")
+            log.write_text("config coursebot 3 kind 4\n")
+
+        def launch(_p, gdb):
+            events.append(f"launch gdb={gdb}, old log {'kept' if log.exists() else 'gone'}")
+            if not gdb:
+                threading.Thread(target=mod_init).start()
+            return {"process": {"pid": 1}}
+
+        def attach_and_continue(_deadline):
+            events.append("attach and continue")
+            threading.Thread(target=mod_init).start()
+
+        def wait_for(_condition, timeout):
+            events.append(f"wait for the scene, boot.txt {'left' if boot_txt.exists() else 'removed'}")
+            return {"scene_mode": 7}
+
+        self.patch(server.eden, "process", lambda: None)
+        self.patch(server.eden, "launch", launch)
+        self.patch(server, "_attach_and_continue", attach_and_continue)
+        self.patch(server, "_game", lambda: types.SimpleNamespace(wait_for=wait_for))
+        return DIRECTBOOT(b"image", slot=3, kind=4, scene=7, name="course_003.boot.bin", timeout=5, gdb=gdb), events
+
+    def test_boot_txt_stays_until_the_mod_logged_reading_it(self):
+        result, events = self.directboot(gdb=False)
+        self.assertTrue(result["ok"])
+        self.assertNotIn("gdb", result)
+        self.assertEqual(events, ["launch gdb=False, old log gone", "mod reads boot.txt: coursebot 3 4",
+                                  "wait for the scene, boot.txt removed"])
+
+    def test_boot_with_the_stub_continues_the_game_and_keeps_the_session(self):
+        result, events = self.directboot(gdb=True)
+        self.assertTrue(result["ok"])
+        self.assertIn("attached", result["gdb"])
+        self.assertEqual(events, ["launch gdb=True, old log gone", "attach and continue", "mod reads boot.txt: coursebot 3 4",
+                                  "wait for the scene, boot.txt removed"])
+
+    def test_a_debugger_that_cannot_start_the_game_fails_the_boot(self):
+        self.patch(server.eden, "process", lambda: None)
+        self.patch(server.eden, "launch", lambda _p, gdb: {"process": {"pid": 1}})
+        self.patch(server, "_attach_and_continue", lambda _deadline: "Eden's GDB stub never listened on port 1")
+        result = DIRECTBOOT(b"image", slot=3, kind=4, scene=7, name="course_003.boot.bin", timeout=5, gdb=True)
+        self.assertIn("never listened", result["error"])
+        self.assertFalse((self.sd / "boot.txt").exists())
+
+    def test_game_tools_answer_while_a_gdb_call_waits(self):
+        waiting = threading.Event()
+
+        def wait_stop(_timeout):
+            waiting.set()
+            time.sleep(1.5)
+            return "still running (no hit within timeout)"
+        self.patch(server.GDB, "wait_stop", wait_stop)
+        game = types.SimpleNamespace(press=lambda buttons, ms, lx, ly: None)
+        took = {}
+
+        async def main():
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(server.gdb_wait_stop, 2)
+                await anyio.to_thread.run_sync(waiting.wait)
+                t = time.time()
+                await server.game_input("A")
+                await server.game_status()
+                took["game"] = time.time() - t
+        with mock.patch.object(server, "_game", lambda: game):
+            anyio.run(main)
+        self.assertLess(took["game"], 1.0)
 
     def test_stick(self):
         presses = []

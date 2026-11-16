@@ -52,14 +52,19 @@ mcp = FastMCP("smm2-hooks", instructions=(
     "editor_play or coursebot_play, the only modes where actors update and a player exists. "
     "To look at a course, open it in the editor with game_boot(target='editor', file=...): no Coursebot "
     "visit, so nothing is deleted as invalid (it opens as slot 0: leave without saving); tools/hf_course.py fetches real uploaded courses. "
-    "GDB: hardware breakpoints/watchpoints only; the target must be stopped to send commands."
+    "GDB (eden_launch gdb=true, or game_boot, which keeps the stub setting of the last launch): only watchpoints work "
+    "(watch/rwatch/awatch on a byte, word or dword: hardware watchpoints). No software breakpoints: `break` is refused, "
+    "since a deleted one keeps trapping in Eden's compiled code, and Eden's stub has no hardware breakpoints (hbreak fails). "
+    "The target must be stopped to send commands. gdb_detach leaves the game running and gdb_attach works again in the "
+    "same launch; a gdb_* call that cannot finish returns an error within its timeout."
 ))
 GDB = GdbSession()
 
-_GAME_LOCK = threading.Lock()  # tools that write input.bin, launch/kill Eden or talk to GDB run one at a time
+_GAME_LOCK = threading.Lock()  # tools that write input.bin or launch/kill Eden run one at a time
+_GDB_LOCK = threading.Lock()   # the GDB session's own: a gdb_wait_stop in flight does not hold up game_input
 
 
-def tool(exclusive: bool = False):
+def tool(exclusive: bool = False, gdb: bool = False):
     """Register a tool that runs in a worker thread.
 
     A plain function called on the server's event loop blocks the whole server
@@ -67,12 +72,16 @@ def tool(exclusive: bool = False):
     gives up on the channel. Eden navigation takes tens of seconds, so tools
     run off the loop. exclusive=True serialises the ones that drive the game,
     and refuses them while a game_boot navigation thread is still running
-    after its pending reply (the thread outlives the lock).
+    after its pending reply (the thread outlives the lock). gdb=True
+    serialises the tools that talk to the GDB session, apart from the game's.
     """
     def wrap(fn):
         @functools.wraps(fn)
         async def run(*args, **kwargs):
             def call():
+                if gdb:
+                    with _GDB_LOCK:
+                        return fn(*args, **kwargs)
                 if not exclusive:
                     return fn(*args, **kwargs)
                 with _GAME_LOCK:
@@ -107,12 +116,8 @@ def eden_launch(gdb: bool = False) -> dict:
 
 @tool(exclusive=True)
 def eden_kill() -> dict:
-    """Stop Eden (and drop the GDB session if any)."""
-    if GDB.alive():
-        try:
-            GDB.detach()
-        except Exception:
-            pass
+    """Stop Eden (and drop the GDB session if any; a gdb_* call still waiting on it returns an error)."""
+    GDB.drop()
     return eden.kill()
 
 
@@ -278,48 +283,71 @@ def _nav_running() -> bool:
     return bool(t and t.is_alive())
 
 
-def _directboot(image: bytes, *, slot: int, kind: int, scene: int, name: str, timeout: int) -> dict:
+def _attach_and_continue(deadline: float) -> str | None:
+    """Start a game the stub holds at its first instruction: attach once the
+    stub listens, continue, and keep the session. Returns what went wrong."""
+    cfg = eden.gdb_config(P)
+    while not eden.stub_listening(cfg["port"]):
+        if time.time() > deadline:
+            return f"Eden's GDB stub never listened on port {cfg['port']}"
+        time.sleep(1)
+    with _GDB_LOCK:
+        try:
+            GDB.attach(eden.gdb_host(), cfg["port"])
+            GDB.continue_()
+        except RuntimeError as e:
+            return str(e)
+    return None
+
+
+def _directboot(image: bytes, *, slot: int, kind: int, scene: int, name: str, timeout: int, gdb: bool = False) -> dict:
     """Relaunch Eden with boot.txt so the mod loads `image` into the play
     buffer and fires the transition `kind` from the title: 4 starts Coursebot
     play (scene_mode 7), 3 opens the editor (scene_mode 1) — no TAS menu walk
-    (docs/direct-boot.md)."""
+    (docs/direct-boot.md). gdb=True launches with the stub on and leaves a
+    GDB session attached, the game running."""
     from directboot_cfg import write_boot  # noqa: WPS433
 
     sd = Path(P.sd_hooks_dir)
+    log = sd / "directboot.log"
     boot_txt, boot_bin = write_boot(sd, image, slot=slot, kind=kind, boot_name=name)
 
+    def failed(error: str, **more) -> dict:
+        boot_txt.unlink(missing_ok=True)
+        return {"ok": False, "pending": False, "error": error, **more,
+                "directboot_log": log.read_text(errors="replace") if log.exists() else None,
+                "boot_bin": str(boot_bin), "status": eden.read_status(P)}
+
+    GDB.drop()
     if eden.process():
         eden.kill()
         time.sleep(2)
-    launched = eden.launch(P, gdb=False)
+    log.unlink(missing_ok=True)   # the lines read below are this boot's
+    launched = eden.launch(P, gdb=gdb)
     if not launched.get("process"):
-        boot_txt.unlink(missing_ok=True)
-        return {"ok": False, "pending": False, "error": "eden_launch failed", "launch": launched}
-    # Mod reads boot.txt once at init; leave no leftover for later menu tools.
-    time.sleep(3)
-    boot_txt.unlink(missing_ok=True)
-
-    g = _game()
+        return failed("eden_launch failed", launch=launched)
     # Cold boot: title ~8 s, play ~16 s with skip_intro (docs/direct-boot.md).
     wait = max(timeout, 90)
-    st = g.wait_for(lambda s: s and s.get("scene_mode") == scene, timeout=wait)
+    deadline = time.time() + wait
+    if gdb and (error := _attach_and_continue(deadline)):
+        return failed(f"the game is waiting for a debugger and GDB could not start it: {error}")
+    # The mod reads boot.txt once, at init, and logs the lines it took. Init
+    # comes seconds after launch, and with the stub on only after the continue
+    # above, so boot.txt stays until that log line; then it goes, to leave no
+    # leftover for a later launch.
+    while not (log.exists() and "config coursebot" in log.read_text(errors="replace")):
+        if time.time() > deadline:
+            return failed(f"the mod did not read boot.txt within {wait} s (no 'config coursebot' line in directboot.log)")
+        time.sleep(0.25)
+    boot_txt.unlink(missing_ok=True)
+
+    st = _game().wait_for(lambda s: s and s.get("scene_mode") == scene, timeout=max(1, deadline - time.time()))
     if not st:
-        log = sd / "directboot.log"
-        return {
-            "ok": False,
-            "pending": False,
-            "error": f"no scene_mode {scene} within {wait} s",
-            "directboot_log": log.read_text() if log.exists() else None,
-            "boot_bin": str(boot_bin),
-            "status": eden.read_status(P),
-        }
-    return {
-        "ok": True,
-        "pending": False,
-        "method": "directboot",
-        "boot_bin": str(boot_bin),
-        "status": eden.read_status(P),
-    }
+        return failed(f"no scene_mode {scene} within {wait} s")
+    out = {"ok": True, "pending": False, "method": "directboot", "boot_bin": str(boot_bin), "status": eden.read_status(P)}
+    if gdb:
+        out["gdb"] = "attached, the game running: gdb_interrupt to stop it"
+    return out
 
 
 def _boot_image(target: str, slot: int | None, file: str | None, sub_area: bool) -> tuple[bytes, str] | dict:
@@ -402,6 +430,7 @@ def game_boot(
     via_menu: bool = False,
     file: str | None = None,
     sub_area: bool = False,
+    gdb: bool | None = None,
 ) -> dict:
     """Boot into play or the editor.
 
@@ -421,6 +450,11 @@ def game_boot(
     when a slot changed or was unregistered by the time the boot finished (a
     deletion when play later returns to the Coursebot list comes after that:
     compare against the manifest).
+    A direct boot relaunches Eden with the GDB stub as the last launch had it
+    (eden_launch gdb=..., eden_set_gdbstub), or as `gdb` says. With the stub on
+    the game waits for a debugger, so game_boot attaches the GDB session and
+    continues: the result comes with the session attached and the game running
+    (gdb_interrupt, then watch ...).
     The call returns within `budget` seconds; if work is still going it returns
     pending=true and game_status carries the outcome under 'boot'. The final
     result reports 'registered' as save.dat stands after the visit.
@@ -438,6 +472,8 @@ def game_boot(
         if isinstance(image, dict):
             return image
     g = _game()
+    if gdb is None:
+        gdb = eden.gdb_config(P)["use_gdbstub"]
     backup = None
     if target == "coursebot":
         _note_played(slot, "game_boot")
@@ -459,7 +495,7 @@ def game_boot(
                 data, name = image
                 kind, scene = (4, 7) if target == "coursebot" else (3, 1)
                 _NAV["result"] = with_registration(
-                    _directboot(data, slot=slot or 0, kind=kind, scene=scene, name=name, timeout=timeout))
+                    _directboot(data, slot=slot or 0, kind=kind, scene=scene, name=name, timeout=timeout, gdb=gdb))
                 return
             if target == "coursebot":
                 ok = g.to_coursebot_play(slot=slot, timeout=timeout)
@@ -654,39 +690,39 @@ def level_restore(slot: int) -> dict:
     return {"restored": restored}
 
 
-@tool(exclusive=True)
-def gdb_attach() -> dict:
-    """Attach gdb-multiarch to Eden's stub (real ini port; the Windows host IP from WSL, 127.0.0.1 for a native Eden). Leaves the target stopped; call gdb_continue."""
+@tool(gdb=True)
+def gdb_attach(timeout: int = 20) -> dict:
+    """Attach gdb-multiarch to Eden's stub (real ini port; the Windows host IP from WSL, 127.0.0.1 for a native Eden). Leaves the target stopped; call gdb_continue. Works again after gdb_detach in the same launch; an error when the stub does not take the connection."""
     cfg = eden.gdb_config(P)
-    out = GDB.attach(eden.gdb_host(), cfg["port"])
+    out = GDB.attach(eden.gdb_host(), cfg["port"], timeout)
     return {"attached": GDB.alive(), "output": out, "port": cfg["port"]}
 
 
-@tool(exclusive=True)
+@tool(gdb=True)
 def gdb_continue() -> dict:
     """Resume the game. Use gdb_wait_stop to wait for a hit, gdb_interrupt to stop it."""
     return {"result": GDB.continue_()}
 
 
-@tool(exclusive=True)
+@tool(gdb=True)
 def gdb_interrupt() -> dict:
-    """Stop the running game (Ctrl-C) so commands can be sent. Do not do this during a scene load."""
+    """Stop the running game (Ctrl-C) so commands can be sent. Do not do this during a scene load. An error after 10 s when the game does not stop."""
     return {"output": GDB.interrupt()}
 
 
-@tool(exclusive=True)
+@tool(gdb=True)
 def gdb_wait_stop(timeout: int = 30) -> dict:
-    """Wait for a breakpoint/watchpoint hit; returns GDB's stop report."""
+    """Wait for a watchpoint hit; returns GDB's stop report. game_input and game_sequence run meanwhile."""
     return {"output": GDB.wait_stop(timeout)}
 
 
-@tool(exclusive=True)
+@tool(gdb=True)
 def gdb_cmd(command: str, timeout: int = 15) -> dict:
-    """Run one GDB command on the stopped target (hbreak/watch/x/p/bt/info/delete/find/mon ...). 'break' is refused."""
+    """Run one GDB command on the stopped target (watch/rwatch/awatch/x/p/bt/info/delete/find/mon ...). Watchpoints only: 'break' is refused and Eden's stub has no hbreak."""
     return {"output": GDB.cmd(command, timeout)}
 
 
-@tool(exclusive=True)
+@tool(gdb=True)
 def gdb_module_base() -> dict:
     """Find the main module's runtime base (mon get info, else signature). Needed for gdb_addr."""
     if GDB.running:
@@ -694,7 +730,7 @@ def gdb_module_base() -> dict:
     return GDB.module_base()
 
 
-@tool(exclusive=True)
+@tool(gdb=True)
 def gdb_addr(csv_address: str | None = None, runtime_address: str | None = None) -> dict:
     """Translate between functions.csv addresses (0x71...) and runtime addresses using the known base."""
     if csv_address:
@@ -704,9 +740,9 @@ def gdb_addr(csv_address: str | None = None, runtime_address: str | None = None)
     return {"error": "give csv_address or runtime_address"}
 
 
-@tool(exclusive=True)
+@tool(gdb=True)
 def gdb_detach() -> dict:
-    """Delete all breakpoints, detach and quit GDB. The game keeps running."""
+    """Delete all watchpoints, resume the game and end GDB. The game keeps running; gdb_attach works again."""
     return {"result": GDB.detach()}
 
 

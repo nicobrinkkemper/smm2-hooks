@@ -36,7 +36,31 @@ SD and `load` directories and the GDB stub setting, and derives everything else
 it is cheap enough to poll every few seconds.
 
 GDB rules enforced by the server: no software breakpoints (`break` is refused),
-no `handle SIGTRAP ... pass`, one session, commands only while stopped.
+no `handle SIGTRAP ... pass`, one session, commands only while stopped. Only
+watchpoints (`watch`/`rwatch`/`awatch`) work on Eden: its stub has no hardware
+breakpoints, and a deleted software breakpoint keeps trapping
+(`docs/eden-gdb-workflow.md`).
+
+- **Detach and attach again.** `gdb_detach` deletes the watchpoints, resumes
+  the game and ends gdb; the game keeps running and `gdb_attach` connects
+  again in the same launch (0.4 s on Eden v0.2.1, 2026-11-16). The hang on a
+  second `target remote` came from the old detach: Eden's stub does not know
+  gdb's `detach`, and after `detach` + `quit` the game stayed frozen and the
+  stub stopped listening. A client that just goes away leaves the stub
+  listening, so that is how the session ends now, and `gdb_cmd` refuses
+  `detach`, `quit` and `kill`. When the stub does not take a connection,
+  `gdb_attach` returns an error that says so.
+- **No call waits forever.** Every wait on gdb has a timeout and ends in an
+  error: `gdb_interrupt` after 10 s when the game does not stop, any `gdb_*`
+  call when gdb has exited (then `gdb_attach` again). The GDB tools have their
+  own lock, so `game_input`, `game_status` and `eden_state` answer while a
+  `gdb_wait_stop` is in flight. `eden_kill` ends the session with Eden.
+- **`game_boot` with the stub.** A direct boot relaunches Eden with the stub
+  as the last launch had it, or as its `gdb` argument says. With the stub on
+  the game waits for a debugger, so `game_boot` attaches, continues and leaves
+  the session attached with the game running.
+
+`tools/test_gdbsession.py` covers the session against a stand-in gdb.
 
 Register it for Claude Code on the machine that has Eden and the game (local
 scope: this project on this machine, not the project's shared `.mcp.json`):

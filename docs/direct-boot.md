@@ -29,8 +29,10 @@ then an SMW course, Eden boots from the title straight into each file's
 course (scene mode 7, that file's style/theme/start). Without `file`, the
 same request plays the resident title course.
 
-Remove or empty `boot.txt` for a normal title boot (`tools/trace.py` and
-`game_boot` delete it right after launch). `mcp/server.py` `game_boot`
+Remove or empty `boot.txt` for a normal title boot (`tools/trace.py` deletes
+it right after launch; `game_boot` once `directboot.log` shows the `config`
+line, which with the GDB stub on comes only after a debugger continues the
+game). `mcp/server.py` `game_boot`
 (coursebot, default) writes the pair and relaunches Eden; pass
 `via_menu=true` for the old button-injection walk.
 
