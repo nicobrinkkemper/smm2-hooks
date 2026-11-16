@@ -1,7 +1,7 @@
 # Function probes (`probe.txt` → `probe.log`)
 
 Eden's GDB stub has no hardware breakpoints, and a paused game cannot be
-traced. A probe is the mod's replacement: it hooks a function at boot, lets
+traced. A probe is the mod's replacement: it hooks a function, lets
 it run unchanged, and appends one row per call with the integer argument
 registers and any fields you ask for behind `x0`. The game keeps running at
 full speed; the result is a CSV that `tests/bridge` in the decomp can replay.
@@ -10,8 +10,8 @@ full speed; the result is a CSV that `tests/bridge` in the decomp can replay.
 
 | Path (SD card) | Role |
 |---|---|
-| `sd:/smm2-hooks/probe.txt` | config, read **once at boot** (relaunch after editing) |
-| `sd:/smm2-hooks/probe.log` | output, truncated at boot, flushed every 300 frames and when its 8 KB buffer fills |
+| `sd:/smm2-hooks/probe.txt` | config, read at boot and again at every scene change (see [Reload](#reload)) |
+| `sd:/smm2-hooks/probe.log` | output, started over at boot and when a changed config is loaded, flushed every 300 frames and when its 8 KB buffer fills |
 
 Host side: `tools/probe.py` (`preset`, `check`, `install --target eden`,
 `decode`).
@@ -85,8 +85,34 @@ course's terrain. Boot the course, let the log flush, quit.
   (`0x8000000 .. 0x8000000000`, aligned) but not for mapping. A field that
   fails the check logs `-`; one that passes and points into an unmapped page
   faults the guest.
-- Hooks are installed at boot on the main module; a `failed` status in the
+- Hooks are installed on the main module; a `failed` status in the
   `H` line means the address was outside it or the trampoline pool is full.
+
+## Reload
+
+A new field set does not need a relaunch. The mod reads `probe.txt` again at
+every scene change: a course starting, the pause menu's Start Over, the
+restart after a death. When the text differs from what is loaded, it takes
+the old hooks out, installs the new ones and starts `probe.log` over, so the
+log always holds one config's `H` lines and rows. An unchanged file leaves
+the hooks and the log alone; a deleted one unhooks everything.
+
+```
+python3 tools/probe.py install other.txt --target eden    # with the course running
+```
+
+then Start Over: the pause menu by hand, or `Game('eden').start_over()` from
+`tools/smm2.py`.
+
+Measured in Coursebot play on Eden: booted with the `player` preset (403
+rows), installed `camera` merged with `enemywalk`, Start
+Over; the log then held the `cam` and `enemy` hooks and their rows from the
+restarted course's first frames, in the same Eden process. Save the old log
+first if you need it. The pad rows start over with it.
+
+The swap happens at the scene change itself, outside the hooked functions. `tas.csv`,
+`boot.txt`, `theme.txt`, `hold.txt` and `ui-probe.txt` are still read once at
+boot.
 
 ## Log format
 
@@ -108,7 +134,7 @@ decoded. The `frame` column is the mod's frame counter (same as
 python3 tools/probe.py preset rail > probe.txt
 python3 tools/probe.py install probe.txt --target eden   # runs `check` first
 python3 tools/gen_test_levels.py --slot 11 --target eden   # "Rail Trace" (unvalidated: validate_slots first)
-# launch Eden, play the level, quit
+# launch Eden, play the level, quit (or, with Eden already in a course: Start Over)
 python3 tools/probe.py decode <sd>/smm2-hooks/probe.log -o rail_trace.csv
 ```
 

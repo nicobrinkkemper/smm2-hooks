@@ -26,6 +26,7 @@ namespace smm2 { namespace tas {
 namespace smm2 { namespace status {
     void init();
     void update(uint32_t frame);
+    void on_scene_change(void (*cb)());
 }}
 
 namespace smm2 { namespace game_phase {
@@ -62,7 +63,12 @@ namespace smm2 { namespace placeholder_debug {
 
 namespace smm2 { namespace probe {
     void init();
+    void reload();
     void flush();
+}}
+
+namespace smm2 { namespace perf {
+    void reload();
 }}
 
 namespace smm2 { namespace theme_override {
@@ -81,6 +87,13 @@ namespace smm2::place {
 namespace smm2::hold {
     void init();
     void per_frame(uint32_t frame);
+}
+
+// A scene change (a course starting, Start Over included) is when the SD
+// configs that can change under a running game are read again.
+static void on_scene_change() {
+    smm2::probe::reload();
+    smm2::perf::reload();
 }
 
 static void on_frame(uint32_t frame) {
@@ -126,4 +139,6 @@ extern "C" void hkMain() {
     smm2::place::init();            // sd:/smm2-hooks/ctl.txt: place the player while the game runs
     smm2::directboot::init();       // sd:/smm2-hooks/boot.txt: skip the title and menus
     smm2::probe::init();            // last: it skips functions the plugins above hooked (docs/probe.md)
+    smm2::perf::reload();           // sd:/smm2-hooks/perf.txt: stub rendering, layout and sound for speed (docs/perf.md)
+    smm2::status::on_scene_change(on_scene_change);
 }

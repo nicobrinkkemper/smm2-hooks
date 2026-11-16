@@ -834,8 +834,8 @@ def _deploy_built_mod() -> dict:
 def trace_record(action: str = "status", name: str = "", presets: str = "player,rail", out_dir: str | None = None,
                  slot: int | None = None) -> dict:
     """Record a play session as a sim fixture. action=start: install the probe presets (comma list of
-    tools/probe.py PRESETS: player, rail, note, camera), deploy a newer mod build, relaunch Eden (the
-    probe is read at boot) and remember the recording; then play. action=stop: wait for the mod's
+    tools/probe.py PRESETS: player, rail, note, camera), deploy a newer mod build, relaunch Eden
+    and remember the recording; then play. action=stop: wait for the mod's
     flush, decode probe.log into <out_dir>/<name>_eden.csv (actor rows with the pad columns),
     <name>_eden_inputs.csv (the pad as a tas.csv script) and <name>_eden.json (what was recorded, with the
     marks); out_dir defaults to smm2-decomp's src-sim/test/fixtures. stop also copies the course file of

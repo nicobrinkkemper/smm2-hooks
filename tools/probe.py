@@ -6,8 +6,9 @@
     python3 probe.py install probe.txt --target eden
     python3 probe.py decode probe.log -o rail.csv   # typed CSV (floats decoded)
 
-The mod reads sd:/smm2-hooks/probe.txt once at boot and appends rows to
-sd:/smm2-hooks/probe.log. `check` reads the first instruction of every
+The mod reads sd:/smm2-hooks/probe.txt at boot and again at every scene
+change (a course start, Start Over), and appends rows to
+sd:/smm2-hooks/probe.log, which starts over when the config changed. `check` reads the first instruction of every
 hooked function from the decomp's main.elf: hakkun's trampoline copies that
 instruction verbatim, so it must not be PC-relative.
 """
@@ -1143,7 +1144,7 @@ def cmd_install(args) -> int:
         return 1
     dst = sd_hooks_dir(args.target) / "probe.txt"
     dst.write_bytes(Path(args.config).read_bytes())
-    print(f"installed {dst} (read by the mod at the next launch)")
+    print(f"installed {dst} (read by the mod at the next scene change, e.g. Start Over, or launch)")
     return 0
 
 

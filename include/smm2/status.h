@@ -80,6 +80,7 @@ void update_from_input_poll();  // fallback: called from NpadStates hook, fires 
 void set_player(uintptr_t player);
 void set_mode(uint8_t mode);  // 0=editor, 1=playing
 uintptr_t player();             // the play's player, 0 outside play
+void on_scene_change(void (*cb)());   // cb runs from update() each time the scene mode changed
 uint32_t player_since();       // the frame this play's player was first seen, 0 outside play
 
 } // namespace status

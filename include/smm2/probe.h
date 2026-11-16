@@ -9,6 +9,8 @@ namespace smm2 {
 namespace probe {
 
 void init();
+// Read probe.txt again; when it changed, swap the hooks and start probe.log over.
+void reload();
 void flush();
 // One row per frame of the pad the game saw (the human's buttons with any
 // injection merged in): P,<frame>,<buttons hex>,<lx>,<ly>. Called from the

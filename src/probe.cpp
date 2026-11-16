@@ -11,7 +11,7 @@
 // A function probe stands in for the hardware breakpoint Eden does not have:
 // the hooked function runs unchanged, then one row per call records the
 // integer argument registers and the requested fields behind x0. The config
-// is read once at boot; see docs/probe.md for the file format and the rules
+// is read at boot and again at every scene change; see docs/probe.md for the file format and the rules
 // (first instruction must not be PC-relative, hooked function must not
 // return a float, a wrong field path can crash the game).
 
@@ -165,6 +165,13 @@ static bool install_slot(int idx, uintptr_t vaddr) {
     return rc.succeeded();
 }
 
+static void uninstall_slots() {
+    (void)Slot<0>::hook.uninstall(); (void)Slot<1>::hook.uninstall();
+    (void)Slot<2>::hook.uninstall(); (void)Slot<3>::hook.uninstall();
+    (void)Slot<4>::hook.uninstall(); (void)Slot<5>::hook.uninstall();
+    (void)Slot<6>::hook.uninstall(); (void)Slot<7>::hook.uninstall();
+}
+
 // ── config ────────────────────────────────────────────────────────────────
 
 static char* next_token(char*& s) {
@@ -280,15 +287,28 @@ static void parse_field(char* rest) {
     h->nfields++;
 }
 
-static void load_config() {
-    nn::fs::FileHandle f;
-    if (nn::fs::OpenFile(&f, CONFIG_PATH, nn::fs::MODE_READ) != 0) return;
-    static char buf[8192];
-    size_t n = 0;
-    nn::fs::ReadFile(&n, f, 0, buf, sizeof(buf) - 1);
-    nn::fs::CloseFile(f);
-    buf[n] = '\0';
+constexpr size_t CONFIG_MAX = 8192;
+static char s_config[CONFIG_MAX];   // the probe.txt the installed hooks came from
 
+// The file's text, empty when there is none.
+static void read_config(char* buf) {
+    size_t n = 0;
+    nn::fs::FileHandle f;
+    if (nn::fs::OpenFile(&f, CONFIG_PATH, nn::fs::MODE_READ) == 0) {
+        nn::fs::ReadFile(&n, f, 0, buf, CONFIG_MAX - 1);
+        nn::fs::CloseFile(f);
+    }
+    buf[n] = '\0';
+}
+
+// Start probe.log over with the hooks s_config names.
+static void apply_config() {
+    s_log.init("probe.log");
+    s_log.write("V,1\n", 4);
+    s_nhooks = 0;
+
+    static char buf[CONFIG_MAX];   // the parser cuts its copy into tokens
+    std::memcpy(buf, s_config, CONFIG_MAX);
     char* line = buf;
     while (line && *line) {
         char* nl = std::strchr(line, '\n');
@@ -304,12 +324,7 @@ static void load_config() {
         }
         line = nl ? nl + 1 : nullptr;
     }
-}
 
-void init() {
-    s_log.init("probe.log");
-    s_log.write("V,1\n", 4);
-    load_config();
     for (int i = 0; i < s_nhooks; i++) {
         Hook& h = s_hooks[i];
         const bool taken = already_hooked(h.vaddr);
@@ -323,6 +338,23 @@ void init() {
         s_log.write("\n", 1);
     }
     s_log.flush();
+}
+
+void init() {
+    read_config(s_config);
+    apply_config();
+}
+
+// Called at a scene change, outside any hooked function. The old hooks come
+// out before the new ones go in, so a function both configs name is hooked
+// afresh.
+void reload() {
+    static char now[CONFIG_MAX];
+    read_config(now);
+    if (!std::strcmp(now, s_config)) return;
+    uninstall_slots();
+    std::memcpy(s_config, now, CONFIG_MAX);
+    apply_config();
 }
 
 void flush() {
