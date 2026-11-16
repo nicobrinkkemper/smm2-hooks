@@ -43,13 +43,11 @@ breakpoints, and a deleted software breakpoint keeps trapping
 
 - **Detach and attach again.** `gdb_detach` deletes the watchpoints, resumes
   the game and ends gdb; the game keeps running and `gdb_attach` connects
-  again in the same launch (0.4 s on Eden v0.2.1, 2026-11-16). The hang on a
-  second `target remote` came from the old detach: Eden's stub does not know
-  gdb's `detach`, and after `detach` + `quit` the game stayed frozen and the
-  stub stopped listening. A client that just goes away leaves the stub
-  listening, so that is how the session ends now, and `gdb_cmd` refuses
-  `detach`, `quit` and `kill`. When the stub does not take a connection,
-  `gdb_attach` returns an error that says so.
+  again in the same launch. Eden's stub does not know gdb's `detach`, and
+  after `detach` + `quit` the game stays frozen and the stub stops listening.
+  A client that just goes away leaves the stub listening, so that is how the
+  session ends, and `gdb_cmd` refuses `detach`, `quit` and `kill`. When the
+  stub does not take a connection, `gdb_attach` returns an error that says so.
 - **No call waits forever.** Every wait on gdb has a timeout and ends in an
   error: `gdb_interrupt` after 10 s when the game does not stop, any `gdb_*`
   call when gdb has exited (then `gdb_attach` again). The GDB tools have their

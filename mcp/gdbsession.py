@@ -59,11 +59,9 @@ class GdbSession:
 
         Eden's stub does not know gdb's `detach` ("Remote doesn't know how to
         detach"), and after gdb's `detach` + `quit` the game stays frozen and
-        the stub stops listening, which is why a second attach used to time
-        out. A client that just disappears is fine: the stub keeps listening
-        and takes the next connection (measured on Eden v0.2.1, 2026-11-16:
-        second attach in 0.4 s, with the game running or stopped). So: delete
-        the watchpoints, resume, and end gdb without a goodbye."""
+        the stub stops listening. A client that just disappears leaves the
+        stub listening (Eden v0.2.1). So: delete the watchpoints, resume, and
+        end gdb without a goodbye."""
         if not self.child:
             return "not attached"
         note = "the game keeps running"
@@ -73,7 +71,7 @@ class GdbSession:
             self._cmd("delete", 5)
             self._cmd("continue &", 5)   # in the background: the prompt comes back once the resume is sent
         except RuntimeError as e:
-            note = f"the watchpoints could not be deleted and the game resumed first: {e}"
+            note = f"the watchpoints could not be deleted or the game resumed: {e}"
         self.drop()
         return f"detached; {note}"
 
