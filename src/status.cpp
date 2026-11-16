@@ -35,6 +35,10 @@ static HkTrampoline<void, void*, uint32_t> playerChangeState_hook =
         s_player = reinterpret_cast<uintptr_t>(player_obj);
     });
 
+uintptr_t player() {
+    return s_player;
+}
+
 uint32_t player_since() {
     return s_player_since;
 }

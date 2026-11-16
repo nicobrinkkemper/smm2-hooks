@@ -74,6 +74,10 @@ namespace smm2 { namespace directboot {
     void per_frame(uint32_t frame);
 }}
 
+namespace smm2::place {
+    void init();
+    void per_frame(uint32_t frame);
+}
 namespace smm2::hold {
     void init();
     void per_frame(uint32_t frame);
@@ -84,6 +88,7 @@ static void on_frame(uint32_t frame) {
     smm2::status::update(frame);
     smm2::sim_trace::per_frame(frame);
     smm2::directboot::per_frame(frame);
+    smm2::place::per_frame(frame);
     smm2::hold::per_frame(frame);           // last: the frame is complete when it waits
     // smm2::camera_debug::per_frame(frame); // disabled — forces viewport dims
 
@@ -118,6 +123,7 @@ extern "C" void hkMain() {
     smm2::placeholder_debug::init(); // force spikeballs into placeholder state
     smm2::theme_override::init();   // sd:/smm2-hooks/theme.txt: every course loads with that theme
     smm2::hold::init();             // sd:/smm2-hooks/hold.txt: wait after each frame for the host
+    smm2::place::init();            // sd:/smm2-hooks/ctl.txt: place the player (before boot.txt, which may hold a place line)
     smm2::directboot::init();       // sd:/smm2-hooks/boot.txt: skip the title and menus
     smm2::probe::init();            // last: it skips functions the plugins above hooked (docs/probe.md)
 }

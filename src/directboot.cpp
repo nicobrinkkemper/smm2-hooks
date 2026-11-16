@@ -9,6 +9,9 @@
 //                              play buffer before the request. The Coursebot's Play copies the
 //                              selected entry there itself (sub_71016EDF70); the request reads no
 //                              course data, so play uses whatever the buffer holds.
+//     area <n>                 start in that area of the course: 0 main, 1 sub. The player starts
+//                              at the course's start point, in that area.
+//     place <x> <y> <n>        hold the play's player at (x, y) for its first n frames (src/place.cpp)
 //
 // The Coursebot's play-start (sub_71016E5C10) is four calls, replayed here:
 //     sub_7101792070(kind, params)       prepare the transition
@@ -19,6 +22,7 @@
 // title and normal play). docs/direct-boot.md.
 #include "smm2/frame.h"
 #include "smm2/log.h"
+#include "smm2/place.h"
 #include "hk/ro/RoUtil.h"
 #include "nn/fs.h"
 #include <cstdint>
@@ -34,6 +38,7 @@ constexpr uintptr_t OFF_MODE      = 0x1790480;
 constexpr uintptr_t OFF_SOURCE    = 0x1792890;
 constexpr uintptr_t OFF_GO        = 0x1791020;
 constexpr uintptr_t OFF_GPM       = 0x2C57D58;
+constexpr uintptr_t OFF_REQUEST   = 0x2C58880;   // [[this]+0x28] = the next scene's play info; +0xC the area. The course scene's init copies it (sub_71016AAC20)
 constexpr uintptr_t OFF_PLAYBUF   = 0x2A39088;   // [[this]+0x20] = the play buffer; the course at +0x6C000 (sub_71016EDF70)
 constexpr size_t COURSE_BYTES     = 0x10 + 0x5BFC0;   // GamePhaseManager*; [[gpm]+0x30]+0x14 = scene mode (6 = title)
 constexpr uint32_t TITLE_SETTLE   = 150;         // frames of title before the first request
@@ -52,6 +57,7 @@ bool s_two_phase = false;       // coursebot2: go through the Coursebot scene fi
 uint32_t s_left_title = 0;
 bool s_done = false;
 char s_file[128] = "";          // file: the course to load into the play buffer
+int s_area = -1;                // area: the area to start in
 
 uint32_t scene_mode(uintptr_t base) {
     uintptr_t gpm = *reinterpret_cast<uintptr_t*>(base + OFF_GPM);
@@ -86,6 +92,13 @@ void load_config() {
         } else if (!std::strncmp(p, "file ", 5)) {
             std::strncpy(s_file, p + 5, sizeof(s_file) - 1);
             s_log.writef("config file %s\n", s_file);
+        } else if (!std::strncmp(p, "area ", 5)) {
+            s_area = (int)std::strtol(p + 5, nullptr, 10);
+            if (s_area != 0 && s_area != 1) { s_log.writef("E,area %d: 0 or 1\n", s_area); s_area = -1; }
+            else s_log.writef("config area %d\n", s_area);
+        } else if (!std::strncmp(p, "place ", 6)) {
+            if (place::parse(p + 6, true)) s_log.writef("config place %s\n", p + 6);
+            else s_log.writef("E,place wants <x> <y> <frames>: %s\n", p);
         } else if (*p && *p != '#') {
             s_log.writef("E,unknown line: %s\n", p);
         }
@@ -129,6 +142,11 @@ static void request(uint32_t frame, uintptr_t base, int kind) {
     prepare(kind, params);
     mode_fn(kind);
     source(kind, s_course, params);
+    if (s_area >= 0 && kind == s_kind) {
+        // source() just reset the area to 0
+        uintptr_t holder = *reinterpret_cast<uintptr_t*>(base + OFF_REQUEST);
+        *reinterpret_cast<uint32_t*>(*reinterpret_cast<uintptr_t*>(holder + 0x28) + 0xC) = (uint32_t)s_area;
+    }
     uint64_t r = go(nullptr);
     s_tries++;
     s_last_try = frame;

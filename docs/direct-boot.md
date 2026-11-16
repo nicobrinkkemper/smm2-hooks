@@ -34,6 +34,51 @@ Remove or empty `boot.txt` for a normal title boot (`tools/trace.py` and
 (coursebot, default) writes the pair and relaunches Eden; pass
 `via_menu=true` for the old button-injection walk.
 
+## Start in the sub area
+
+```
+# sd:/smm2-hooks/boot.txt
+coursebot 0 4
+file sd:/smm2-hooks/course.boot.bin
+area 1
+```
+
+`area <n>` (0 main, 1 sub) sets the area of the play request (`+0xC` of
+`[[0x7102C58880]+0x28]`) between the course-source call, which resets it to 0,
+and the scene request. The course scene's init copies the request into the
+play info (`[[0x7102C57D58]+0x30]`), and the course loads that area. The
+player starts at the course's start point (x 72, the header's start height) in
+that area: a sub area has no start of its own, so with no ground there he
+falls. Put him somewhere else with `place`.
+
+## Place the player
+
+```
+place <x> <y> <n>
+```
+
+holds the player at (x, y), in the course's units (16 per tile, y up), for n
+frames and then lets go: he falls or stands from there. While held, the
+terrain collision (`+0x49C` bit 0) and the actor hits (`+0x498` bit 0x200) are
+off and his velocity is zero; both bits get their old value back at the end.
+
+- In `boot.txt` the hold starts on the first frame of the first play's player.
+- In `sd:/smm2-hooks/ctl.txt` it starts while the game runs. The mod polls the
+  file every 4 frames and deletes it once read, so writing the file sends the
+  line: `printf 'place 200 160 30\n' > <sd>/smm2-hooks/ctl.txt`.
+
+A probe row is read in the middle of the player's frame, after that frame's
+velocity was added: a held row reads x exactly and y one gravity step lower
+(`pos_y - vel_y` is the held y), the same way a player standing on a floor at
+80 reads 79.16. The `player` preset's `area` column is the play info's area.
+
+Measured on Eden (a Pipe Trip course with start height 7, sub-area floor at
+80): with `area 1` every row has area 1 and the player falls from (72, 112) to
+the sub area's floor; without it area 0 and he stands at (72, 112). `place 200
+160 30` through `ctl.txt` held 30 rows at x 200, `pos_y - vel_y` 160, then he
+fell and landed at y 80 in Walk. Each run twice from a cold launch, the same
+rows both times.
+
 ## A course file into the editor
 
 `game_boot(target="editor", file=<course>)` boots any course straight into the

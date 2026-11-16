@@ -857,6 +857,8 @@ field player pad1c u8 0x550>0x1C
 field player pad1d u8 0x550>0x1D
 field player pad1e u8 0x550>0x1E
 field player pad1f u8 0x550>0x1F
+# The area being played (the game manager's play info, +0xC): 0 main, 1 sub.
+field player area  u32 @0x7102C57D58>0x30>0x0C
 """,
     # Taking a power-up (the decomp's src/game/item/ItemFrame.h): the
     # player's calc override sub_710158A3F0 logs the power-up (+0x4A8), the
