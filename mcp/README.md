@@ -54,6 +54,22 @@ every slot (`~/.cache/smm2-hooks/slot-backups`), since a visit deletes invalid
 courses. `tools/hf_course.py` fetches real uploaded courses to boot.
 Details: `docs/direct-boot.md`.
 
+To start a course in its sub area, or with the player somewhere else, write
+`boot.txt` in the SD's `smm2-hooks` folder before a launch (`trace_record
+start` launches) and remove it afterwards:
+
+```
+coursebot 0 4
+file sd:/smm2-hooks/<course>.boot.bin
+area 1
+place 200 160 30
+```
+
+`area 1` starts in the sub area. `place <x> <y> <n>` holds the player at
+(x, y) for the first n frames of play. The same `place` line written to
+`ctl.txt` in that folder moves him while the game runs (the mod deletes the
+file once read). No menu input is involved in any of it.
+
 ## Native Linux Eden
 
 `eden.py` treats Eden as a native program whenever `EDEN_EXE` does not end in
