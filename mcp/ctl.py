@@ -11,9 +11,10 @@ not an MCP client:
 Runs the same functions the MCP server registers (server.py, unwrapped), in a
 fresh process, and prints the result as one JSON line. Anything that holds
 state across calls in the server (the GDB session) is composed here into a
-single call: eden_unpause = attach, continue, detach. game_boot waits for the
-whole navigation, not just the server's reply budget, since the thread would
-die with this process.
+single call: eden_unpause = attach, detach (which resumes the game). game_boot
+waits for the whole navigation, not just the server's reply budget, since the
+thread would die with this process; with the stub on it leaves the game
+running without a debugger.
 """
 from __future__ import annotations
 
@@ -38,13 +39,12 @@ def plain(name: str):
 
 
 def eden_unpause() -> dict:
-    """A game left waiting for a debugger (the GDB stub on): attach, continue, detach."""
-    attached = plain("gdb_attach")()
-    if attached.get("error"):
-        return {"error": f"attach failed: {attached['error']}", "attach": attached}
-    resumed = plain("gdb_continue")()
-    detached = plain("gdb_detach")()
-    return {"attach": attached, "continue": resumed, "detach": detached}
+    """A game left waiting for a debugger (the GDB stub on): attach, then detach, which resumes it."""
+    try:
+        attached = plain("gdb_attach")()
+    except RuntimeError as e:
+        return {"error": f"attach failed: {e}"}
+    return {"attach": attached, "detach": plain("gdb_detach")()}
 
 
 def main(argv: list[str]) -> int:
@@ -64,6 +64,7 @@ def main(argv: list[str]) -> int:
             if t is not None and t.is_alive():
                 t.join()
                 result = dict(server._NAV["result"])
+        server.GDB.drop()   # the session ends with this process; dropped, the game runs on
     else:
         result = {"error": f"unknown tool {name!r}", "tools": sorted(TOOLS | {"eden_unpause"})}
     print(json.dumps(result, default=str))
