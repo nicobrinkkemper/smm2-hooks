@@ -39,6 +39,12 @@ uintptr_t player() {
     return s_player;
 }
 
+static void (*s_scene_cb)() = nullptr;
+
+void on_scene_change(void (*cb)()) {
+    s_scene_cb = cb;
+}
+
 uint32_t player_since() {
     return s_player_since;
 }
@@ -137,6 +143,7 @@ void update(uint32_t frame) {
     if (blk.scene_mode != s_prev_scene_mode) {
         s_scene_change_count++;
         s_prev_scene_mode = blk.scene_mode;
+        if (s_scene_cb) s_scene_cb();
     }
     blk.scene_change_count = s_scene_change_count;
 

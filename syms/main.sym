@@ -132,3 +132,12 @@ Random_getU64 = 0x186270
 Random_getContext = 0x29A1C0
 Context_getU32 = 0x29A150
 Context_init = 0x29A0B0
+
+# Performance mode (perf.cpp): the set MM2Chaos stubs (its src/game.cpp)
+trySetLayoutMsg = 0x781320
+drawRenderStep_ = 0x3387a0
+xlink_calc = 0x1ca2900
+pushBackToJobQueue_ = 0x420300
+calcLayerDL_ = 0x33a720
+calcSubLayerDL_ = 0x33aa70
+SnapshotTextureMgr_update = 0x471ad0

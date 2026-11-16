@@ -206,6 +206,24 @@ def set_gdbstub(p: EdenPaths, enabled: bool) -> bool:
     return False
 
 
+def set_speed_limit(p: EdenPaths, limited: bool) -> bool:
+    """Flip use_speed_limit in the real ini (next launch). Returns True if changed.
+
+    With the limit off Eden runs the game as fast as the host manages, which
+    is what a frames-per-second measurement needs (tools/perf.py); at the
+    default it holds 60. The `\\default` marker follows the value, as in
+    set_gdbstub.
+    """
+    b = Path(p.config_ini).read_bytes()
+    value = b"true" if limited else b"false"
+    new = re.sub(rb"use_speed_limit=(true|false)", b"use_speed_limit=" + value, b, count=1)
+    new = re.sub(rb"use_speed_limit\\default=(true|false)", lambda _: b"use_speed_limit\\default=" + value, new, count=1)
+    if new != b:
+        Path(p.config_ini).write_bytes(new)
+        return True
+    return False
+
+
 def ensure_docked(p: EdenPaths) -> bool:
     """Force docked mode in the real ini. Returns True if changed.
 
