@@ -16,6 +16,10 @@ cheap CPU (`src/perf.cpp`, symbols in `syms/main.sym`):
 
 It is off by default: without the flag none of the seven is hooked.
 
+One function takes one hook. A probe (docs/probe.md) on one of the seven
+reads `hooked` in its `H` line while the flag is on, and a function a probe
+already holds when the flag comes on keeps the probe and is not stubbed.
+
 ## The flag
 
 `sd:/smm2-hooks/perf.txt` reading `on`. Any other content, or no file, is off.

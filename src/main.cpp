@@ -90,10 +90,11 @@ namespace smm2::hold {
 }
 
 // A scene change (a course starting, Start Over included) is when the SD
-// configs that can change under a running game are read again.
+// configs that can change under a running game are read again. The stubs go
+// first, so a probe.txt that names one of them reports it "hooked".
 static void on_scene_change() {
-    smm2::probe::reload();
     smm2::perf::reload();
+    smm2::probe::reload();
 }
 
 static void on_frame(uint32_t frame) {
@@ -138,7 +139,7 @@ extern "C" void hkMain() {
     smm2::hold::init();             // sd:/smm2-hooks/hold.txt: wait after each frame for the host
     smm2::place::init();            // sd:/smm2-hooks/ctl.txt: place the player while the game runs
     smm2::directboot::init();       // sd:/smm2-hooks/boot.txt: skip the title and menus
-    smm2::probe::init();            // last: it skips functions the plugins above hooked (docs/probe.md)
     smm2::perf::reload();           // sd:/smm2-hooks/perf.txt: stub rendering, layout and sound for speed (docs/perf.md)
+    smm2::probe::init();            // last: it skips functions the plugins above hooked (docs/probe.md)
     smm2::status::on_scene_change(on_scene_change);
 }

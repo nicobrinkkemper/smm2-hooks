@@ -5,6 +5,7 @@
 // longer drawn. Read at boot and again at every scene change.
 #include "hk/hook/Trampoline.h"
 #include "nn/fs.h"
+#include <cstdint>
 #include <cstring>
 
 namespace smm2 {
@@ -58,19 +59,27 @@ static bool wanted() {
     return std::strncmp(buf, "on", 2) == 0;
 }
 
+// A function a probe hooked (its first instruction is a branch) is left to the
+// probe: a trampoline on top of another would put the wrong instruction back.
+static bool hooked(ptr at) {
+    return (*reinterpret_cast<const uint32_t*>(at) & 0xFC000000u) == 0x14000000u;
+}
+
+#define STUB(fn) if (!hooked(hk::util::lookupSymbol<#fn>())) (void)fn.installAtSym<#fn>()
+
 // Without the flag nothing is hooked: the game's code is untouched.
 void reload() {
     const bool on = wanted();
     if (on == s_on) return;
     s_on = on;
     if (on) {
-        trySetLayoutMsg.installAtSym<"trySetLayoutMsg">();
-        drawRenderStep_.installAtSym<"drawRenderStep_">();
-        xlink_calc.installAtSym<"xlink_calc">();
-        pushBackToJobQueue_.installAtSym<"pushBackToJobQueue_">();
-        calcLayerDL_.installAtSym<"calcLayerDL_">();
-        calcSubLayerDL_.installAtSym<"calcSubLayerDL_">();
-        SnapshotTextureMgr_update.installAtSym<"SnapshotTextureMgr_update">();
+        STUB(trySetLayoutMsg);
+        STUB(drawRenderStep_);
+        STUB(xlink_calc);
+        STUB(pushBackToJobQueue_);
+        STUB(calcLayerDL_);
+        STUB(calcSubLayerDL_);
+        STUB(SnapshotTextureMgr_update);
     } else {
         (void)trySetLayoutMsg.uninstall();
         (void)drawRenderStep_.uninstall();
@@ -81,6 +90,8 @@ void reload() {
         (void)SnapshotTextureMgr_update.uninstall();
     }
 }
+
+#undef STUB
 
 } // namespace perf
 } // namespace smm2
